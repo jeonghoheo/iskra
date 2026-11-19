@@ -48,7 +48,7 @@ Iskra는 메신저 안에 살면서 재시작해도 기억을 유지하고, 엄�
 ```bash
 git clone https://github.com/jeonghoheo/iskra.git
 cd iskra
-cp .env.example .env   # 모델 API 키를 넣으세요 (v1 기본값 DeepSeek: DEEPSEEK_API_KEY)
+cp .env.example .env   # 모델 API 키를 넣으세요 (LLM_API_KEY — 어떤 제공자든 가능, 기본값은 DeepSeek)
 cargo run
 ```
 

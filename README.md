@@ -60,7 +60,7 @@ and reassembled — swap the model, the channel, or the tools without touching t
 ```bash
 git clone https://github.com/jeonghoheo/iskra.git
 cd iskra
-cp .env.example .env   # add your model API key (v1 default: DEEPSEEK_API_KEY)
+cp .env.example .env   # add your model API key (LLM_API_KEY — any provider; DeepSeek is the default)
 cargo run
 ```
 

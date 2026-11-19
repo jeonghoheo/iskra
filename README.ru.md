@@ -48,7 +48,7 @@ Iskra — персональный агент, который живёт в ме
 ```bash
 git clone https://github.com/jeonghoheo/iskra.git
 cd iskra
-cp .env.example .env   # добавьте ключ API модели (по умолчанию в v1 — DeepSeek: DEEPSEEK_API_KEY)
+cp .env.example .env   # добавьте ключ API модели (LLM_API_KEY — любой провайдер; по умолчанию DeepSeek)
 cargo run
 ```
 
