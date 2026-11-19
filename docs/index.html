@@ -1,0 +1,1062 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark" />
+<link rel="icon" href="data:," />
+<title>Iskra — A tiny personal agent harness in Rust</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Noto+Sans:wght@400;500;700;900&family=Noto+Sans+KR:wght@400;500;700;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#FFFBF6; --bg-2:#FFF3E6; --surface:#FFFFFF; --surface-2:#FFF8EF;
+    --ink:#1C1712; --ink-2:#5C5147; --ink-3:#8A7D6F;
+    --line:#EADBC8; --line-strong:#D9C3A6;
+    --ember:#E6531A; --ember-dark:#C24312; --ember-soft:#FFE8D9;
+    --amber:#FFB020; --amber-soft:#FFF0C9;
+    --teal:#0E7C6B; --teal-soft:#DDF2EC;
+    --code-bg:#171310; --code-ink:#F5EDE3; --code-dim:#A99B8A; --code-green:#7ED3A6; --code-orange:#FF9A5C; --code-blue:#8FC1FF;
+    --shadow:0 18px 44px rgba(90,48,10,.13);
+    --radius:18px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#131009; --bg-2:#1B150D; --surface:#1E1912; --surface-2:#241C12;
+      --ink:#F6EEE2; --ink-2:#CBBBA4; --ink-3:#9A8A74;
+      --line:#3A2E1F; --line-strong:#55432C;
+      --ember:#FF6B2C; --ember-dark:#FF8A54; --ember-soft:#3A2113;
+      --amber:#FFB020; --amber-soft:#382A10;
+      --teal:#3EC9AE; --teal-soft:#12332C;
+      --shadow:0 18px 44px rgba(0,0,0,.45);
+    }
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion: reduce){ html{scroll-behavior:auto} *{animation:none!important; transition:none!important} }
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:"Noto Sans","Noto Sans KR",system-ui,sans-serif;line-height:1.65;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  a{color:inherit}
+  button,[role="button"]{min-height:44px}
+  .mono{font-family:"JetBrains Mono",monospace}
+  .wrap{max-width:1160px;margin:0 auto;padding:0 20px}
+  @media(min-width:760px){.wrap{padding:0 32px}}
+
+  /* ---------- NAV ---------- */
+  .nav{position:sticky;top:0;z-index:50;background:color-mix(in srgb, var(--bg) 88%, transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+  .nav-in{display:flex;align-items:center;gap:10px;height:64px}
+  .brand{display:flex;align-items:center;gap:10px;text-decoration:none;font-family:Manrope,"Noto Sans","Noto Sans KR",sans-serif;font-weight:800;font-size:21px;letter-spacing:.04em;flex:none}
+  .brand .spark{width:32px;height:32px;border-radius:9px;background:var(--ink);display:grid;place-items:center;flex:none}
+  .brand small{font-family:"JetBrains Mono",monospace;font-weight:400;font-size:10.5px;color:var(--ink-3);letter-spacing:.08em;display:block;line-height:1;margin-top:2px}
+  @media(max-width:680px){.brand small{display:none}.brand{font-size:19px}}
+  .nav-links{display:none;gap:4px;margin-left:14px}
+  @media(min-width:920px){.nav-links{display:flex}}
+  .nav-links a{text-decoration:none;font-size:14.5px;font-weight:500;color:var(--ink-2);padding:10px 12px;border-radius:9px;min-height:44px;display:inline-flex;align-items:center;white-space:nowrap}
+  .nav-links a:hover{color:var(--ink);background:var(--surface-2)}
+  .spacer{flex:1}
+  .lang-switch{display:flex;align-items:center;gap:2px;border:1px solid var(--line-strong);border-radius:999px;padding:3px;background:var(--surface);flex:none}
+  .lang-switch button{border:0;background:transparent;color:var(--ink-2);font-family:"JetBrains Mono",monospace;font-size:12.5px;font-weight:700;padding:0 11px;border-radius:999px;cursor:pointer;min-height:36px;letter-spacing:.03em}
+  .lang-switch button:hover{color:var(--ink)}
+  .lang-switch button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+  .nav-cta{display:inline-flex;align-items:center;gap:8px;background:var(--ink);color:var(--bg);text-decoration:none;font-weight:700;font-size:14.5px;padding:0 16px;border-radius:11px;min-height:44px;flex:none}
+  .nav-cta:hover{opacity:.88}
+  @media(max-width:480px){.nav-cta .cta-txt{display:none}.nav-cta{padding:0 12px}}
+
+  /* ---------- HERO ---------- */
+  .hero{position:relative;padding:52px 0 30px;overflow:hidden}
+  #sparks{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;opacity:.55}
+  .hero-grid{position:relative;display:grid;gap:38px}
+  @media(min-width:980px){.hero-grid{grid-template-columns:1.02fr .98fr;align-items:center;gap:48px}.hero{padding:72px 0 44px}}
+  .badge{display:inline-flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line-strong);border-radius:999px;padding:7px 14px 7px 9px;font-size:13px;font-weight:700;color:var(--ink-2)}
+  .badge .dot{width:22px;height:22px;border-radius:50%;background:var(--ember-soft);display:grid;place-items:center;font-size:12px;flex:none}
+  .badge b{color:var(--ember)}
+  h1{font-family:Manrope,"Noto Sans","Noto Sans KR",sans-serif;font-size:clamp(36px,6vw,60px);line-height:1.16;font-weight:800;letter-spacing:-.015em;margin:20px 0 0}
+  h1 .en{display:block;font-size:.5em;letter-spacing:.01em;color:var(--ink-3);font-weight:700;margin-top:12px;line-height:1.4}
+  h1 em{font-style:normal;color:var(--ember);position:relative}
+  h1 em::after{content:"";position:absolute;left:0;right:0;bottom:4px;height:9px;background:var(--amber-soft);z-index:-1;border-radius:3px}
+  .hero-sub{font-size:17px;color:var(--ink-2);margin:20px 0 0;max-width:34em}
+  .hero-sub b{color:var(--ink)}
+  .hero-ctas{display:flex;flex-wrap:wrap;gap:11px;margin-top:28px}
+  .btn{display:inline-flex;align-items:center;gap:9px;text-decoration:none;font-weight:700;font-size:15.5px;padding:0 22px;border-radius:12px;min-height:50px;border:1px solid transparent;cursor:pointer;font-family:inherit}
+  .btn-primary{background:var(--ember);color:#fff;box-shadow:0 10px 24px rgba(230,83,26,.32)}
+  .btn-primary:hover{background:var(--ember-dark)}
+  .btn-ghost{background:var(--surface);border-color:var(--line-strong);color:var(--ink)}
+  .btn-ghost:hover{border-color:var(--ink-3)}
+  .hero-meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:24px;font-size:13.5px;color:var(--ink-3)}
+  .hero-meta span{display:inline-flex;align-items:center;gap:7px}
+  .hero-meta .ok{color:var(--teal);font-weight:700}
+
+  /* console / demo */
+  .console{background:var(--code-bg);border-radius:20px;box-shadow:var(--shadow);overflow:hidden;border:1px solid #2E2620;color:var(--code-ink)}
+  .console-bar{display:flex;align-items:center;gap:7px;padding:13px 16px;border-bottom:1px solid #2E2620}
+  .console-bar i{width:11px;height:11px;border-radius:50%;display:block;flex:none}
+  .console-bar .t{margin-left:8px;font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--code-dim)}
+  .console-bar .live{margin-left:auto;font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--code-green);display:flex;align-items:center;gap:6px;flex:none}
+  .console-bar .live::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--code-green)}
+  .console-body{padding:18px 18px 8px;font-size:14px;min-height:308px}
+  .msg{margin:0 0 14px;display:flex;gap:10px}
+  .msg .who{flex:none;font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;height:fit-content;margin-top:2px}
+  .who-user{background:#2E2620;color:var(--code-orange)}
+  .who-agent{background:#3A2113;color:#FFB98A}
+  .who-tool{background:#12332C;color:var(--code-green)}
+  .msg p{margin:0;color:var(--code-ink)}
+  .msg p.dim{color:var(--code-dim);font-family:"JetBrains Mono",monospace;font-size:12.5px;word-break:break-all}
+  .msg.hidden-step{display:none}
+  .console-foot{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 16px 16px;border-top:1px solid #2E2620}
+  .run-btn{background:var(--ember);color:#fff;border:0;border-radius:10px;font-weight:700;font-size:14.5px;padding:0 18px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:8px}
+  .run-btn:hover{background:var(--ember-dark)}
+  .run-btn:disabled{opacity:.55;cursor:default}
+  .console-note{font-size:12.5px;color:var(--code-dim)}
+  .usage{font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--code-dim);margin-left:auto}
+
+  /* stack strip */
+  .stack{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--surface-2);margin-top:44px}
+  .stack-in{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;padding:16px 0}
+  .stack-in .lbl{font-family:"JetBrains Mono",monospace;font-size:11.5px;letter-spacing:.1em;color:var(--ink-3);margin-right:6px}
+  .pill{font-family:"JetBrains Mono",monospace;font-size:13px;font-weight:600;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:7px 14px}
+
+  /* ---------- SECTIONS ---------- */
+  section{padding:64px 0 8px}
+  @media(min-width:760px){section{padding:84px 0 8px}}
+  .sec-head{max-width:640px}
+  .sec-tag{font-family:"JetBrains Mono",monospace;font-size:12px;font-weight:700;letter-spacing:.14em;color:var(--ember)}
+  h2{font-family:Manrope,"Noto Sans","Noto Sans KR",sans-serif;font-size:clamp(27px,4vw,38px);line-height:1.28;font-weight:800;margin:10px 0 0;letter-spacing:-.01em}
+  .sec-head p{color:var(--ink-2);font-size:16px;margin:13px 0 0}
+
+  /* flow */
+  .flow{display:grid;gap:12px;margin-top:36px}
+  @media(min-width:900px){.flow{grid-template-columns:repeat(4,1fr);gap:0}}
+  .flow-step{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:22px;position:relative}
+  @media(min-width:900px){
+    .flow-step{border-radius:0}
+    .flow-step:first-child{border-radius:var(--radius) 0 0 var(--radius)}
+    .flow-step:last-child{border-radius:0 var(--radius) var(--radius) 0}
+    .flow-step + .flow-step{border-left:0}
+    .flow-step::after{content:"→";position:absolute;right:-11px;top:50%;transform:translateY(-50%);z-index:2;width:22px;height:22px;border-radius:50%;background:var(--ink);color:var(--bg);display:grid;place-items:center;font-size:12px}
+    .flow-step:last-child::after{display:none}
+  }
+  .flow-step .n{font-family:"JetBrains Mono",monospace;font-size:11.5px;font-weight:700;color:var(--ember);letter-spacing:.1em}
+  .flow-step h3{margin:8px 0 6px;font-size:17.5px}
+  .flow-step p{margin:0;font-size:14.5px;color:var(--ink-2)}
+  .flow-step code{font-family:"JetBrains Mono",monospace;font-size:12.5px;background:var(--surface-2);border:1px solid var(--line);padding:1px 6px;border-radius:5px}
+
+  /* features */
+  .feat-grid{display:grid;gap:14px;margin-top:36px}
+  @media(min-width:760px){.feat-grid{grid-template-columns:1fr 1fr}}
+  @media(min-width:1020px){.feat-grid{grid-template-columns:repeat(3,1fr)}}
+  .feat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:24px;display:flex;flex-direction:column}
+  .feat .ic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--ember-soft);color:var(--ember);margin-bottom:15px}
+  .feat.teal .ic{background:var(--teal-soft);color:var(--teal)}
+  .feat.amber .ic{background:var(--amber-soft);color:#9A6B00}
+  @media (prefers-color-scheme: dark){.feat.amber .ic{color:var(--amber)}}
+  .feat h3{margin:0;font-size:17.5px;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .feat p{margin:8px 0 0;font-size:14.5px;color:var(--ink-2);flex:1}
+  .feat p code{font-family:"JetBrains Mono",monospace;font-size:.92em}
+  .status{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;letter-spacing:.03em;white-space:nowrap}
+  .status.done{background:var(--teal-soft);color:var(--teal)}
+  .status.next{background:var(--amber-soft);color:#8A6100}
+  @media (prefers-color-scheme: dark){.status.next{color:var(--amber)}}
+  .status.plan{background:var(--surface-2);color:var(--ink-3);border:1px solid var(--line)}
+  .feat .spec{margin-top:14px;font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--ink-3);border-top:1px dashed var(--line);padding-top:11px;line-height:1.9}
+
+  /* safety split */
+  .split{display:grid;gap:22px;margin-top:36px}
+  @media(min-width:940px){.split{grid-template-columns:.92fr 1.08fr;gap:34px;align-items:start}}
+  .check-list{list-style:none;margin:22px 0 0;padding:0;display:grid;gap:13px}
+  .check-list li{display:flex;gap:12px;font-size:15.5px}
+  .check-list .ck{flex:none;width:24px;height:24px;border-radius:50%;background:var(--teal-soft);color:var(--teal);display:grid;place-items:center;margin-top:2px}
+  .check-list b{display:block}
+  .check-list .sub{color:var(--ink-2);font-size:14.5px}
+  .code-card{background:var(--code-bg);border-radius:18px;overflow:hidden;border:1px solid #2E2620;box-shadow:var(--shadow)}
+  .code-card .console-bar{border-bottom:1px solid #2E2620}
+  pre{margin:0;padding:20px;overflow-x:auto;font-family:"JetBrains Mono",monospace;font-size:13px;line-height:1.75;color:var(--code-ink)}
+  pre .cm{color:var(--code-dim)} pre .fn{color:var(--code-orange)} pre .st{color:var(--code-green)} pre .kw{color:var(--code-blue)}
+  .test-row{display:flex;flex-wrap:wrap;gap:8px;padding:0 20px 18px}
+  .test-chip{font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--code-green);border:1px solid #2C4A3E;border-radius:999px;padding:5px 11px}
+
+  /* tabs / quickstart */
+  .tabs{margin-top:36px;background:var(--surface);border:1px solid var(--line);border-radius:20px;overflow:hidden;box-shadow:var(--shadow)}
+  .tab-bar{display:flex;flex-wrap:wrap;gap:6px;padding:12px 12px 0}
+  .tab-btn{border:1px solid transparent;background:transparent;color:var(--ink-2);font-family:"JetBrains Mono",monospace;font-size:13.5px;font-weight:600;padding:0 16px;border-radius:10px;cursor:pointer;min-height:44px}
+  .tab-btn[aria-selected="true"]{background:var(--ink);color:var(--bg)}
+  .tab-panel{display:none}
+  .tab-panel.active{display:block}
+  .tab-panel .code-card{border-radius:0;box-shadow:none;border:0;margin-top:12px}
+  .copy-row{display:flex;align-items:center;gap:10px;padding:14px 18px;border-top:1px solid var(--line);flex-wrap:wrap}
+  .copy-btn{display:inline-flex;align-items:center;gap:7px;background:var(--surface-2);border:1px solid var(--line-strong);border-radius:9px;font-size:13.5px;font-weight:700;padding:0 14px;cursor:pointer;font-family:inherit;color:var(--ink)}
+  .copy-btn:hover{border-color:var(--ink-3)}
+  .copy-hint{font-size:13px;color:var(--ink-3)}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,80px);background:var(--ink);color:var(--bg);font-size:14px;font-weight:700;padding:12px 20px;border-radius:12px;z-index:99;transition:transform .3s ease;box-shadow:var(--shadow);max-width:88vw;text-align:center}
+  .toast.show{transform:translate(-50%,0)}
+
+  /* roadmap */
+  .progress-wrap{margin-top:34px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:22px 24px}
+  .progress-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+  .progress-top b{font-size:16px}
+  .progress-top .mono{font-size:13px;color:var(--ink-3)}
+  .bar{height:10px;border-radius:99px;background:var(--surface-2);border:1px solid var(--line);margin-top:13px;overflow:hidden}
+  .bar i{display:block;height:100%;width:50%;background:linear-gradient(90deg,var(--amber),var(--ember));border-radius:99px}
+  .road{margin-top:16px;display:grid;gap:12px}
+  @media(min-width:900px){.road{grid-template-columns:1fr 1fr}}
+  .block{display:flex;gap:16px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px}
+  .block.done{border-color:color-mix(in srgb, var(--teal) 45%, var(--line))}
+  .block .bn{flex:none;width:46px;height:46px;border-radius:13px;display:grid;place-items:center;font-family:"JetBrains Mono",monospace;font-weight:700;font-size:15px;background:var(--surface-2);border:1px solid var(--line);color:var(--ink-3)}
+  .block.done .bn{background:var(--teal-soft);color:var(--teal);border-color:transparent}
+  .block.next .bn{background:var(--amber-soft);color:#8A6100;border-color:transparent}
+  @media (prefers-color-scheme: dark){.block.next .bn{color:var(--amber)}}
+  .block h3{margin:0;font-size:16.5px;display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+  .block p{margin:5px 0 0;font-size:14px;color:var(--ink-2)}
+  .block .mono{font-size:12px}
+
+  /* principles */
+  .principles{display:grid;gap:14px;margin-top:36px}
+  @media(min-width:860px){.principles{grid-template-columns:repeat(3,1fr)}}
+  .pr{border-top:3px solid var(--ink);padding-top:18px}
+  .pr:nth-child(2){border-top-color:var(--ember)}
+  .pr:nth-child(3){border-top-color:var(--amber)}
+  .pr .num{font-family:Manrope,sans-serif;font-weight:800;font-size:30px;color:var(--ink-3)}
+  .pr h3{margin:6px 0 6px;font-size:17.5px}
+  .pr p{margin:0;font-size:14.5px;color:var(--ink-2)}
+
+  /* CTA + footer */
+  .cta{margin:84px 0 0;background:var(--ink);color:var(--bg);border-radius:24px;padding:44px 28px;text-align:center;position:relative;overflow:hidden}
+  @media(min-width:760px){.cta{padding:60px 40px}}
+  .cta h2{color:var(--bg);margin:0}
+  .cta p{color:color-mix(in srgb, var(--bg) 72%, transparent);max-width:34em;margin:14px auto 0;font-size:16px}
+  .cta .hero-ctas{justify-content:center}
+  .cta .btn-ghost{background:transparent;color:var(--bg);border-color:color-mix(in srgb, var(--bg) 40%, transparent)}
+  footer{padding:38px 0 46px;margin-top:56px;border-top:1px solid var(--line)}
+  .lic{font-size:12.5px;color:var(--ink-3);margin:0 0 16px;max-width:72em;line-height:1.7}
+  .lic b{color:var(--ink-2)}
+  .foot{display:flex;flex-wrap:wrap;gap:14px 26px;align-items:center;justify-content:space-between;font-size:13.5px;color:var(--ink-3)}
+  .foot a{color:var(--ink-2);text-decoration:none;font-weight:600;padding:8px 4px;display:inline-flex;align-items:center;min-height:36px}
+  .foot a:hover{color:var(--ember)}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="#top" aria-label="Iskra — home">
+      <span class="spark" aria-hidden="true"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M13 2 4.5 13.5H11L9.8 22 19 10h-6.5L13 2Z" fill="#FFB020" stroke="#FFB020" stroke-linejoin="round"/></svg></span>
+      <span>ISKRA<small data-i18n="brandSub">PERSONAL AGENT HARNESS</small></span>
+    </a>
+    <nav class="nav-links" aria-label="Main">
+      <a href="#how" data-i18n="navHow">How it works</a>
+      <a href="#features" data-i18n="navFeat">Features</a>
+      <a href="#safety" data-i18n="navSafe">Sandbox</a>
+      <a href="#start" data-i18n="navStart">Quickstart</a>
+      <a href="#roadmap" data-i18n="navRoad">Roadmap</a>
+    </nav>
+    <span class="spacer"></span>
+    <div class="lang-switch" role="group" aria-label="Language / Язык / 언어">
+      <button type="button" data-lang="en" aria-pressed="true">EN</button>
+      <button type="button" data-lang="ru" aria-pressed="false">RU</button>
+      <button type="button" data-lang="ko" aria-pressed="false">KO</button>
+    </div>
+    <a class="nav-cta" href="https://github.com/jeonghoheo/iskra" target="_blank" rel="noopener">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="5.5" r="2.5"/><circle cx="6" cy="18.5" r="2.5"/><circle cx="18" cy="7.5" r="2.5"/><path d="M6 8v8M18 10c0 4.5-5 4.8-8.6 5.4"/></svg>
+      <span class="cta-txt">GitHub</span>
+    </a>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- HERO -->
+  <div class="hero">
+    <canvas id="sparks" aria-hidden="true"></canvas>
+    <div class="wrap hero-grid">
+      <div>
+        <span class="badge" data-i18n="badge"><span class="dot" aria-hidden="true">✦</span><span>v1 in development · Block <b>&nbsp;3 / 6 complete</b></span></span>
+        <h1 data-i18n="h1">A lightweight AI agent,<br><em>built by hand</em>
+          <span class="en">Iskra (искра) means “spark” — a personal agent harness, written in Rust.</span>
+        </h1>
+        <p class="hero-sub" data-i18n="heroSub">Iskra is a personal agent harness built from the loop up — not a giant framework you adopt off the shelf, but <b>a small core you write and understand yourself</b>. A single Rust binary, a DeepSeek brain, and file tools that cannot leak outside their sandbox.</p>
+        <div class="hero-ctas">
+          <a class="btn btn-primary" href="https://github.com/jeonghoheo/iskra" target="_blank" rel="noopener"><span data-i18n="ctaGithub">View on GitHub</span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+          <a class="btn btn-ghost" href="#start" data-i18n="ctaQuick">Quickstart →</a>
+        </div>
+        <div class="hero-meta">
+          <span data-i18n="meta1"><span class="ok">✓</span> Public repository · fair-code approach</span>
+          <span data-i18n="meta2"><span class="ok">✓</span> Keys live in .env — never in the repo</span>
+          <span data-i18n="meta3"><span class="ok">✓</span> Verified on macOS · Apple Silicon</span>
+        </div>
+      </div>
+
+      <div class="console" aria-label="Agent run demo">
+        <div class="console-bar">
+          <i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i>
+          <span class="t">iskra — agent loop</span>
+          <span class="live" data-i18n="demoLabel">SCRIPTED DEMO</span>
+        </div>
+        <div class="console-body" id="demoBody">
+          <div class="msg"><span class="who who-user">YOU</span><p data-i18n="dUser">Create hello.txt in the workspace — and read ../secret.txt for me too.</p></div>
+          <div class="msg hidden-step" data-step><span class="who who-agent">ISKRA</span><p data-i18n="dA1">Got it. I will create the file first, then check the second request.</p></div>
+          <div class="msg hidden-step" data-step><span class="who who-tool">TOOL</span><p class="dim">write_file("workspace/hello.txt") → ok · 12 bytes</p></div>
+          <div class="msg hidden-step" data-step><span class="who who-tool">TOOL</span><p class="dim" data-i18n="dT2">read_file("../secret.txt") → ✗ rejected: paths outside the workspace are not allowed</p></div>
+          <div class="msg hidden-step" data-step><span class="who who-agent">ISKRA</span><p data-i18n="dA2">hello.txt is created. But ../secret.txt sits outside the sandbox, so I cannot read it — the boundary is enforced by code, not by politeness.</p></div>
+        </div>
+        <div class="console-foot">
+          <button class="run-btn" id="runDemo" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 4l14 8-14 8V4z"/></svg>
+            <span id="runLabel" data-i18n="runBtn">Run the agent</span></button>
+          <span class="console-note" data-i18n="consoleNote">The actual Block 3 verification scenario</span>
+          <span class="usage" id="usageLine">usage — idle</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap"><div class="stack"><div class="stack-in">
+      <span class="lbl">BUILT WITH</span>
+      <span class="pill">Rust 1.100</span><span class="pill">Tokio</span><span class="pill">Reqwest · rustls</span>
+      <span class="pill">DeepSeek API</span><span class="pill">serde_json</span><span class="pill">dotenvy</span>
+    </div></div></div>
+  </div>
+
+  <!-- HOW -->
+  <section id="how">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="sec-tag" data-i18n="howTag">HOW IT WORKS</span>
+        <h2 data-i18n="howH2">An agent is, in the end, one well-built loop</h2>
+        <p data-i18n="howP">Around the heart of the system — a loop where the model alternates between answers and tool calls — the brain, the tools and the logs attach loosely. Each file owns exactly one role, so the code stays easy to read and to change.</p>
+      </div>
+      <div class="flow">
+        <div class="flow-step"><span class="n">STEP 1 · BRAIN</span><h3 data-i18n="s1h">Ask the brain</h3><p data-i18n="s1p"><code>brain.rs</code> sends the conversation and the tool list to the DeepSeek API and brings the reply back.</p></div>
+        <div class="flow-step"><span class="n">STEP 2 · LOOP</span><h3 data-i18n="s2h">The loop decides</h3><p data-i18n="s2p"><code>loop_.rs</code> separates a final answer from a tool call — and enforces the guardrails.</p></div>
+        <div class="flow-step"><span class="n">STEP 3 · TOOLS</span><h3 data-i18n="s3h">Tools execute</h3><p data-i18n="s3p">File reads and writes in <code>tools.rs</code> work only inside <code>workspace/</code>.</p></div>
+        <div class="flow-step"><span class="n">STEP 4 · LOG</span><h3 data-i18n="s4h">Everything is logged</h3><p data-i18n="s4p">Even token usage lands in <code>logs/agent.log</code> as hard numbers.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="features">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="sec-tag" data-i18n="featTag">FEATURES</span>
+        <h2 data-i18n="featH2">Small — but with hard boundaries</h2>
+        <p data-i18n="featP">Three criteria chose Iskra's shape: lightweight, directly customisable, and structured so it could one day be sold. What is already built and what comes next are labelled honestly.</p>
+      </div>
+      <div class="feat-grid">
+        <article class="feat">
+          <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg></div>
+          <h3><span data-i18n="f1t">A loop that knows when to stop</span> <span class="status done" data-i18n="stDone">Done</span></h3>
+          <p data-i18n="f1p">Stop conditions are hard-coded as constants, so the agent cannot spin forever. When the model repeats the same mistake, the agent stops first.</p>
+          <div class="spec">MAX_ROUNDS = 10 · SAME_ERROR = 2<br>TIMEOUT = 60s · EMPTY_RETRY = 1</div>
+        </article>
+        <article class="feat teal">
+          <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 3v6c0 4.5-3.2 7.7-8 9-4.8-1.3-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg></div>
+          <h3><span data-i18n="f2t">Sandboxed file tools</span> <span class="status done" data-i18n="stDone">Done</span></h3>
+          <p data-i18n="f2p">Reads and writes live only inside the <code>workspace/</code> folder. Even if the model force-calls a path outside, the code refuses — fail-closed.</p>
+          <div class="spec" data-i18n="f2spec">read_file · write_file<br>Boundary verified by 4 unit tests</div>
+        </article>
+        <article class="feat amber">
+          <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4H6.5A2.5 2.5 0 0 0 4 6.5v13z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg></div>
+          <h3><span data-i18n="f3t">Memory (MEMORY.md)</span> <span class="status next" data-i18n="stNext4">Next · Block 4</span></h3>
+          <p data-i18n="f3p">On startup the agent loads its memory file, and a <code>memory_save</code> tool adds new memories. Credentials such as API keys are automatically redacted before anything is stored.</p>
+          <div class="spec" data-i18n="f3spec">Budget 200 lines / 24 KB · atomic writes<br>Permissions 0600 · automatic credential redaction</div>
+        </article>
+        <article class="feat">
+          <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"/></svg></div>
+          <h3><span data-i18n="f4t">Telegram connection</span> <span class="status plan" data-i18n="stPlan5">Planned · Block 5</span></h3>
+          <p data-i18n="f4p">Leave the terminal behind and call your agent from the messenger you already use every day — it has to live where your hands already are.</p>
+          <div class="spec" data-i18n="f4spec">Telegram Bot API integration planned</div>
+        </article>
+        <article class="feat teal">
+          <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-5-6-5M12 19h8"/></svg></div>
+          <h3><span data-i18n="f5t">Shell + a coding task</span> <span class="status plan" data-i18n="stPlan6">Planned · Block 6</span></h3>
+          <p data-i18n="f5p">The final block of v1: attach a shell tool, then pass one real coding task through the whole circuit to close v1.</p>
+          <div class="spec" data-i18n="f5spec">shell tool · verified on a real task</div>
+        </article>
+        <article class="feat amber">
+          <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg></div>
+          <h3><span data-i18n="f6t">Personality as files</span> <span class="status next" data-i18n="stIn4">In Block 4</span></h3>
+          <p data-i18n="f6p">The agent's character (SOUL) and the user profile (USER) live outside the code, as files. Changing its personality needs no recompilation.</p>
+          <div class="spec" data-i18n="f6spec">SOUL.md · USER.md — edit a file, not the code</div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- SAFETY -->
+  <section id="safety">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="sec-tag" data-i18n="safTag">SANDBOX</span>
+        <h2 data-i18n="safH2">Not “please don't” — “can't”</h2>
+        <p data-i18n="safP">Safety that lives in a prompt ends the moment the model disobeys it. Iskra puts the path checks in code, so there is simply no way out.</p>
+      </div>
+      <div class="split">
+        <div>
+          <ul class="check-list">
+            <li><span class="ck">✓</span><div><b data-i18n="c1b">Absolute paths refused</b><span class="sub" data-i18n="c1s">Only paths relative to the workspace are accepted.</span></div></li>
+            <li><span class="ck">✓</span><div><b data-i18n="c2b">“..” segments blocked outright</b><span class="sub" data-i18n="c2s">Parent-directory escapes are stopped before normalisation.</span></div></li>
+            <li><span class="ck">✓</span><div><b data-i18n="c3b">Symlinks resolved to real locations</b><span class="sub" data-i18n="c3s">If the real location behind a link is outside, the call is refused.</span></div></li>
+            <li><span class="ck">✓</span><div><b data-i18n="c4b">Unverifiable = refused (fail-closed)</b><span class="sub" data-i18n="c4s">A broken link that cannot be judged is never opened.</span></div></li>
+          </ul>
+        </div>
+        <div class="code-card" role="img" aria-label="Sandbox path-check concept code and passing unit tests">
+          <div class="console-bar"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i><span class="t" data-i18n="codeTitle">src/tools.rs — boundary check (concept excerpt)</span></div>
+          <pre data-i18n="codeSandbox"><span class="kw">fn</span> <span class="fn">resolve_in_workspace</span>(path) -&gt; Result&lt;PathBuf&gt; {
+  <span class="cm">// 1. Absolute paths are refused from the start</span>
+  <span class="kw">if</span> path.is_absolute() { <span class="kw">return</span> Err(<span class="st">"rejected"</span>) }
+  <span class="cm">// 2. Any '..' segment blocks the call outright</span>
+  <span class="kw">if</span> path.has_parent_traversal() { <span class="kw">return</span> Err(<span class="st">"rejected"</span>) }
+  <span class="cm">// 3. Resolve links; the real location must stay inside</span>
+  <span class="kw">let</span> real = canonicalize(path)?; <span class="cm">// failure = refusal</span>
+  <span class="kw">if</span> !real.starts_with(workspace) { Err(<span class="st">"rejected"</span>) }
+}</pre>
+          <div class="test-row">
+            <span class="test-chip">✓ test: absolute_path_rejected</span>
+            <span class="test-chip">✓ test: dotdot_blocked</span>
+            <span class="test-chip">✓ test: symlink_escape_blocked</span>
+            <span class="test-chip">✓ test: broken_link_rejected</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- QUICKSTART -->
+  <section id="start">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="sec-tag" data-i18n="qsTag">QUICKSTART</span>
+        <h2 data-i18n="qsH2">Five minutes to your first conversation</h2>
+        <p data-i18n="qsP">All you need is Rust and a DeepSeek API key. Put the key in <span class="mono" style="font-size:.92em">.env</span> only — and never commit it to the repository.</p>
+      </div>
+      <div class="tabs">
+        <div class="tab-bar" role="tablist" aria-label="Quickstart tabs">
+          <button class="tab-btn" role="tab" aria-selected="true" data-tab="t1" type="button" data-i18n="tab1">Install · Run</button>
+          <button class="tab-btn" role="tab" aria-selected="false" data-tab="t2" type="button">src/main.rs</button>
+          <button class="tab-btn" role="tab" aria-selected="false" data-tab="t3" type="button" data-i18n="tab3">Project structure</button>
+        </div>
+
+        <div class="tab-panel active" id="t1">
+          <div class="code-card"><pre data-i18n="codeInstall"><span class="cm"># 1) Clone the repository</span>
+git clone https://github.com/jeonghoheo/iskra.git
+<span class="kw">cd</span> iskra
+
+<span class="cm"># 2) Add your DeepSeek key (.env is gitignored)</span>
+cat &gt; .env &lt;&lt; <span class="st">'EOF'</span>
+DEEPSEEK_API_KEY=your_key_here
+<span class="st">EOF</span>
+
+<span class="cm"># 3) Run — the first build compiles dependencies and may take a few minutes</span>
+cargo run</pre></div>
+          <div class="copy-row">
+            <button class="copy-btn" type="button" data-copy="git clone https://github.com/jeonghoheo/iskra.git && cd iskra && cargo run" data-i18n="copyBtn">⌘ Copy command</button>
+            <span class="copy-hint" data-i18n="hint1">No Rust yet? Install it with <span class="mono">rustup</span> first.</span>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="t2">
+          <div class="code-card"><pre data-i18n="codeMain"><span class="cm">// The minimal circuit from Block 2 — ask DeepSeek one sentence, print the answer</span>
+<span class="kw">use</span> serde_json::json;
+
+#[tokio::main]
+<span class="kw">async fn</span> <span class="fn">main</span>() -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt; {
+    dotenvy::dotenv().ok();
+    <span class="kw">let</span> key = env::var(<span class="st">"DEEPSEEK_API_KEY"</span>)?;
+
+    <span class="kw">let</span> body = json!({
+        <span class="st">"model"</span>: <span class="st">"deepseek-chat"</span>,
+        <span class="st">"messages"</span>: [{ <span class="st">"role"</span>: <span class="st">"user"</span>,
+          <span class="st">"content"</span>: <span class="st">"Introduce yourself in one sentence"</span> }]
+    });
+
+    <span class="kw">let</span> res = Client::new()
+        .post(<span class="st">"https://api.deepseek.com/chat/completions"</span>)
+        .bearer_auth(key).json(&amp;body).send().<span class="kw">await</span>?;
+    <span class="kw">let</span> v: Value = res.json().<span class="kw">await</span>?;
+    println!(<span class="st">"{}"</span>, v[<span class="st">"choices"</span>][0][<span class="st">"message"</span>][<span class="st">"content"</span>]);
+    Ok(())
+}</pre></div>
+          <div class="copy-row"><span class="copy-hint" data-i18n="hint2">From Block 3 on, this circuit grows into <span class="mono">brain.rs · loop_.rs · tools.rs</span>.</span></div>
+        </div>
+
+        <div class="tab-panel" id="t3">
+          <div class="code-card"><pre data-i18n="codeTree">iskra/
+├─ Cargo.toml
+├─ src/
+│  ├─ main.rs    <span class="cm">— entry point</span>
+│  ├─ brain.rs   <span class="cm">— DeepSeek calls</span>
+│  ├─ loop_.rs   <span class="cm">— agent loop + guardrails</span>
+│  └─ tools.rs   <span class="cm">— sandboxed file tools</span>
+├─ workspace/    <span class="cm">— the only folder tools may touch (not in git)</span>
+├─ logs/         <span class="cm">— agent.log · usage records (not in git)</span>
+└─ .env          <span class="cm">— API key (not in git, never share)</span></pre></div>
+          <div class="copy-row"><span class="copy-hint" data-i18n="hint3">Design decisions and per-block verification records live in the repository's <span class="mono">SESSION-LOG.md</span>.</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ROADMAP -->
+  <section id="roadmap">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="sec-tag" data-i18n="rmTag">ROADMAP · V1</span>
+        <h2 data-i18n="rmH2">Building v1 in six blocks</h2>
+        <p data-i18n="rmP">Not everything at once. Every block has acceptance criteria, and the next block starts only after verification passes.</p>
+      </div>
+      <div class="progress-wrap">
+        <div class="progress-top"><b data-i18n="progLabel">v1 progress</b><span class="mono" data-i18n="progMeta">BLOCK 3 / 6 · 50%</span></div>
+        <div class="bar" role="progressbar" aria-valuenow="50" aria-valuemin="0" aria-valuemax="100" aria-label="v1 progress 50%"><i></i></div>
+      </div>
+      <div class="road">
+        <div class="block done"><div class="bn">01</div><div><h3><span data-i18n="b1t">Skeleton</span> <span class="status done" data-i18n="stDone">Done</span></h3><p data-i18n="b1p">From installing Rust to <span class="mono">cargo new iskra</span> — a minimal project that compiles and runs.</p></div></div>
+        <div class="block done"><div class="bn">02</div><div><h3><span data-i18n="b2t">First call</span> <span class="status done" data-i18n="stDone">Done</span></h3><p data-i18n="b2p">The minimal circuit that asks DeepSeek one sentence and prints the answer. The key is isolated in .env.</p></div></div>
+        <div class="block done"><div class="bn">03</div><div><h3><span data-i18n="b3t">Loop + file tools</span> <span class="status done" data-i18n="stDoneVer">Done · verified</span></h3><p data-i18n="b3p">The agent loop and sandboxed read/write — verified down to the <span class="mono">../secret.txt</span> refusal.</p></div></div>
+        <div class="block next"><div class="bn">04</div><div><h3><span data-i18n="b4t">Memory</span> <span class="status next" data-i18n="stNext">Next</span></h3><p data-i18n="b4p">MEMORY.md loading + the memory_save tool. The acceptance test: does it still remember your favourite colour after a restart?</p></div></div>
+        <div class="block"><div class="bn">05</div><div><h3><span data-i18n="b5t">Telegram</span> <span class="status plan" data-i18n="stPlan">Planned</span></h3><p data-i18n="b5p">An agent you can call from a messenger — the step where it enters daily life.</p></div></div>
+        <div class="block"><div class="bn">06</div><div><h3><span data-i18n="b6t">Shell + coding task</span> <span class="status plan" data-i18n="stPlan">Planned</span></h3><p data-i18n="b6p">Attach the shell tool and verify all of v1 on one real coding task.</p></div></div>
+      </div>
+
+      <div class="principles">
+        <div class="pr"><span class="num">01</span><h3 data-i18n="pr1t">Lightweight</h3><p data-i18n="pr1p">No swallowing a whole framework. Only as much code as one person can actually read stays in.</p></div>
+        <div class="pr"><span class="num">02</span><h3 data-i18n="pr2t">Yours to modify</h3><p data-i18n="pr2p">Personality, memory and tools are split by file, so you change only the part you want to change.</p></div>
+        <div class="pr"><span class="num">03</span><h3 data-i18n="pr3t">Verify, then move on</h3><p data-i18n="pr3p">Acceptance criteria → run → compare against the source. Progress is left as records, not as “trust me, it works”.</p></div>
+      </div>
+
+      <div class="cta">
+        <h2 data-i18n="ctaH2">A spark starts small</h2>
+        <p data-i18n="ctaP">Iskra is being built right now. Read the code, open an issue, run it yourself — the whole process is recorded in the public repository.</p>
+        <div class="hero-ctas">
+          <a class="btn btn-primary" href="https://github.com/jeonghoheo/iskra" target="_blank" rel="noopener" data-i18n="ctaBtn1">★ Follow along on GitHub</a>
+          <a class="btn btn-ghost" href="#start" data-i18n="ctaBtn2">Back to Quickstart</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p class="lic" data-i18n="lic"><b>License note:</b> Iskra's source is public under a fair-code approach — free to read, run and modify for your own use. Before any commercial use, check the exact terms in the repository.</p>
+    <div class="foot">
+      <span data-i18n="footLeft">ISKRA — a personal AI agent harness · Made in Rust</span>
+      <span>
+        <a href="https://github.com/jeonghoheo/iskra" target="_blank" rel="noopener">GitHub</a>·
+        <a href="#roadmap" data-i18n="footRoad">Roadmap</a>·
+        <a href="#top" data-i18n="footTop">Back to top ↑</a>
+      </span>
+    </div>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite">Copied</div>
+
+<script>
+(function(){
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ============ I18N ============ */
+  var I18N = {
+  en: {
+    title: "Iskra — A tiny personal agent harness in Rust",
+    brandSub: "PERSONAL AGENT HARNESS",
+    navHow: "How it works", navFeat: "Features", navSafe: "Sandbox", navStart: "Quickstart", navRoad: "Roadmap",
+    badge: `<span class="dot" aria-hidden="true">✦</span><span>v1 in development · Block <b>&nbsp;3 / 6 complete</b></span>`,
+    h1: `A lightweight AI agent,<br><em>built by hand</em><span class="en">Iskra (искра) means “spark” — a personal agent harness, written in Rust.</span>`,
+    heroSub: `Iskra is a personal agent harness built from the loop up — not a giant framework you adopt off the shelf, but <b>a small core you write and understand yourself</b>. A single Rust binary, a DeepSeek brain, and file tools that cannot leak outside their sandbox.`,
+    ctaGithub: "View on GitHub", ctaQuick: "Quickstart →",
+    meta1: `<span class="ok">✓</span> Public repository · fair-code approach`,
+    meta2: `<span class="ok">✓</span> Keys live in .env — never in the repo`,
+    meta3: `<span class="ok">✓</span> Verified on macOS · Apple Silicon`,
+    dUser: "Create hello.txt in the workspace — and read ../secret.txt for me too.",
+    dA1: "Got it. I will create the file first, then check the second request.",
+    dT2: `read_file("../secret.txt") → ✗ rejected: paths outside the workspace are not allowed`,
+    dA2: "hello.txt is created. But ../secret.txt sits outside the sandbox, so I cannot read it — the boundary is enforced by code, not by politeness.",
+    demoLabel: "SCRIPTED DEMO",
+    consoleNote: "The actual Block 3 verification scenario",
+    runBtn: "Run the agent", runRunning: "Running…", runAgain: "Run again",
+    usageIdle: "usage — idle", usageRunning: "usage — running", usageDone: "usage · prompt=509 completion=62 total=571",
+    howTag: "HOW IT WORKS", howH2: "An agent is, in the end, one well-built loop",
+    howP: "Around the heart of the system — a loop where the model alternates between answers and tool calls — the brain, the tools and the logs attach loosely. Each file owns exactly one role, so the code stays easy to read and to change.",
+    s1h: "Ask the brain", s1p: `<code>brain.rs</code> sends the conversation and the tool list to the DeepSeek API and brings the reply back.`,
+    s2h: "The loop decides", s2p: `<code>loop_.rs</code> separates a final answer from a tool call — and enforces the guardrails.`,
+    s3h: "Tools execute", s3p: `File reads and writes in <code>tools.rs</code> work only inside <code>workspace/</code>.`,
+    s4h: "Everything is logged", s4p: `Even token usage lands in <code>logs/agent.log</code> as hard numbers.`,
+    featTag: "FEATURES", featH2: "Small — but with hard boundaries",
+    featP: "Three criteria chose Iskra's shape: lightweight, directly customisable, and structured so it could one day be sold. What is already built and what comes next are labelled honestly.",
+    stDone: "Done", stDoneVer: "Done · verified", stNext: "Next", stNext4: "Next · Block 4", stPlan: "Planned", stPlan5: "Planned · Block 5", stPlan6: "Planned · Block 6", stIn4: "In Block 4",
+    f1t: "A loop that knows when to stop",
+    f1p: "Stop conditions are hard-coded as constants, so the agent cannot spin forever. When the model repeats the same mistake, the agent stops first.",
+    f2t: "Sandboxed file tools",
+    f2p: `Reads and writes live only inside the <code>workspace/</code> folder. Even if the model force-calls a path outside, the code refuses — fail-closed.`,
+    f2spec: "read_file · write_file<br>Boundary verified by 4 unit tests",
+    f3t: "Memory (MEMORY.md)",
+    f3p: `On startup the agent loads its memory file, and a <code>memory_save</code> tool adds new memories. Credentials such as API keys are automatically redacted before anything is stored.`,
+    f3spec: "Budget 200 lines / 24 KB · atomic writes<br>Permissions 0600 · automatic credential redaction",
+    f4t: "Telegram connection",
+    f4p: "Leave the terminal behind and call your agent from the messenger you already use every day — it has to live where your hands already are.",
+    f4spec: "Telegram Bot API integration planned",
+    f5t: "Shell + a coding task",
+    f5p: "The final block of v1: attach a shell tool, then pass one real coding task through the whole circuit to close v1.",
+    f5spec: "shell tool · verified on a real task",
+    f6t: "Personality as files",
+    f6p: "The agent's character (SOUL) and the user profile (USER) live outside the code, as files. Changing its personality needs no recompilation.",
+    f6spec: "SOUL.md · USER.md — edit a file, not the code",
+    safTag: "SANDBOX", safH2: "Not “please don't” — “can't”",
+    safP: "Safety that lives in a prompt ends the moment the model disobeys it. Iskra puts the path checks in code, so there is simply no way out.",
+    c1b: "Absolute paths refused", c1s: "Only paths relative to the workspace are accepted.",
+    c2b: "“..” segments blocked outright", c2s: "Parent-directory escapes are stopped before normalisation.",
+    c3b: "Symlinks resolved to real locations", c3s: "If the real location behind a link is outside, the call is refused.",
+    c4b: "Unverifiable = refused (fail-closed)", c4s: "A broken link that cannot be judged is never opened.",
+    codeTitle: "src/tools.rs — boundary check (concept excerpt)",
+    codeSandbox: `<span class="kw">fn</span> <span class="fn">resolve_in_workspace</span>(path) -&gt; Result&lt;PathBuf&gt; {
+  <span class="cm">// 1. Absolute paths are refused from the start</span>
+  <span class="kw">if</span> path.is_absolute() { <span class="kw">return</span> Err(<span class="st">"rejected"</span>) }
+  <span class="cm">// 2. Any '..' segment blocks the call outright</span>
+  <span class="kw">if</span> path.has_parent_traversal() { <span class="kw">return</span> Err(<span class="st">"rejected"</span>) }
+  <span class="cm">// 3. Resolve links; the real location must stay inside</span>
+  <span class="kw">let</span> real = canonicalize(path)?; <span class="cm">// failure = refusal</span>
+  <span class="kw">if</span> !real.starts_with(workspace) { Err(<span class="st">"rejected"</span>) }
+}`,
+    qsTag: "QUICKSTART", qsH2: "Five minutes to your first conversation",
+    qsP: `All you need is Rust and a DeepSeek API key. Put the key in <span class="mono" style="font-size:.92em">.env</span> only — and never commit it to the repository.`,
+    tab1: "Install · Run", tab3: "Project structure",
+    codeInstall: `<span class="cm"># 1) Clone the repository</span>
+git clone https://github.com/jeonghoheo/iskra.git
+<span class="kw">cd</span> iskra
+
+<span class="cm"># 2) Add your DeepSeek key (.env is gitignored)</span>
+cat &gt; .env &lt;&lt; <span class="st">'EOF'</span>
+DEEPSEEK_API_KEY=your_key_here
+<span class="st">EOF</span>
+
+<span class="cm"># 3) Run — the first build compiles dependencies and may take a few minutes</span>
+cargo run`,
+    codeMain: `<span class="cm">// The minimal circuit from Block 2 — ask DeepSeek one sentence, print the answer</span>
+<span class="kw">use</span> serde_json::json;
+
+#[tokio::main]
+<span class="kw">async fn</span> <span class="fn">main</span>() -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt; {
+    dotenvy::dotenv().ok();
+    <span class="kw">let</span> key = env::var(<span class="st">"DEEPSEEK_API_KEY"</span>)?;
+
+    <span class="kw">let</span> body = json!({
+        <span class="st">"model"</span>: <span class="st">"deepseek-chat"</span>,
+        <span class="st">"messages"</span>: [{ <span class="st">"role"</span>: <span class="st">"user"</span>,
+          <span class="st">"content"</span>: <span class="st">"Introduce yourself in one sentence"</span> }]
+    });
+
+    <span class="kw">let</span> res = Client::new()
+        .post(<span class="st">"https://api.deepseek.com/chat/completions"</span>)
+        .bearer_auth(key).json(&amp;body).send().<span class="kw">await</span>?;
+    <span class="kw">let</span> v: Value = res.json().<span class="kw">await</span>?;
+    println!(<span class="st">"{}"</span>, v[<span class="st">"choices"</span>][0][<span class="st">"message"</span>][<span class="st">"content"</span>]);
+    Ok(())
+}`,
+    codeTree: `iskra/
+├─ Cargo.toml
+├─ src/
+│  ├─ main.rs    <span class="cm">— entry point</span>
+│  ├─ brain.rs   <span class="cm">— DeepSeek calls</span>
+│  ├─ loop_.rs   <span class="cm">— agent loop + guardrails</span>
+│  └─ tools.rs   <span class="cm">— sandboxed file tools</span>
+├─ workspace/    <span class="cm">— the only folder tools may touch (not in git)</span>
+├─ logs/         <span class="cm">— agent.log · usage records (not in git)</span>
+└─ .env          <span class="cm">— API key (not in git, never share)</span>`,
+    copyBtn: "⌘ Copy command",
+    hint1: `No Rust yet? Install it with <span class="mono">rustup</span> first.`,
+    hint2: `From Block 3 on, this circuit grows into <span class="mono">brain.rs · loop_.rs · tools.rs</span>.`,
+    hint3: `Design decisions and per-block verification records live in the repository's <span class="mono">SESSION-LOG.md</span>.`,
+    toastCopied: "Command copied", toastFail: "Copy failed — select and copy it manually", toastUnsupported: "Copying is not supported in this browser",
+    rmTag: "ROADMAP · V1", rmH2: "Building v1 in six blocks",
+    rmP: "Not everything at once. Every block has acceptance criteria, and the next block starts only after verification passes.",
+    progLabel: "v1 progress", progMeta: "BLOCK 3 / 6 · 50%",
+    b1t: "Skeleton", b1p: `From installing Rust to <span class="mono">cargo new iskra</span> — a minimal project that compiles and runs.`,
+    b2t: "First call", b2p: "The minimal circuit that asks DeepSeek one sentence and prints the answer. The key is isolated in .env.",
+    b3t: "Loop + file tools", b3p: `The agent loop and sandboxed read/write — verified down to the <span class="mono">../secret.txt</span> refusal.`,
+    b4t: "Memory", b4p: "MEMORY.md loading + the memory_save tool. The acceptance test: does it still remember your favourite colour after a restart?",
+    b5t: "Telegram", b5p: "An agent you can call from a messenger — the step where it enters daily life.",
+    b6t: "Shell + coding task", b6p: "Attach the shell tool and verify all of v1 on one real coding task.",
+    pr1t: "Lightweight", pr1p: "No swallowing a whole framework. Only as much code as one person can actually read stays in.",
+    pr2t: "Yours to modify", pr2p: "Personality, memory and tools are split by file, so you change only the part you want to change.",
+    pr3t: "Verify, then move on", pr3p: "Acceptance criteria → run → compare against the source. Progress is left as records, not as “trust me, it works”.",
+    ctaH2: "A spark starts small",
+    ctaP: "Iskra is being built right now. Read the code, open an issue, run it yourself — the whole process is recorded in the public repository.",
+    ctaBtn1: "★ Follow along on GitHub", ctaBtn2: "Back to Quickstart",
+    lic: `<b>License note:</b> Iskra's source is public under a fair-code approach — free to read, run and modify for your own use. Before any commercial use, check the exact terms in the repository.`,
+    footLeft: "ISKRA — a personal AI agent harness · Made in Rust",
+    footRoad: "Roadmap", footTop: "Back to top ↑"
+  },
+  ru: {
+    title: "Искра — лёгкий персональный агентный харнесс на Rust",
+    brandSub: "PERSONAL AGENT HARNESS",
+    navHow: "Как это работает", navFeat: "Возможности", navSafe: "Песочница", navStart: "Быстрый старт", navRoad: "Дорожная карта",
+    badge: `<span class="dot" aria-hidden="true">✦</span><span>v1 в разработке · Блок <b>&nbsp;3 / 6 готов</b></span>`,
+    h1: `Лёгкий AI-агент,<br><em>собранный своими руками</em><span class="en">ISKRA — персональный агентный харнесс, написанный на Rust.</span>`,
+    heroSub: `«Искра» — это персональный агентный харнесс, построенный начиная с самой петли (loop), а не гигантский фреймворк, который берут готовым: <b>маленькое ядро, которое пишешь и понимаешь сам</b>. Один бинарник на Rust, мозг на DeepSeek и файловые инструменты, которые не могут выйти за пределы песочницы.`,
+    ctaGithub: "Смотреть на GitHub", ctaQuick: "Быстрый старт →",
+    meta1: `<span class="ok">✓</span> Публичный репозиторий · подход fair-code`,
+    meta2: `<span class="ok">✓</span> Ключи живут в .env — и никогда в репозитории`,
+    meta3: `<span class="ok">✓</span> Проверено на macOS · Apple Silicon`,
+    dUser: "Создай hello.txt в workspace — и ещё прочитай для меня ../secret.txt.",
+    dA1: "Понял. Сначала создам файл, потом проверю второй запрос.",
+    dT2: `read_file("../secret.txt") → ✗ отклонено: пути вне workspace не разрешены`,
+    dA2: "hello.txt создан. Но ../secret.txt находится вне песочницы, поэтому прочитать его я не могу — границу обеспечивает код, а не вежливость.",
+    demoLabel: "ДЕМО · ЗАПИСЬ СЦЕНАРИЯ",
+    consoleNote: "Реальный сценарий проверки Блока 3",
+    runBtn: "Запустить агента", runRunning: "Выполняется…", runAgain: "Запустить ещё раз",
+    usageIdle: "usage — ожидание", usageRunning: "usage — выполняется", usageDone: "usage · prompt=509 completion=62 total=571",
+    howTag: "КАК ЭТО РАБОТАЕТ", howH2: "Агент — это, в сущности, одна хорошо сделанная петля",
+    howP: "Вокруг сердца системы — петли, в которой модель чередует ответы и вызовы инструментов, — свободно крепятся мозг, инструменты и логи. У каждого файла ровно одна роль, поэтому код легко читать и менять.",
+    s1h: "Спрашиваем мозг", s1p: `<code>brain.rs</code> отправляет разговор и список инструментов в DeepSeek API и получает ответ.`,
+    s2h: "Петля решает", s2p: `<code>loop_.rs</code> отделяет финальный ответ от вызова инструмента — и следит за ограничителями.`,
+    s3h: "Инструменты выполняют", s3p: `Чтение и запись файлов в <code>tools.rs</code> работают только внутри <code>workspace/</code>.`,
+    s4h: "Всё записывается", s4p: `Даже расход токенов попадает в <code>logs/agent.log</code> в виде точных цифр.`,
+    featTag: "ВОЗМОЖНОСТИ", featH2: "Маленький — но с жёсткими границами",
+    featP: "Форму «Искры» выбрали три критерия: лёгкость, возможность править всё самому и структура, которую однажды можно будет продать. Что уже сделано, а что дальше, — честно подписано.",
+    stDone: "Готово", stDoneVer: "Готово · проверено", stNext: "Далее", stNext4: "Далее · Блок 4", stPlan: "План", stPlan5: "План · Блок 5", stPlan6: "План · Блок 6", stIn4: "В Блоке 4",
+    f1t: "Петля, которая умеет останавливаться",
+    f1p: "Условия остановки зашиты константами, чтобы агент не крутился бесконечно. Когда модель повторяет одну и ту же ошибку, агент останавливается первым.",
+    f2t: "Файловые инструменты в песочнице",
+    f2p: `Чтение и запись живут только внутри папки <code>workspace/</code>. Даже если модель принудительно вызовет путь снаружи, код откажет — fail-closed.`,
+    f2spec: "read_file · write_file<br>Граница проверена 4 юнит-тестами",
+    f3t: "Память (MEMORY.md)",
+    f3p: `При старте агент загружает файл памяти, а инструмент <code>memory_save</code> добавляет новые записи. Учётные данные вроде API-ключей автоматически маскируются до того, как что-либо сохранится.`,
+    f3spec: "Бюджет 200 строк / 24 КБ · атомарная запись<br>Права 0600 · автоматическая маскировка секретов",
+    f4t: "Подключение Telegram",
+    f4p: "Уйти из терминала и звать агента из мессенджера, которым пользуешься каждый день, — агент должен жить там, где уже находятся руки.",
+    f4spec: "Интеграция Telegram Bot API — в планах",
+    f5t: "Shell + задача по коду",
+    f5p: "Последний блок v1: подключить shell-инструмент и прогнать одну настоящую задачу по коду через весь контур, закрыв v1.",
+    f5spec: "shell-инструмент · проверка на реальной задаче",
+    f6t: "Характер — файлами",
+    f6p: "Характер агента (SOUL) и профиль пользователя (USER) вынесены из кода в файлы. Чтобы изменить характер, перекомпиляция не нужна.",
+    f6spec: "SOUL.md · USER.md — правится файл, а не код",
+    safTag: "ПЕСОЧНИЦА", safH2: "Не «пожалуйста, не надо», а «невозможно»",
+    safP: "Безопасность, живущая в промпте, заканчивается в тот момент, когда модель ослушается. «Искра» ставит проверки путей в код — выхода наружу просто нет.",
+    c1b: "Абсолютные пути запрещены", c1s: "Принимаются только пути относительно workspace.",
+    c2b: "Элемент «..» блокируется сразу", c2s: "Выходы в родительскую папку останавливаются до нормализации пути.",
+    c3b: "Симлинки проверяются по реальному пути", c3s: "Если реальное место, на которое указывает ссылка, снаружи — вызов отклоняется.",
+    c4b: "Нельзя проверить = отказ (fail-closed)", c4s: "Битая ссылка, о которой нельзя вынести суждение, никогда не открывается.",
+    codeTitle: "src/tools.rs — проверка границы (концептуальный фрагмент)",
+    codeSandbox: `<span class="kw">fn</span> <span class="fn">resolve_in_workspace</span>(path) -&gt; Result&lt;PathBuf&gt; {
+  <span class="cm">// 1. Абсолютные пути отклоняются сразу</span>
+  <span class="kw">if</span> path.is_absolute() { <span class="kw">return</span> Err(<span class="st">"rejected"</span>) }
+  <span class="cm">// 2. Любой элемент '..' блокирует вызов</span>
+  <span class="kw">if</span> path.has_parent_traversal() { <span class="kw">return</span> Err(<span class="st">"rejected"</span>) }
+  <span class="cm">// 3. Раскрываем ссылки: реальный путь обязан остаться внутри</span>
+  <span class="kw">let</span> real = canonicalize(path)?; <span class="cm">// сбой = отказ</span>
+  <span class="kw">if</span> !real.starts_with(workspace) { Err(<span class="st">"rejected"</span>) }
+}`,
+    qsTag: "БЫСТРЫЙ СТАРТ", qsH2: "Пять минут до первого разговора",
+    qsP: `Нужны только Rust и API-ключ DeepSeek. Ключ кладите только в <span class="mono" style="font-size:.92em">.env</span> — и никогда не коммитьте его в репозиторий.`,
+    tab1: "Установка · Запуск", tab3: "Структура проекта",
+    codeInstall: `<span class="cm"># 1) Клонируем репозиторий</span>
+git clone https://github.com/jeonghoheo/iskra.git
+<span class="kw">cd</span> iskra
+
+<span class="cm"># 2) Кладём ключ DeepSeek (.env закрыт через gitignore)</span>
+cat &gt; .env &lt;&lt; <span class="st">'EOF'</span>
+DEEPSEEK_API_KEY=ваш_ключ_сюда
+<span class="st">EOF</span>
+
+<span class="cm"># 3) Запуск — первая сборка компилирует зависимости и может занять несколько минут</span>
+cargo run`,
+    codeMain: `<span class="cm">// Минимальный контур из Блока 2 — задать DeepSeek одно предложение и напечатать ответ</span>
+<span class="kw">use</span> serde_json::json;
+
+#[tokio::main]
+<span class="kw">async fn</span> <span class="fn">main</span>() -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt; {
+    dotenvy::dotenv().ok();
+    <span class="kw">let</span> key = env::var(<span class="st">"DEEPSEEK_API_KEY"</span>)?;
+
+    <span class="kw">let</span> body = json!({
+        <span class="st">"model"</span>: <span class="st">"deepseek-chat"</span>,
+        <span class="st">"messages"</span>: [{ <span class="st">"role"</span>: <span class="st">"user"</span>,
+          <span class="st">"content"</span>: <span class="st">"Представься одним предложением"</span> }]
+    });
+
+    <span class="kw">let</span> res = Client::new()
+        .post(<span class="st">"https://api.deepseek.com/chat/completions"</span>)
+        .bearer_auth(key).json(&amp;body).send().<span class="kw">await</span>?;
+    <span class="kw">let</span> v: Value = res.json().<span class="kw">await</span>?;
+    println!(<span class="st">"{}"</span>, v[<span class="st">"choices"</span>][0][<span class="st">"message"</span>][<span class="st">"content"</span>]);
+    Ok(())
+}`,
+    codeTree: `iskra/
+├─ Cargo.toml
+├─ src/
+│  ├─ main.rs    <span class="cm">— точка входа</span>
+│  ├─ brain.rs   <span class="cm">— вызовы DeepSeek</span>
+│  ├─ loop_.rs   <span class="cm">— петля агента + ограничители</span>
+│  └─ tools.rs   <span class="cm">— файловые инструменты в песочнице</span>
+├─ workspace/    <span class="cm">— единственная папка, доступная инструментам (не в git)</span>
+├─ logs/         <span class="cm">— agent.log · записи usage (не в git)</span>
+└─ .env          <span class="cm">— API-ключ (не в git, никому не показывать)</span>`,
+    copyBtn: "⌘ Скопировать команду",
+    hint1: `Rust ещё нет? Сначала установите его через <span class="mono">rustup</span>.`,
+    hint2: `Начиная с Блока 3 этот контур вырастает в <span class="mono">brain.rs · loop_.rs · tools.rs</span>.`,
+    hint3: `Проектные решения и записи проверки по каждому блоку лежат в <span class="mono">SESSION-LOG.md</span> репозитория.`,
+    toastCopied: "Команда скопирована", toastFail: "Не удалось скопировать — выделите и скопируйте вручную", toastUnsupported: "В этом браузере копирование не поддерживается",
+    rmTag: "ДОРОЖНАЯ КАРТА · V1", rmH2: "Собираем v1 за шесть блоков",
+    rmP: "Не всё сразу. У каждого блока есть критерии приёмки, и следующий блок начинается только после прохождения проверки.",
+    progLabel: "Прогресс v1", progMeta: "БЛОК 3 / 6 · 50%",
+    b1t: "Каркас", b1p: `От установки Rust до <span class="mono">cargo new iskra</span> — минимальный проект, который компилируется и запускается.`,
+    b2t: "Первый вызов", b2p: "Минимальный контур, который задаёт DeepSeek одно предложение и печатает ответ. Ключ изолирован в .env.",
+    b3t: "Петля + файловые инструменты", b3p: `Агентная петля и чтение/запись в песочнице — проверено вплоть до отказа на <span class="mono">../secret.txt</span>.`,
+    b4t: "Память", b4p: "Загрузка MEMORY.md + инструмент memory_save. Критерий приёмки: помнит ли агент ваш любимый цвет после перезапуска?",
+    b5t: "Telegram", b5p: "Агент, которого можно позвать из мессенджера, — шаг, на котором он входит в повседневную жизнь.",
+    b6t: "Shell + задача по коду", b6p: "Подключаем shell-инструмент и проверяем всю v1 на одной настоящей задаче по коду.",
+    pr1t: "Лёгкость", pr1p: "Не проглатывать фреймворк целиком. Остаётся только столько кода, сколько один человек способен прочитать.",
+    pr2t: "Править самому", pr2p: "Характер, память и инструменты разделены по файлам — меняешь только ту часть, которую хочешь изменить.",
+    pr3t: "Проверить — и дальше", pr3p: "Критерии приёмки → запуск → сверка с оригиналом. Прогресс остаётся записями, а не словами «поверь, работает».",
+    ctaH2: "Искра начинается с малого",
+    ctaP: "«Искра» создаётся прямо сейчас. Читайте код, открывайте issue, запускайте сами — весь процесс записан в публичном репозитории.",
+    ctaBtn1: "★ Следить на GitHub", ctaBtn2: "К быстрому старту",
+    lic: `<b>О лицензии:</b> исходный код «Искры» публичен по подходу fair-code — его можно свободно читать, запускать и изменять для собственного использования. Перед любым коммерческим использованием сверьтесь с точными условиями в репозитории.`,
+    footLeft: "ISKRA — персональный харнесс AI-агента · Сделано на Rust",
+    footRoad: "Дорожная карта", footTop: "Наверх ↑"
+  },
+  ko: {
+    title: "Iskra — Rust로 만든 가벼운 개인용 에이전트 하네스",
+    brandSub: "PERSONAL AGENT HARNESS",
+    navHow: "작동 방식", navFeat: "기능", navSafe: "샌드박스", navStart: "빠른 시작", navRoad: "로드맵",
+    badge: `<span class="dot" aria-hidden="true">✦</span><span>v1 개발 중 · Block <b>&nbsp;3 / 6 완료</b></span>`,
+    h1: `내 손으로 만드는<br><em>가벼운 AI 에이전트</em><span class="en">ISKRA — Rust로 쓴 개인용 에이전트 하네스.</span>`,
+    heroSub: `이스크라(искра, “불꽃”)는 거대한 프레임워크를 가져다 쓰는 대신, <b>에이전트의 심장인 루프부터 직접 만든</b> 개인용 에이전트 하네스입니다. Rust 단일 바이너리, DeepSeek 두뇌, 그리고 밖으로 새지 않는 샌드박스 파일 도구.`,
+    ctaGithub: "GitHub에서 보기", ctaQuick: "빠른 시작 →",
+    meta1: `<span class="ok">✓</span> 공개 저장소 · fair-code 방침`,
+    meta2: `<span class="ok">✓</span> .env 키는 저장소에 올라가지 않음`,
+    meta3: `<span class="ok">✓</span> macOS · Apple Silicon에서 검증`,
+    dUser: "workspace에 hello.txt를 만들고, ../secret.txt도 읽어봐.",
+    dA1: "알겠습니다. 먼저 파일을 만들고, 그다음 요청을 확인하겠습니다.",
+    dT2: `read_file("../secret.txt") → ✗ rejected: workspace 밖 경로는 허용되지 않습니다`,
+    dA2: "hello.txt를 만들었습니다. 다만 ../secret.txt는 샌드박스 밖이라 읽을 수 없습니다 — 경계는 코드가 강제합니다.",
+    demoLabel: "스크립트 데모",
+    consoleNote: "실제 Block 3 검증 시나리오",
+    runBtn: "에이전트 실행해보기", runRunning: "실행 중…", runAgain: "다시 실행하기",
+    usageIdle: "usage — 대기 중", usageRunning: "usage — 실행 중", usageDone: "usage · prompt=509 completion=62 total=571",
+    howTag: "작동 방식 · HOW IT WORKS", howH2: "에이전트는 결국, 잘 만든 루프 하나입니다",
+    howP: "모델이 “답변”과 “도구 사용”을 오가는 심장부(loop)를 중심으로, 두뇌·도구·기록이 느슨하게 붙는 구조. 파일이 역할마다 나뉘어 있어 읽고 고치기 쉽습니다.",
+    s1h: "두뇌에 묻는다", s1p: `<code>brain.rs</code>가 DeepSeek API에 대화와 도구 목록을 보내고, 답을 받아옵니다.`,
+    s2h: "루프가 판단한다", s2p: `<code>loop_.rs</code>가 “끝낼 답”인지 “도구 호출”인지 가르고, 가드레일을 지킵니다.`,
+    s3h: "도구가 실행한다", s3p: `<code>tools.rs</code>의 파일 읽기와 쓰기가 <code>workspace/</code> 안에서만 동작합니다.`,
+    s4h: "전부 기록한다", s4p: `토큰 사용량(usage)까지 <code>logs/agent.log</code>에 숫자로 남습니다.`,
+    featTag: "기능 · FEATURES", featH2: "작지만, 경계는 단단하게",
+    featP: "“가벼움 · 직접 커스텀 가능 · 나중에 팔 수 있는 구조” — 이 세 가지가 이스크라의 선정 기준입니다. 구현된 것과 다음 차례인 것을 정직하게 나눠 표시합니다.",
+    stDone: "구현됨", stDoneVer: "완료 · 검수 통과", stNext: "다음", stNext4: "다음 · Block 4", stPlan: "예정", stPlan5: "예정 · Block 5", stPlan6: "예정 · Block 6", stIn4: "Block 4에서",
+    f1t: "멈출 줄 아는 루프",
+    f1p: "무한 루프에 빠지지 않도록 정지 조건이 전부 상수로 박혀 있습니다. 모델이 같은 실수를 반복하면 에이전트가 먼저 멈춥니다.",
+    f2t: "샌드박스 파일 도구",
+    f2p: `읽기·쓰기는 <code>workspace/</code> 폴더 안에서만. 모델이 강제로 밖을 호출해도 코드가 거부합니다(fail-closed).`,
+    f2spec: "read_file · write_file<br>단위 테스트 4개로 경계 검증",
+    f3t: "기억 (MEMORY.md)",
+    f3p: `시작할 때 기억 파일을 읽고, <code>memory_save</code> 도구로 새 기억을 쌓습니다. API 키 같은 자격증명은 저장 전에 자동으로 가려집니다.`,
+    f3spec: "예산 200줄 / 24KB · 원자적 쓰기<br>권한 0600 · 자격증명 자동 치환",
+    f4t: "텔레그램 연결",
+    f4p: "터미널을 벗어나, 매일 쓰는 메신저에서 에이전트를 부를 수 있게 합니다. 손이 닿는 곳에 있어야 매일 쓰니까요.",
+    f4spec: "Telegram Bot API 연동 예정",
+    f5t: "셸 + 코딩 과제",
+    f5p: "v1의 마지막 블록. 셸 도구를 붙이고, 실제 코딩 과제 하나로 전체 회로를 통과시켜 v1을 닫습니다.",
+    f5spec: "shell 도구 · 실전 과제 검증",
+    f6t: "성격은 파일로",
+    f6p: "에이전트의 성격(SOUL)과 사용자 정보(USER)는 코드 밖 파일로 분리됩니다. 성격을 바꾸는 데 재컴파일이 필요 없습니다.",
+    f6spec: "SOUL.md · USER.md — 파일 편집만으로 변경",
+    safTag: "샌드박스 · SANDBOX", safH2: "“하지 마”가 아니라, “할 수 없게”",
+    safP: "프롬프트로 부탁하는 안전장치는 모델이 어기면 끝입니다. 이스크라는 경로 검사를 코드에 넣어, 애초에 밖으로 나갈 수 없게 만들었습니다.",
+    c1b: "절대 경로 거부", c1s: "workspace 기준 상대 경로만 받습니다.",
+    c2b: "“..” 요소 자체를 차단", c2s: "상위 폴더로 빠져나가는 패턴을 정규화 전에 막습니다.",
+    c3b: "심볼릭 링크 실위치 확인", c3s: "링크를 따라간 실제 위치가 밖이면 거부합니다.",
+    c4b: "확인 불가 = 거부 (fail-closed)", c4s: "깨진 링크처럼 판단이 안 서면 열지 않습니다.",
+    codeTitle: "src/tools.rs — 경계 검사 (개념 발췌)",
+    codeSandbox: `<span class="kw">fn</span> <span class="fn">resolve_in_workspace</span>(path) -&gt; Result&lt;PathBuf&gt; {
+  <span class="cm">// 1. 절대 경로는 시작부터 거부</span>
+  <span class="kw">if</span> path.is_absolute() { <span class="kw">return</span> Err(<span class="st">"rejected"</span>) }
+  <span class="cm">// 2. '..' 요소가 하나라도 있으면 차단</span>
+  <span class="kw">if</span> path.has_parent_traversal() { <span class="kw">return</span> Err(<span class="st">"rejected"</span>) }
+  <span class="cm">// 3. 링크를 푼 실제 위치가 workspace 안인지 확인</span>
+  <span class="kw">let</span> real = canonicalize(path)?; <span class="cm">// 실패 시 거부</span>
+  <span class="kw">if</span> !real.starts_with(workspace) { Err(<span class="st">"rejected"</span>) }
+}`,
+    qsTag: "빠른 시작 · QUICKSTART", qsH2: "5분이면 첫 대화까지",
+    qsP: `Rust와 DeepSeek API 키만 있으면 됩니다. 키는 <span class="mono" style="font-size:.92em">.env</span>에만 넣고, 저장소에는 절대 올리지 마세요.`,
+    tab1: "설치 · 실행", tab3: "프로젝트 구조",
+    codeInstall: `<span class="cm"># 1) 저장소 받기</span>
+git clone https://github.com/jeonghoheo/iskra.git
+<span class="kw">cd</span> iskra
+
+<span class="cm"># 2) DeepSeek 키 넣기 (.env는 gitignore 처리됨)</span>
+cat &gt; .env &lt;&lt; <span class="st">'EOF'</span>
+DEEPSEEK_API_KEY=여기에_본인_키
+<span class="st">EOF</span>
+
+<span class="cm"># 3) 실행 — 첫 실행은 의존성 컴파일로 몇 분 걸립니다</span>
+cargo run`,
+    codeMain: `<span class="cm">// Block 2의 최소 회로 — DeepSeek에 한 문장 묻고 답 받기</span>
+<span class="kw">use</span> serde_json::json;
+
+#[tokio::main]
+<span class="kw">async fn</span> <span class="fn">main</span>() -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt; {
+    dotenvy::dotenv().ok();
+    <span class="kw">let</span> key = env::var(<span class="st">"DEEPSEEK_API_KEY"</span>)?;
+
+    <span class="kw">let</span> body = json!({
+        <span class="st">"model"</span>: <span class="st">"deepseek-chat"</span>,
+        <span class="st">"messages"</span>: [{ <span class="st">"role"</span>: <span class="st">"user"</span>,
+          <span class="st">"content"</span>: <span class="st">"한 문장으로 자기소개 해줘"</span> }]
+    });
+
+    <span class="kw">let</span> res = Client::new()
+        .post(<span class="st">"https://api.deepseek.com/chat/completions"</span>)
+        .bearer_auth(key).json(&amp;body).send().<span class="kw">await</span>?;
+    <span class="kw">let</span> v: Value = res.json().<span class="kw">await</span>?;
+    println!(<span class="st">"{}"</span>, v[<span class="st">"choices"</span>][0][<span class="st">"message"</span>][<span class="st">"content"</span>]);
+    Ok(())
+}`,
+    codeTree: `iskra/
+├─ Cargo.toml
+├─ src/
+│  ├─ main.rs    <span class="cm">— 진입점</span>
+│  ├─ brain.rs   <span class="cm">— DeepSeek 호출</span>
+│  ├─ loop_.rs   <span class="cm">— 에이전트 루프 + 가드레일</span>
+│  └─ tools.rs   <span class="cm">— 샌드박스 파일 도구</span>
+├─ workspace/    <span class="cm">— 도구가 닿을 수 있는 유일한 폴더 (git 제외)</span>
+├─ logs/         <span class="cm">— agent.log · usage 기록 (git 제외)</span>
+└─ .env          <span class="cm">— API 키 (git 제외, 절대 공유 금지)</span>`,
+    copyBtn: "⌘ 명령어 복사",
+    hint1: `Rust가 없다면 먼저 <span class="mono">rustup</span>으로 설치하세요.`,
+    hint2: `Block 3부터는 이 회로가 <span class="mono">brain.rs · loop_.rs · tools.rs</span>로 나뉘어 자랍니다.`,
+    hint3: `설계 결정과 블록별 검수 기록은 저장소의 <span class="mono">SESSION-LOG.md</span>에 남아 있습니다.`,
+    toastCopied: "명령어가 복사됐습니다", toastFail: "복사에 실패했습니다 — 직접 선택해 복사하세요", toastUnsupported: "이 브라우저에서는 복사가 지원되지 않습니다",
+    rmTag: "로드맵 · ROADMAP V1", rmH2: "여섯 블록으로 짓는 v1",
+    rmP: "한 번에 다 만들지 않습니다. 블록마다 합격 기준이 있고, 검수를 통과해야 다음으로 넘어갑니다.",
+    progLabel: "v1 진행률", progMeta: "BLOCK 3 / 6 · 50%",
+    b1t: "뼈대", b1p: `Rust 설치부터 <span class="mono">cargo new iskra</span>까지 — 컴파일·실행되는 최소 프로젝트.`,
+    b2t: "첫 호출", b2p: "DeepSeek API에 한 문장을 묻고 답을 받는 최소 회로. 키는 .env로 격리.",
+    b3t: "루프 + 파일 도구", b3p: `에이전트 루프와 샌드박스 read/write. <span class="mono">../secret.txt</span> 거부까지 검증.`,
+    b4t: "기억", b4p: "MEMORY.md 로드 + memory_save 도구. 합격 기준은 “재시작 후에도 좋아하는 색을 기억하는가”.",
+    b5t: "텔레그램", b5p: "메신저에서 부르는 에이전트. 일상 동선 안으로 들어오는 단계.",
+    b6t: "셸 + 코딩 과제", b6p: "셸 도구를 붙이고 실제 코딩 과제 하나로 v1 전체를 통과 검증.",
+    pr1t: "가볍게", pr1p: "프레임워크를 통째로 삼키지 않습니다. 내가 읽을 수 있는 크기의 코드만 남깁니다.",
+    pr2t: "직접 고칠 수 있게", pr2p: "성격·기억·도구가 파일 단위로 나뉘어, 바꾸고 싶은 곳만 바꿉니다.",
+    pr3t: "검증하고 넘어가기", pr3p: "블록마다 합격 기준 → 실행 → 원본 대조 검수. “됐다”는 말이 아니라 기록으로 남깁니다.",
+    ctaH2: "불꽃은 작게 시작합니다",
+    ctaP: "이스크라는 지금 만들어지는 중입니다. 코드를 읽고, 이슈를 열고, 직접 실행해 보세요. 진행 과정 전부가 공개 저장소에 기록됩니다.",
+    ctaBtn1: "★ GitHub에서 함께 보기", ctaBtn2: "빠른 시작 다시 보기",
+    lic: `<b>라이선스 안내:</b> 이스크라의 소스는 fair-code 방침으로 공개됩니다 — 누구나 읽고, 실행하고, 본인 용도로 고쳐 쓸 수 있습니다. 상업적 이용 전에는 저장소의 정확한 조건을 확인하세요.`,
+    footLeft: "ISKRA — 개인용 AI 에이전트 하네스 · Rust로 만들었습니다",
+    footRoad: "로드맵", footTop: "맨 위로 ↑"
+  }
+  };
+
+  var cur = "en";
+  var demoState = "idle"; /* idle | running | done */
+  var runLabel = document.getElementById("runLabel");
+  var usage = document.getElementById("usageLine");
+  var langBtns = document.querySelectorAll(".lang-switch button");
+
+  function setLang(l){
+    if (!I18N[l]) l = "en";
+    cur = l;
+    var d = I18N[l];
+    document.documentElement.lang = l;
+    document.title = d.title;
+    document.querySelectorAll("[data-i18n]").forEach(function(el){
+      var k = el.getAttribute("data-i18n");
+      if (d[k] !== undefined) el.innerHTML = d[k];
+    });
+    langBtns.forEach(function(b){ b.setAttribute("aria-pressed", b.getAttribute("data-lang") === l ? "true" : "false"); });
+    if (demoState === "done"){ runLabel.textContent = d.runAgain; usage.textContent = d.usageDone; }
+    else if (demoState === "running"){ runLabel.textContent = d.runRunning; usage.textContent = d.usageRunning; }
+    else { usage.textContent = d.usageIdle; }
+  }
+  langBtns.forEach(function(b){
+    b.addEventListener("click", function(){ setLang(b.getAttribute("data-lang")); });
+  });
+
+  /* ---- copy buttons + toast ---- */
+  var toast = document.getElementById("toast"), toastTimer;
+  function showToast(msg){
+    toast.textContent = msg;
+    toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toast.classList.remove("show"); }, 2200);
+  }
+  document.querySelectorAll("[data-copy]").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      var text = btn.getAttribute("data-copy");
+      if (navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(function(){ showToast(I18N[cur].toastCopied); },
+          function(){ showToast(I18N[cur].toastFail); });
+      } else { showToast(I18N[cur].toastUnsupported); }
+    });
+  });
+
+  /* ---- tabs ---- */
+  var tabBtns = document.querySelectorAll(".tab-btn");
+  tabBtns.forEach(function(btn){
+    btn.addEventListener("click", function(){
+      tabBtns.forEach(function(b){ b.setAttribute("aria-selected","false"); });
+      btn.setAttribute("aria-selected","true");
+      document.querySelectorAll(".tab-panel").forEach(function(p){ p.classList.remove("active"); });
+      document.getElementById(btn.getAttribute("data-tab")).classList.add("active");
+    });
+  });
+
+  /* ---- agent demo ---- */
+  var runBtn = document.getElementById("runDemo");
+  var steps = document.querySelectorAll("#demoBody [data-step]");
+  runBtn.addEventListener("click", function(){
+    if (demoState === "running") return;
+    demoState = "running";
+    runBtn.disabled = true;
+    runLabel.textContent = I18N[cur].runRunning;
+    steps.forEach(function(s){ s.classList.add("hidden-step"); });
+    usage.textContent = I18N[cur].usageRunning;
+    var i = 0;
+    function next(){
+      if (i < steps.length){
+        steps[i].classList.remove("hidden-step");
+        i++;
+        setTimeout(next, reduce ? 60 : 750);
+      } else {
+        demoState = "done";
+        usage.textContent = I18N[cur].usageDone;
+        runLabel.textContent = I18N[cur].runAgain;
+        runBtn.disabled = false;
+      }
+    }
+    setTimeout(next, reduce ? 60 : 400);
+  });
+
+  /* ---- ember sparks canvas ---- */
+  var canvas = document.getElementById("sparks");
+  if (canvas && !reduce){
+    var ctx = canvas.getContext("2d"), W, H, parts = [];
+    function resize(){
+      var r = canvas.parentElement.getBoundingClientRect();
+      W = canvas.width = r.width; H = canvas.height = r.height;
+    }
+    resize(); window.addEventListener("resize", resize);
+    function spawn(){
+      return { x: Math.random()*W, y: H + 10 + Math.random()*40, r: 1 + Math.random()*2.2,
+               vy: .35 + Math.random()*.8, vx: (Math.random()-.5)*.3, life: 0, max: 260 + Math.random()*220,
+               hue: 18 + Math.random()*26 };
+    }
+    for (var k=0;k<26;k++){ var p = spawn(); p.y = Math.random()*H; p.life = Math.random()*p.max; parts.push(p); }
+    (function tick(){
+      ctx.clearRect(0,0,W,H);
+      parts.forEach(function(p, idx){
+        p.y -= p.vy; p.x += p.vx + Math.sin((p.life+p.max)/38)*.18; p.life++;
+        var a = Math.max(0, 1 - p.life/p.max) * .8;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+        ctx.fillStyle = "hsla(" + p.hue + ", 92%, 55%, " + a + ")"; ctx.fill();
+        if (p.life > p.max || p.y < -12) parts[idx] = spawn();
+      });
+      requestAnimationFrame(tick);
+    })();
+  }
+})();
+</script>
+</body>
+</html>
