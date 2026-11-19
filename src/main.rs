@@ -4,6 +4,7 @@ mod logging;
 mod loop_;
 mod memory;
 mod prompt;
+mod stickies;
 mod tools;
 mod usage;
 

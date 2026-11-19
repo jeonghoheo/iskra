@@ -162,11 +162,15 @@ fn save_to(dir: &Path, text: &str) -> Result<String, String> {
     }
 }
 
-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let dir = path
         .parent()
         .ok_or_else(|| "기억 파일 경로 오류".to_string())?;
-    let tmp = dir.join(format!(".MEMORY.md.tmp-{}", std::process::id()));
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("data");
+    let tmp = dir.join(format!(".{file_name}.tmp-{}", std::process::id()));
     let _ = fs::remove_file(&tmp);
 
     let write_result = (|| -> io::Result<()> {
@@ -215,7 +219,7 @@ fn set_file_permissions(file: &fs::File) -> io::Result<()> {
     Ok(())
 }
 
-fn redact_credentials(text: &str) -> (String, usize) {
+pub(crate) fn redact_credentials(text: &str) -> (String, usize) {
     let (text, private_keys) = redact_private_keys(text);
     let (text, passwords) = redact_password_values(&text);
     let (text, sk_tokens) = redact_sk_tokens(&text);
@@ -403,6 +407,10 @@ fn redact_telegram_tokens(text: &str) -> (String, usize) {
 
 fn marker(chars: usize) -> String {
     format!("«redacted {chars} chars»")
+}
+
+pub(crate) fn local_date() -> String {
+    date_for_offset(0)
 }
 
 fn date_for_offset(offset_days: i64) -> String {

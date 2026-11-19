@@ -252,3 +252,29 @@ Background: `.gitignore` already excludes `/memory`, `/workspace`, `/logs`, and 
 2. `git ls-files` shows `USER.example.md` and `SOUL.example.md` only; a filled-in local `USER.md` shows as ignored in `git status`.
 3. Live: with local files present the bot uses them; after temporarily renaming them away, the bot recreates them from the templates and still answers.
 4. SESSION-LOG.md gains a Block 6.4 entry written in English.
+
+---
+
+## Block 6.3 (patch) — Telegram sticky notes (post-it board)
+
+Gate (fixed): ① No quick fixes — check the cause and current state first ② Write states and transitions before implementing ③ Read the verification method and acceptance criteria below before writing code ④ Mark any temporary workaround in the log and leave a formal-fix task ⑤ If the same approach fails twice, switch approaches and record the cause in the log.
+
+Background: 종합설계 §2.5 records the post-it metaphor as the procedure-authoring UX, and the user's 2026-11-19 direction extends it: stickies live in Telegram as well, as a general-purpose surface — quick notes, reminders to self, frequently used instructions, work-status pins. Procedure linkage (circled steps → crystallization) stays with v3 procedures; this patch is the standalone sticky board. Design refs: §2.5 (post-it metaphor), UX-텔레그램 (no developer jargon).
+
+### Scope
+1. **Storage**: stickies live in a user-readable data file `stickies.md` in the bot's data folder (same safety as memory files: 0600, atomic writes, credential substitution on write — a sticky must never store a secret; if text looks like a credential, refuse and say why). Each sticky: sequential number, text, created date.
+2. **Tool `sticky_note`** (tool/v1): actions `add(text)`, `list()`, `remove(number)`. The model uses it from natural language ("stick this on the board: …"). Tool results return the current board so the model can confirm what changed.
+3. **Board message**: `/stickies` shows the board as one Telegram message listing the stickies by number. After any add/remove, the bot re-sends/updates the board message and tries to pin it (`pinChatMessage`); if pinning is not possible in the chat, log the reason and continue — the board still works unpinned. Removing is also possible by replying to the board with the number, or via natural language through the tool.
+4. **Commands**: add `stickies` to the registered command list (Block 6.2's `setMyCommands`) with a plain-language description.
+
+### Out of scope
+- Timed reminders / firing at a time (triggers are v3).
+- Procedure linkage: circled steps, crystallization, saved-token display (v3, §2.5).
+- Editing a sticky's text in place (remove + add covers v1 of this patch).
+- Sticky images/files — text only.
+
+### Acceptance criteria
+1. `cargo test` all passing (existing 41 + new: sticky add/list/remove, numbering, credential-looking text refusal).
+2. Live: asking in natural language to stick a note adds it; `/stickies` shows the board; asking to remove one removes it.
+3. Live: the board message is pinned, or the log records why pinning was not possible.
+4. SESSION-LOG.md gains a Block 6.3 entry written in English.

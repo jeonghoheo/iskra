@@ -3,6 +3,7 @@ use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
@@ -97,12 +98,40 @@ pub fn schemas() -> Value {
                     "additionalProperties": false
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "sticky_note",
+                "description": "스티키 보드에 메모를 추가하거나 목록을 보거나 삭제합니다. action=add에는 text, action=remove에는 number가 필요합니다. 자격증명처럼 보이는 내용은 저장이 거부됩니다. 결과로 현재 보드 전체를 반환합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["add", "list", "remove"],
+                            "description": "수행할 작업"
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "add일 때 저장할 한 줄 메모"
+                        },
+                        "number": {
+                            "type": "integer",
+                            "description": "remove일 때 삭제할 스티키 번호"
+                        }
+                    },
+                    "required": ["action"],
+                    "additionalProperties": false
+                }
+            }
         }
     ])
 }
 
 pub struct Tools {
     root: PathBuf,
+    sticky_changed: AtomicBool,
 }
 
 impl Tools {
@@ -110,7 +139,14 @@ impl Tools {
         let root = PathBuf::from(WORKSPACE_DIR);
         fs::create_dir_all(&root)?;
         let root = fs::canonicalize(&root)?;
-        Ok(Self { root })
+        Ok(Self {
+            root,
+            sticky_changed: AtomicBool::new(false),
+        })
+    }
+
+    pub fn take_sticky_changed(&self) -> bool {
+        self.sticky_changed.swap(false, Ordering::SeqCst)
     }
 
     pub async fn execute(&self, name: &str, args: &Value) -> Result<String, String> {
@@ -119,7 +155,30 @@ impl Tools {
             "write_file" => self.write_file(args),
             "memory_save" => crate::memory::save(arg_str(args, "text")?),
             "run_command" => self.run_command(args).await,
+            "sticky_note" => self.sticky_note(args),
             other => Err(format!("알 수 없는 도구입니다: {other}")),
+        }
+    }
+
+    fn sticky_note(&self, args: &Value) -> Result<String, String> {
+        let action = arg_str(args, "action")?;
+        match action {
+            "add" => {
+                let board = crate::stickies::add(arg_str(args, "text")?)?;
+                self.sticky_changed.store(true, Ordering::SeqCst);
+                Ok(board)
+            }
+            "list" => crate::stickies::board(),
+            "remove" => {
+                let number = args
+                    .get("number")
+                    .and_then(Value::as_u64)
+                    .ok_or_else(|| "'number' 인자가 정수로 필요합니다".to_string())?;
+                let board = crate::stickies::remove(number)?;
+                self.sticky_changed.store(true, Ordering::SeqCst);
+                Ok(board)
+            }
+            other => Err(format!("알 수 없는 sticky_note action입니다: {other}")),
         }
     }
 
@@ -412,10 +471,17 @@ mod tests {
         fs::canonicalize(&dir).unwrap()
     }
 
+    fn tools_for(root: PathBuf) -> Tools {
+        Tools {
+            root,
+            sticky_changed: AtomicBool::new(false),
+        }
+    }
+
     #[test]
     fn allows_paths_inside_workspace() {
         let root = temp_root("inside");
-        let tools = Tools { root: root.clone() };
+        let tools = tools_for(root.clone());
 
         assert_eq!(tools.resolve("a.txt").unwrap(), root.join("a.txt"));
         assert_eq!(tools.resolve("sub/b.txt").unwrap(), root.join("sub/b.txt"));
@@ -427,7 +493,7 @@ mod tests {
     #[test]
     fn rejects_parent_escape() {
         let root = temp_root("parent");
-        let tools = Tools { root: root.clone() };
+        let tools = tools_for(root.clone());
 
         assert!(tools.resolve("../secret.txt").is_err());
         assert!(tools.resolve("sub/../../secret.txt").is_err());
@@ -438,7 +504,7 @@ mod tests {
     #[test]
     fn rejects_absolute_path() {
         let root = temp_root("absolute");
-        let tools = Tools { root: root.clone() };
+        let tools = tools_for(root.clone());
 
         assert!(tools.resolve("/etc/passwd").is_err());
 
@@ -458,7 +524,7 @@ mod tests {
         symlink(&outside, root.join("link")).unwrap();
         symlink(outside.join("missing"), root.join("broken")).unwrap();
 
-        let tools = Tools { root: root.clone() };
+        let tools = tools_for(root.clone());
         assert!(tools.resolve("link/secret.txt").is_err());
         assert!(tools.resolve("broken").is_err());
 
@@ -469,7 +535,7 @@ mod tests {
     #[tokio::test]
     async fn rejects_programs_outside_allowlist() {
         let root = temp_root("reject");
-        let tools = Tools { root: root.clone() };
+        let tools = tools_for(root.clone());
 
         for program in ["rm", "curl", "sh", "/bin/ls", "ls "] {
             let args = serde_json::json!({"program": program, "args": []});

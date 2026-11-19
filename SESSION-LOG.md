@@ -246,3 +246,38 @@ Scope item 2 says balance is fetched for `/status` only, while acceptance criter
 ### Notes
 - The local files currently contain only the generic template content; no personal data was added or logged.
 - The templates remain in Korean. Translation and identity-file encryption remain out of scope for this patch.
+
+## Block 6.3 — Telegram sticky notes (post-it board) (2026-11-19)
+
+### What changed
+- Added `src/stickies.rs` and stored the board in `memory/stickies.md` (the bot's existing local data folder, already git-ignored).
+  - Each sticky stores a stable sequential number, creation date (local `YYYY-MM-DD`), and one-line text.
+  - New numbers use `max(existing) + 1`, so removing a sticky does not reuse its number.
+  - Writes reuse the memory safety path: atomic replace via `memory::atomic_write`, `0600` permissions on Unix, and the same credential scanner (`memory::redact_credentials`).
+  - If the text looks like a credential (`sk-` token, password value, private-key block, Telegram bot token), the add is refused with a user-facing reason and the file is not modified. It is not redacted and saved.
+  - Text is trimmed and folded to one line; entries are capped at 1,000 characters. Malformed lines in a user-edited file are skipped rather than crashing the board.
+- Added tool `sticky_note` (`tool/v1`): `add(text)`, `list()`, `remove(number)`. Every result returns the current board so the model can confirm the change. Successful add/remove sets an in-process change flag.
+- `src/channel.rs`:
+  - Added `/stickies`, which sends the board as one plain-text message and tries to pin it.
+  - After a tool-driven add/remove, the running turn sends/re-sends the board and tries to pin it. Pin failure is logged as `telegram_pin_error` and the board still works unpinned.
+  - Replying to a board message with a number removes that sticky and sends/pins the updated board. This path is detected from the replied-to message being a bot message whose text starts with the board title.
+  - Added `stickies` to the registered command list (`start`, `status`, `stickies`, `stop`, `help`) and to `/help` / `/start`.
+- The prompt now tells the model to use `sticky_note` for sticky requests and not to repeat the whole board in its answer (the channel sends the board separately).
+
+### Verification
+1. `cargo test`: **45 passed, 0 failed**. Existing 41 tests still pass. New sticky tests cover add/list/remove with stable numbering, credential-looking text refusal without file changes, recognizable empty board, newline folding, and `0600` permissions.
+2. Live natural-language add: the model called `sticky_note`, the answer was sent, and the board was sent and pinned (`telegram_board_sent` → `telegram_board_pinned`).
+3. Live `/stickies`: the board was sent and pinned again.
+4. Live natural-language remove: `sticky_note` removed the numbered sticky, the answer was sent, and the updated board was sent and pinned.
+5. Live reply-to-board remove: replying to the pinned board with the number logged `telegram_sticky_remove number=1` and sent/pinned the updated board.
+6. Pin succeeded in this chat. The failure path is implemented and logged if the bot lacks permission; it never blocks the board or the turn.
+7. `cargo build` / `cargo build --release`: zero warnings for `iskra` itself. The transitive `proc-macro-error2 v2.0.1` future-incompatibility note is unchanged.
+8. The test stickies were removed; `memory/stickies.md` ended as an empty board with mode `600`.
+
+### Temporary workarounds
+- None.
+
+### Notes
+- The board is re-sent rather than edited in place. An old pinned board may remain until the new board is pinned, depending on Telegram's pin behavior.
+- The board file is not loaded into the memory prompt; it is a separate user-readable data file.
+- Timed reminders, procedure linkage, in-place editing, and non-text stickies remain out of scope.

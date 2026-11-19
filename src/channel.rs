@@ -1,6 +1,7 @@
 use crate::brain::Brain;
 use crate::logging;
 use crate::loop_;
+use crate::stickies;
 use crate::tools::Tools;
 use crate::usage;
 
@@ -14,9 +15,10 @@ use tokio::task::JoinHandle;
 
 const MAX_MESSAGE_CHARS: usize = 4096;
 const TYPING_REFRESH_SECS: u64 = 4;
-const COMMANDS: [(&str, &str); 4] = [
+const COMMANDS: [(&str, &str); 5] = [
     ("start", "시작 인사 보기"),
     ("status", "오늘 사용량과 남은 금액 보기"),
+    ("stickies", "스티키 보드 보기"),
     ("stop", "하던 일 멈추기"),
     ("help", "명령어 목록 보기"),
 ];
@@ -137,6 +139,29 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
         return Ok(());
     };
 
+    if let Some(reply) = msg.reply_to_message() {
+        if is_board_reply(reply) {
+            if let Ok(number) = user_message.trim().parse::<u64>() {
+                match stickies::remove(number) {
+                    Ok(board) => {
+                        logging::append(&format!("telegram_sticky_remove number={number}"));
+                        if let Err(e) = send_board(&bot, chat_id, &board).await {
+                            logging::append(&format!("telegram_board_send_error {e}"));
+                        }
+                    }
+                    Err(e) => {
+                        logging::append(&format!(
+                            "telegram_sticky_remove_error number={number} err={e}"
+                        ));
+                        bot.send_message(chat_id, format!("스티키를 삭제하지 못했습니다: {e}"))
+                            .await?;
+                    }
+                }
+                return Ok(());
+            }
+        }
+    }
+
     match command_name(&user_message).as_deref() {
         Some("/start") => {
             bot.send_message(chat_id, start_text()).await?;
@@ -144,12 +169,18 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
         Some("/help") => {
             bot.send_message(chat_id, help_text()).await?;
         }
+        Some("/stickies") => send_stickies(&state, chat_id).await?,
         Some("/stop") => stop_turn(&state, chat_id).await?,
         Some("/status") => send_status(&state, chat_id).await?,
         _ => start_turn(&state, chat_id, &user_message),
     }
 
     Ok(())
+}
+
+fn is_board_reply(reply: &Message) -> bool {
+    reply.from.as_ref().is_some_and(|user| user.is_bot)
+        && reply.text().is_some_and(stickies::is_board_text)
 }
 
 fn commands() -> Vec<BotCommand> {
@@ -259,6 +290,7 @@ fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str) {
         )
         .await;
         drop(typing_guard);
+        let sticky_changed = task_state.tools.take_sticky_changed();
 
         let answer = match reply {
             Ok(answer) => answer,
@@ -269,6 +301,17 @@ fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str) {
         };
         if let Err(e) = send_reply(&task_state.bot, chat_id, &answer).await {
             logging::append(&format!("telegram_send_failed {e}"));
+        }
+
+        if sticky_changed {
+            match stickies::board() {
+                Ok(board) => {
+                    if let Err(e) = send_board(&task_state.bot, chat_id, &board).await {
+                        logging::append(&format!("telegram_board_send_error {e}"));
+                    }
+                }
+                Err(e) => logging::append(&format!("sticky_board_error {e}")),
+            }
         }
     });
     *state.current_turn.lock().unwrap() = Some(handle);
@@ -331,6 +374,42 @@ async fn send_status(state: &Arc<ChannelState>, chat_id: ChatId) -> HandlerResul
         balance
     );
     state.bot.send_message(chat_id, text).await?;
+    Ok(())
+}
+
+async fn send_stickies(state: &Arc<ChannelState>, chat_id: ChatId) -> HandlerResult {
+    match stickies::board() {
+        Ok(board) => {
+            if let Err(e) = send_board(&state.bot, chat_id, &board).await {
+                logging::append(&format!("telegram_board_send_error {e}"));
+                state
+                    .bot
+                    .send_message(chat_id, "스티키 보드를 전송하지 못했습니다.")
+                    .await?;
+            }
+        }
+        Err(e) => {
+            logging::append(&format!("sticky_board_error {e}"));
+            state
+                .bot
+                .send_message(chat_id, "스티키 보드를 읽을 수 없습니다.")
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+async fn send_board(bot: &Bot, chat_id: ChatId, board: &str) -> Result<(), String> {
+    let sent = bot
+        .send_message(chat_id, board)
+        .await
+        .map_err(|e| e.to_string())?;
+    logging::append("telegram_board_sent");
+
+    match bot.pin_chat_message(chat_id, sent.id).await {
+        Ok(_) => logging::append("telegram_board_pinned"),
+        Err(e) => logging::append(&format!("telegram_pin_error {e}")),
+    }
     Ok(())
 }
 
@@ -441,7 +520,7 @@ mod tests {
             .iter()
             .map(|command| command.command.as_str())
             .collect();
-        assert_eq!(names, ["start", "status", "stop", "help"]);
+        assert_eq!(names, ["start", "status", "stickies", "stop", "help"]);
         assert!(
             registered
                 .iter()
