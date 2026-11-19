@@ -211,3 +211,38 @@ Scope item 2 says balance is fetched for `/status` only, while acceptance criter
 - The cost estimate uses peak public list prices and is explicitly labelled as an estimate. Prices may change; the table is intentionally small.
 - Balance amounts and API keys are never written to logs. Only failure reasons are logged.
 - The command menu is registered globally for the bot; no per-chat scoping was added.
+
+## Block 6.4 — Identity files: template/local split (2026-11-19)
+
+### What changed
+- Renamed the tracked identity templates with `git mv`:
+  - `SOUL.md` → `SOUL.example.md`
+  - `USER.md` → `USER.example.md`
+  - The local `SOUL.md` and `USER.md` copies were kept on disk and are now ignored.
+- Fixed the misleading line in `USER.example.md`: it now states that the file is a template and that the real `USER.md` lives only on the user's machine and is never committed. The rest of the template content is unchanged.
+- Added `/USER.md` and `/SOUL.md` to `.gitignore`. `git ls-files` now lists only `SOUL.example.md` and `USER.example.md`.
+- Reworked `src/prompt.rs` identity loading:
+  - A present local file wins (`source=local`).
+  - A missing local file is copied from its `.example.md` template if readable (`source=template`). The new local file is created with `0600` permissions on Unix.
+  - If both the local file and the template are missing, or the local file is unreadable/invalid UTF-8, a built-in minimal default is used (`source=default`). Startup never fails over identity files.
+  - Each file logs `identity_file file=... source=local|template|default`. File contents are never logged.
+  - Invalid local files are not overwritten by templates.
+- No history rewrite was performed. Existing history contains only the generic blank templates.
+
+### Verification
+1. `cargo test`: **41 passed, 0 failed**. Existing 37 tests still pass. New prompt tests cover: template fallback copy (including `0600`), built-in defaults when everything is missing, local-file preference, and startup survival with invalid local identity files.
+2. `git ls-files` shows only `SOUL.example.md` and `USER.example.md`. `git check-ignore -v` confirms `/USER.md` and `/SOUL.md` are ignored; local files remain on disk.
+3. Live startup with local files present (`--cli`): logs showed `identity_file file=SOUL.md source=local` and `identity_file file=USER.md source=local`, and the bot answered normally.
+4. Live fallback: temporarily renamed both local files away, started the bot again, and observed:
+   - `identity_file file=SOUL.md source=template`
+   - `identity_file file=USER.md source=template`
+   - Both local files were recreated with mode `600`, and the bot answered normally.
+   - The original local copies were restored afterwards.
+5. `cargo build` / `cargo build --release`: zero warnings for `iskra` itself. The transitive `proc-macro-error2 v2.0.1` future-incompatibility note is unchanged.
+
+### Temporary workarounds
+- None.
+
+### Notes
+- The local files currently contain only the generic template content; no personal data was added or logged.
+- The templates remain in Korean. Translation and identity-file encryption remain out of scope for this patch.

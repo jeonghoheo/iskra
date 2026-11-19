@@ -227,3 +227,28 @@ Background: In real use (2026-11-19) the user asked the bot in natural language 
 3. Live: `/status` shows a balance line (or an explicit "unavailable").
 4. Live: Telegram shows the command menu (menu button / typing `/`), and `/help` lists the commands.
 5. SESSION-LOG.md gains a Block 6.2 entry **written in English** (first entry under the §0.10 language policy).
+
+---
+
+## Block 6.4 (patch) — Identity files: template/local split
+
+Gate (fixed): ① No quick fixes — check the cause and current state first ② Write states and transitions before implementing ③ Read the verification method and acceptance criteria below before writing code ④ Mark any temporary workaround in the log and leave a formal-fix task ⑤ If the same approach fails twice, switch approaches and record the cause in the log.
+
+Background: `.gitignore` already excludes `/memory`, `/workspace`, `/logs`, and `.env`, but `SOUL.md` and `USER.md` at the repo root are tracked in a public repo. Verification on 2026-11-19 found both are generic templates (SOUL = the bot's default persona, USER = a blank form) locally and on GitHub — no leak has occurred. The structural risk: `USER.md` invites the user to write real personal info into a git-tracked file. Design refs: 종합설계 §0.3, §0.10.
+
+### Scope
+1. **Rename the tracked templates**: `USER.md` → `USER.example.md`, `SOUL.md` → `SOUL.example.md` (git mv). Fix the misleading line in `USER.example.md`: it must say this file is a template, the real `USER.md` lives only on the user's machine and is never committed. Keep the rest of both templates unchanged.
+2. **Local-only real files**: add `USER.md` and `SOUL.md` to `.gitignore` and untrack them (`git rm --cached` semantics — the local copies stay on disk). After this patch, `git ls-files` lists only the `.example.md` templates.
+3. **First-run fallback in code** (memory/prompt assembly): when a real file (`USER.md`/`SOUL.md`) is missing, copy it from the matching `.example.md` if present; if the example is also missing, continue with a built-in minimal default. Never fail startup over a missing identity file. Log which source was used per file (`identity_file source=local|template|default`) — never log contents.
+4. **No history rewrite**: earlier commits contain only the generic blank templates (verified 2026-11-19), so history stays as is. Do not run any history-rewriting commands.
+
+### Out of scope
+- Translating the templates (they stay Korean in this patch — a separate product decision).
+- Encrypting local identity files (keychain/encryption is the §0.3 product-stage roadmap).
+- Changes to `/memory` handling (already ignored and local).
+
+### Acceptance criteria
+1. `cargo test` all passing (existing 37 + new: fallback copy, both-missing default, startup never fails).
+2. `git ls-files` shows `USER.example.md` and `SOUL.example.md` only; a filled-in local `USER.md` shows as ignored in `git status`.
+3. Live: with local files present the bot uses them; after temporarily renaming them away, the bot recreates them from the templates and still answers.
+4. SESSION-LOG.md gains a Block 6.4 entry written in English.

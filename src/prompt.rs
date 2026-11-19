@@ -1,40 +1,137 @@
+use std::fs;
+use std::io;
+use std::path::Path;
+
+use crate::logging;
 use crate::memory::LoadedMemory;
+
+pub const DEFAULT_SOUL: &str = "당신은 이스크라, 사용자의 파일 작업과 기억을 돕는 개인 AI 에이전트다. 간결하고 솔직하게 답하고, 확실하지 않으면 추측이라고 밝힌다.\n";
+pub const DEFAULT_USER: &str = "아직 사용자 정보가 없습니다.\n";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IdentitySource {
+    Local,
+    Template,
+    Default,
+}
+
+impl IdentitySource {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Local => "local",
+            Self::Template => "template",
+            Self::Default => "default",
+        }
+    }
+}
 
 pub struct Identity {
     pub soul: String,
     pub user: String,
     pub warnings: Vec<String>,
+    pub soul_source: IdentitySource,
+    pub user_source: IdentitySource,
 }
 
 pub fn load_identity() -> Identity {
+    let identity = load_identity_from(Path::new("."));
+    logging::append(&format!(
+        "identity_file file=SOUL.md source={}",
+        identity.soul_source.label()
+    ));
+    logging::append(&format!(
+        "identity_file file=USER.md source={}",
+        identity.user_source.label()
+    ));
+    identity
+}
+
+fn load_identity_from(dir: &Path) -> Identity {
     let mut warnings = Vec::new();
-    let soul = load_file("SOUL.md", &mut warnings);
-    let user = load_file("USER.md", &mut warnings);
+    let (soul, soul_source) = load_identity_file(
+        dir,
+        "SOUL.md",
+        "SOUL.example.md",
+        DEFAULT_SOUL,
+        &mut warnings,
+    );
+    let (user, user_source) = load_identity_file(
+        dir,
+        "USER.md",
+        "USER.example.md",
+        DEFAULT_USER,
+        &mut warnings,
+    );
     Identity {
         soul,
         user,
         warnings,
+        soul_source,
+        user_source,
     }
 }
 
-fn load_file(path: &str, warnings: &mut Vec<String>) -> String {
-    match std::fs::read(path) {
-        Ok(bytes) => match String::from_utf8(bytes) {
-            Ok(text) => text,
-            Err(_) => {
-                warnings.push(format!("{path}: UTF-8로 읽을 수 없어 건너뜁니다"));
-                String::new()
+fn load_identity_file(
+    dir: &Path,
+    name: &str,
+    example_name: &str,
+    default: &str,
+    warnings: &mut Vec<String>,
+) -> (String, IdentitySource) {
+    let local = dir.join(name);
+    match read_identity(&local) {
+        Ok(text) => (text, IdentitySource::Local),
+        Err(ReadIdentityError::Missing) => {
+            let example = dir.join(example_name);
+            match read_identity(&example) {
+                Ok(text) => {
+                    match fs::copy(&example, &local) {
+                        Ok(_) => set_private_permissions(&local, warnings),
+                        Err(e) => {
+                            warnings.push(format!("{} 생성 실패: {e}", local.display()));
+                        }
+                    }
+                    (text, IdentitySource::Template)
+                }
+                Err(ReadIdentityError::Missing) => (default.to_string(), IdentitySource::Default),
+                Err(ReadIdentityError::Other(e)) => {
+                    warnings.push(format!("{}: {e}", example.display()));
+                    (default.to_string(), IdentitySource::Default)
+                }
             }
-        },
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            warnings.push(format!("{path}: 파일이 없어 건너뜁니다"));
-            String::new()
         }
-        Err(e) => {
-            warnings.push(format!("{path}: 읽기 실패: {e}"));
-            String::new()
+        Err(ReadIdentityError::Other(e)) => {
+            warnings.push(format!("{}: {e}", local.display()));
+            (default.to_string(), IdentitySource::Default)
         }
     }
+}
+
+enum ReadIdentityError {
+    Missing,
+    Other(String),
+}
+
+fn read_identity(path: &Path) -> Result<String, ReadIdentityError> {
+    match fs::read(path) {
+        Ok(bytes) => String::from_utf8(bytes).map_err(|_| {
+            ReadIdentityError::Other("UTF-8로 읽을 수 없어 기본값을 사용합니다".to_string())
+        }),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Err(ReadIdentityError::Missing),
+        Err(e) => Err(ReadIdentityError::Other(format!("읽기 실패: {e}"))),
+    }
+}
+
+fn set_private_permissions(path: &Path, warnings: &mut Vec<String>) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Err(e) = fs::set_permissions(path, fs::Permissions::from_mode(0o600)) {
+            warnings.push(format!("{}: 권한 설정 실패: {e}", path.display()));
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = (path, warnings);
 }
 
 pub fn assemble(identity: &Identity, memory: &LoadedMemory) -> String {
@@ -80,5 +177,114 @@ fn fallback<'a>(text: &'a str, message: &'a str) -> &'a str {
         message
     } else {
         text.trim()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "iskra-prompt-{name}-{}-{nanos}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn copies_templates_when_local_files_missing() {
+        let dir = temp_dir("template");
+        fs::write(dir.join("SOUL.example.md"), "soul template").unwrap();
+        fs::write(dir.join("USER.example.md"), "user template").unwrap();
+
+        let identity = load_identity_from(&dir);
+        assert_eq!(identity.soul, "soul template");
+        assert_eq!(identity.user, "user template");
+        assert_eq!(identity.soul_source, IdentitySource::Template);
+        assert_eq!(identity.user_source, IdentitySource::Template);
+        assert_eq!(
+            fs::read_to_string(dir.join("SOUL.md")).unwrap(),
+            "soul template"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.join("USER.md")).unwrap(),
+            "user template"
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for name in ["SOUL.md", "USER.md"] {
+                let mode = fs::metadata(dir.join(name)).unwrap().permissions().mode() & 0o777;
+                assert_eq!(mode, 0o600);
+            }
+        }
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn uses_builtin_defaults_when_all_files_missing() {
+        let dir = temp_dir("default");
+
+        let identity = load_identity_from(&dir);
+        assert_eq!(identity.soul, DEFAULT_SOUL);
+        assert_eq!(identity.user, DEFAULT_USER);
+        assert_eq!(identity.soul_source, IdentitySource::Default);
+        assert_eq!(identity.user_source, IdentitySource::Default);
+        assert!(!dir.join("SOUL.md").exists());
+        assert!(!dir.join("USER.md").exists());
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn prefers_local_files_over_templates() {
+        let dir = temp_dir("local");
+        fs::write(dir.join("SOUL.example.md"), "template soul").unwrap();
+        fs::write(dir.join("USER.example.md"), "template user").unwrap();
+        fs::write(dir.join("SOUL.md"), "local soul").unwrap();
+        fs::write(dir.join("USER.md"), "local user").unwrap();
+
+        let identity = load_identity_from(&dir);
+        assert_eq!(identity.soul, "local soul");
+        assert_eq!(identity.user, "local user");
+        assert_eq!(identity.soul_source, IdentitySource::Local);
+        assert_eq!(identity.user_source, IdentitySource::Local);
+        assert_eq!(
+            fs::read_to_string(dir.join("SOUL.example.md")).unwrap(),
+            "template soul"
+        );
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn startup_survives_invalid_identity_files() {
+        let dir = temp_dir("invalid");
+        fs::write(dir.join("SOUL.md"), [0xff, 0xfe]).unwrap();
+        fs::write(dir.join("USER.md"), [0xff, 0xfe]).unwrap();
+        fs::write(dir.join("SOUL.example.md"), "template soul").unwrap();
+        fs::write(dir.join("USER.example.md"), "template user").unwrap();
+
+        let identity = load_identity_from(&dir);
+        assert_eq!(identity.soul, DEFAULT_SOUL);
+        assert_eq!(identity.user, DEFAULT_USER);
+        assert_eq!(identity.soul_source, IdentitySource::Default);
+        assert_eq!(identity.user_source, IdentitySource::Default);
+        assert_eq!(identity.warnings.len(), 2);
+        assert_eq!(fs::read(dir.join("SOUL.md")).unwrap(), vec![0xff, 0xfe]);
+
+        fs::remove_dir_all(&dir).unwrap();
     }
 }
