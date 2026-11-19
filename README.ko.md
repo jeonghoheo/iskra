@@ -9,11 +9,11 @@
 
 ![License: FSL-1.1-ALv2](https://img.shields.io/badge/License-FSL--1.1--ALv2-blue.svg)
 ![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)
-![Status](https://img.shields.io/badge/Status-v1%20in%20development-yellow.svg)
+![Status](https://img.shields.io/badge/Status-v1%20complete%20%C2%B7%20real--use%20testing-brightgreen.svg)
 
 Iskra는 메신저 안에 살면서 재시작해도 기억을 유지하고, 엄격한 권한 경계 안에서 도구를 사용하며, 분해와 재조립을 전제로 설계된 개인 에이전트입니다 — 코어를 건드리지 않고 모델, 창구, 도구를 갈아 끼울 수 있습니다.
 
-> **상태:** v1 개발 중. 터미널 기반 코어 루프, 파일 도구, 기억은 오늘 동작하고, 텔레그램 창구가 다음입니다.
+> **상태:** v1은 완성되어 실사용 테스트 중입니다. 코어 루프, 파일 도구, 기억, 텔레그램 창구가 오늘 실제로 동작합니다.
 > 이 저장소에는 코드만 있습니다 — 개인 기억, 데이터, 비밀값은 여기에 두지 않습니다.
 
 ## 설계 원칙
@@ -30,8 +30,8 @@ Iskra는 메신저 안에 살면서 재시작해도 기억을 유지하고, 엄�
 - [x] 멈춤 조건이 있는 대화 루프 (도구 왕복 상한, 같은 오류 반복 시 정지)
 - [x] `workspace/`로 샌드박스된 파일 도구 (`read_file`, `write_file`)
 - [x] 예산 로드 + 가림 저장되는 마크다운 기억, 정체성 파일 (SOUL.md / USER.md)
-- [ ] 발신자 허용 목록이 있는 텔레그램 창구
-- [ ] 허용 목록 셸 도구 + 검증된 코딩 과제
+- [x] 발신자 허용 목록이 있는 텔레그램 창구
+- [x] 허용 목록 셸 도구 + 검증된 코딩 과제
 
 ## 로드맵
 

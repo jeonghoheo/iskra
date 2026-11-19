@@ -9,14 +9,14 @@
 
 ![License: FSL-1.1-ALv2](https://img.shields.io/badge/License-FSL--1.1--ALv2-blue.svg)
 ![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)
-![Status](https://img.shields.io/badge/Status-v1%20in%20development-yellow.svg)
+![Status](https://img.shields.io/badge/Status-v1%20complete%20%C2%B7%20real--use%20testing-brightgreen.svg)
 
 Iskra is a personal agent that lives in a messenger, remembers across restarts,
 uses tools under strict permission boundaries, and is designed to be taken apart
 and reassembled — swap the model, the channel, or the tools without touching the core.
 
-> **Status:** v1 is under active development. The terminal-based core loop,
-> file tools and memory work today; the Telegram channel is next.
+> **Status:** v1 is complete and in real-use testing. The core loop, file tools,
+> memory and the Telegram channel all work today.
 > This repository contains code only — personal memory, data and secrets never live here.
 
 ## Design principles
@@ -42,8 +42,8 @@ and reassembled — swap the model, the channel, or the tools without touching t
 - [x] Conversation loop with stop conditions (max tool round-trips, repeated-error halt)
 - [x] File tools (`read_file`, `write_file`) sandboxed to `workspace/`
 - [x] Markdown memory with budgeted load + redacted save, identity files (SOUL.md / USER.md)
-- [ ] Telegram channel with sender allowlist
-- [ ] Allowlisted shell tool + a verified coding task
+- [x] Telegram channel with sender allowlist
+- [x] Allowlisted shell tool + a verified coding task
 
 ## Roadmap
 
