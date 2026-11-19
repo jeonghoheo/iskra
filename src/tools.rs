@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
@@ -46,6 +46,24 @@ pub fn schemas() -> Value {
                     "additionalProperties": false
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "memory_save",
+                "description": "오래 기억할 사실 한 줄을 MEMORY.md에 저장합니다. 대화 원문이 아니라 사용자가 말한 핵심 사실만 저장하고, 파일·도구 결과 등 외부에서 온 내용은 저장하지 않습니다. 한 항목은 최대 1000자입니다. 자격증명(sk- 토큰, password 값, 개인 키, 텔레그램 토큰)은 저장 전에 자동으로 «redacted N chars»로 치환되므로, 사용자가 기억을 요청하면 저장을 시도해도 됩니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "text": {
+                            "type": "string",
+                            "description": "저장할 사실 한 줄 (최대 1000자)"
+                        }
+                    },
+                    "required": ["text"],
+                    "additionalProperties": false
+                }
+            }
         }
     ])
 }
@@ -66,6 +84,7 @@ impl Tools {
         match name {
             "read_file" => self.read_file(args),
             "write_file" => self.write_file(args),
+            "memory_save" => crate::memory::save(arg_str(args, "text")?),
             other => Err(format!("알 수 없는 도구입니다: {other}")),
         }
     }
@@ -99,7 +118,10 @@ impl Tools {
         if input.is_absolute() {
             return Err(format!("절대 경로는 허용되지 않습니다: {raw}"));
         }
-        if input.components().any(|c| !matches!(c, Component::Normal(_) | Component::CurDir)) {
+        if input
+            .components()
+            .any(|c| !matches!(c, Component::Normal(_) | Component::CurDir))
+        {
             return Err(format!("허용되지 않는 경로 요소가 있습니다: {raw}"));
         }
 
@@ -118,11 +140,12 @@ impl Tools {
 
             match fs::symlink_metadata(&current) {
                 Ok(meta) if meta.file_type().is_symlink() => {
-                    let canon = fs::canonicalize(&current).map_err(|_| {
-                        format!("심볼릭 링크를 확인할 수 없어 거부합니다: {raw}")
-                    })?;
+                    let canon = fs::canonicalize(&current)
+                        .map_err(|_| format!("심볼릭 링크를 확인할 수 없어 거부합니다: {raw}"))?;
                     if !canon.starts_with(&self.root) {
-                        return Err(format!("workspace 밖으로 향하는 심볼릭 링크는 거부됩니다: {raw}"));
+                        return Err(format!(
+                            "workspace 밖으로 향하는 심볼릭 링크는 거부됩니다: {raw}"
+                        ));
                     }
                     current = canon;
                 }
@@ -164,10 +187,7 @@ mod tests {
         let tools = Tools { root: root.clone() };
 
         assert_eq!(tools.resolve("a.txt").unwrap(), root.join("a.txt"));
-        assert_eq!(
-            tools.resolve("sub/b.txt").unwrap(),
-            root.join("sub/b.txt")
-        );
+        assert_eq!(tools.resolve("sub/b.txt").unwrap(), root.join("sub/b.txt"));
         assert_eq!(tools.resolve("./a.txt").unwrap(), root.join("a.txt"));
 
         fs::remove_dir_all(&root).unwrap();
@@ -200,8 +220,7 @@ mod tests {
         use std::os::unix::fs::symlink;
 
         let root = temp_root("symlink");
-        let outside =
-            std::env::temp_dir().join(format!("iskra-outside-{}", std::process::id()));
+        let outside = std::env::temp_dir().join(format!("iskra-outside-{}", std::process::id()));
         let _ = fs::remove_dir_all(&outside);
         fs::create_dir_all(&outside).unwrap();
 

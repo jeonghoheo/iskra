@@ -1,5 +1,8 @@
 mod brain;
+mod logging;
 mod loop_;
+mod memory;
+mod prompt;
 mod tools;
 
 use std::fs;
@@ -13,6 +16,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     fs::create_dir_all("workspace")?;
     fs::create_dir_all("logs")?;
+
+    let identity = prompt::load_identity();
+    let memory = memory::load();
+    for warning in memory.warnings.iter().chain(identity.warnings.iter()) {
+        logging::append(&format!("context_warning {warning}"));
+        println!("알림: {warning}");
+    }
+    let system_prompt = prompt::assemble(&identity, &memory);
 
     let tools = tools::Tools::new()?;
     let brain = brain::Brain::new(key);
@@ -35,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             break;
         }
 
-        if let Err(e) = loop_::run_turn(&brain, &tools, input).await {
+        if let Err(e) = loop_::run_turn(&brain, &tools, &system_prompt, input).await {
             eprintln!("중단: {e}");
         }
     }
