@@ -95,8 +95,8 @@
 
 ### 검증 실측 결과
 1. `cargo test`: 23개 전부 통과 (Block 4의 15개 회귀 없음 + brain 4개 + channel 4개).
-2. 소유자 ID만 응답 / 다른 ID 무응답 + 로그: 코드 경로 구현 및 발신자 비교는 완료. 라이브 실행에서 봇은 텔레그램에 연결됐으나(`149.154.166.110:443` ESTABLISHED) 수신 업데이트가 없어(`telegram_start` 외 이벤트 없음) 실제 수신 기반 검증은 **미완료**. 실제 메시지 수신 후 로그의 `telegram_ignore user_id=...`로 확인 필요.
-3. 4,096자 초과 답변 분할: 단위 테스트로 9,000자 입력이 4,096자 이하 3개 조각으로 나뉘고 원문이 보존됨을 확인(`splits_long_messages_into_bounded_chunks`). 실제 텔레그램 다중 수신은 수신 업데이트가 없어 **미완료**.
+2. 소유자 ID만 응답 / 다른 ID 무응답 + 로그: 봇 연결 후 실제 소유자 메시지 수신 1건을 확인. 로그는 `telegram_start → turn_start → model_call model=deepseek-chat → turn_end answer → telegram_reply_sent chunks=1` 순서로 기록됨. 다른 ID 무응답은 다른 계정 테스트를 생략해 **미완료**(코드 경로는 `telegram_ignore user_id=...` 로그로 구현됨).
+3. 4,096자 초과 답변 분할: 단위 테스트로 9,000자 입력이 4,096자 이하 3개 조각으로 나뉘고 원문이 보존됨을 확인(`splits_long_messages_into_bounded_chunks`). 실제 텔레그램 다중 수신 테스트는 생략해 **미완료**.
 4. 기본 설정 대화 + `LLM_MODEL` 교체:
    - 기본: CLI 1턴 성공, 로그 `model_call model=deepseek-chat ...`.
    - `LLM_MODEL=deepseek-reasoner`: CLI 1턴 성공, 로그 `model_call model=deepseek-reasoner ...`.
@@ -112,5 +112,5 @@
 - 없음. 임의로 teloxide를 reqwest 직접 호출로 교체하지 않음.
 
 ### 비고
-- 실제 텔레그램 수신 기반 검증(2·3)은 남은 항목이다. 코드·단위 테스트·릴리스 예산·기본/교체 모델 호출은 실행 결과로 확인했다.
+- 실제 소유자 메시지 수신·답변 전송은 확인했다. 다른 ID 무응답(기준 2의 비소유자 부분)과 4,096자 초과 실전송(기준 3)은 사용자가 테스트를 생략해 남은 항목이다. 코드·단위 테스트·릴리스 예산·기본/교체 모델 호출은 실행 결과로 확인했다.
 - `logs/`, `memory/`, `workspace/`, `.env`는 계속 git 추적 제외.
