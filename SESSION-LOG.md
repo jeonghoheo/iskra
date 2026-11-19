@@ -153,3 +153,23 @@
 ### 비고
 - `run_command`는 셸을 거치지 않지만 허용된 프로그램 자체의 기능(예: `git`의 외부 명령 실행)까지 제한하지는 않는다. 허용 목록·인자 정책 확장은 v1 이후 판단 범위.
 - `workspace/trial_project/`는 런타임 산출물과 함께 git 추적 제외(`/workspace`). 실증 후 남겨 회귀 확인에 사용.
+
+## Block 6.1 — 스티커·리액션 캐치 (2026-11-19)
+
+### 한 일
+- `src/channel.rs`: 메시지 핸들러가 스티커를 받으면 대표 이모지·세트 이름을 `[스티커 <emoji> (<set_name>)]`(이모지 없으면 `[스티커]`)로 정규화해 기존 `run_turn`에 사용자 메시지로 전달. 허용 목록 판정은 텍스트와 동일하게 발신자 검사 후 수행하고, 허용 발신자의 스티커는 `telegram_sticker emoji=...`로 로그.
+- `src/channel.rs`: Dispatcher 핸들러를 `dptree::entry()`로 바꿔 `Update::filter_message()`와 `Update::filter_message_reaction_updated()` 두 브랜치를 등록. 핸들러 설명을 통해 `allowed_updates`에 `message`·`message_reaction`이 자동 힌트됨.
+- 리액션 핸들러는 허용 발신자 확인 후 `telegram_reaction emoji=... message_id=...` 로그만 남기고 모델 턴을 만들지 않음. 리액션 제거(빈 배열)는 `emoji=none`으로 기록. 발신자를 알 수 없거나 허용 목록 밖이면 로그만 남기고 무시(fail-closed).
+- 음성 등 다른 비텍스트는 기존처럼 `telegram_ignore non_text`; 스티커 이미지 다운로드·비전 해석, 리액션의 다음 턴 맥락 주입은 범위 외로 두지 않음(만들지 않음).
+
+### 검증 실측 결과
+1. `cargo test`: **29개 전부 통과** (Block 6의 28개 회귀 없음 + 스티커 정규화 단위 테스트 1개). 정규화 테스트는 이모지/세트 이름 조합 4가지를 확인.
+2. 라이브 스티커: `telegram_sticker emoji=🎶` → `turn_start` → `model_call model=deepseek-chat` → `telegram_reply_sent chunks=1`. 사용자가 봇이 이모지 맥락에 맞게 답했음을 확인.
+3. 라이브 리액션: 봇 메시지(`message_id=12`)에 대한 리액션이 `telegram_reaction emoji=🔥 message_id=12`, 이어서 변경/제거가 `emoji=none`, `emoji=👍`로 기록됨. 리액션으로 인한 `turn_start`/`model_call`은 없었고, 사용자는 답장이 없는 것이 정상임을 확인. 같은 구간의 이후 턴들은 사용자가 보낸 텍스트 메시지에 의한 것.
+4. `cargo build`: `iskra` 자체 경고 0개. 전이 의존성 `proc-macro-error2 v2.0.1` 미래 호환성 안내 1건은 그대로(우리 코드 경고 아님).
+
+### 임시 우회
+- 없음.
+
+### 비고
+- 리액션은 기록만 하고 모델 호출을 붙이지 않는다. 다음 턴 맥락 주입은 실사용 게이트 이후 판단.

@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use teloxide::dptree;
 use teloxide::prelude::*;
-use teloxide::types::{ChatAction, ParseMode};
+use teloxide::types::{ChatAction, MessageReactionUpdated, ParseMode};
 use tokio::task::JoinHandle;
 
 const MAX_MESSAGE_CHARS: usize = 4096;
@@ -86,7 +86,9 @@ pub async fn run(
 
     logging::append("telegram_start");
 
-    let handler = Update::filter_message().endpoint(handle_message);
+    let handler = dptree::entry()
+        .branch(Update::filter_message().endpoint(handle_message))
+        .branch(Update::filter_message_reaction_updated().endpoint(handle_reaction));
     Dispatcher::builder(bot, handler)
         .dependencies(dptree::deps![state])
         .build()
@@ -106,25 +108,76 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
         return Ok(());
     }
 
-    let Some(text) = msg.text() else {
+    let chat_id = msg.chat.id;
+    let user_message = if let Some(text) = msg.text() {
+        let text = text.trim();
+        if text.is_empty() {
+            return Ok(());
+        }
+        text.to_string()
+    } else if let Some(sticker) = msg.sticker() {
+        let emoji = sticker.emoji.as_deref();
+        logging::append(&format!(
+            "telegram_sticker emoji={}",
+            emoji.unwrap_or("none")
+        ));
+        normalize_sticker(emoji, sticker.set_name.as_deref())
+    } else {
         logging::append("telegram_ignore non_text");
         return Ok(());
     };
-    let text = text.trim();
-    if text.is_empty() {
-        return Ok(());
-    }
 
-    let chat_id = msg.chat.id;
-    match command_name(text).as_deref() {
+    match command_name(&user_message).as_deref() {
         Some("/start") => {
             bot.send_message(chat_id, START_TEXT).await?;
         }
         Some("/stop") => stop_turn(&state, chat_id).await?,
         Some("/status") => send_status(&state, chat_id).await?,
-        _ => start_turn(&state, chat_id, text),
+        _ => start_turn(&state, chat_id, &user_message),
     }
 
+    Ok(())
+}
+
+fn normalize_sticker(emoji: Option<&str>, set_name: Option<&str>) -> String {
+    match emoji {
+        Some(emoji) => match set_name {
+            Some(set_name) => format!("[스티커 {emoji} ({set_name})]"),
+            None => format!("[스티커 {emoji}]"),
+        },
+        None => "[스티커]".to_string(),
+    }
+}
+
+async fn handle_reaction(
+    state: Arc<ChannelState>,
+    reaction: MessageReactionUpdated,
+) -> HandlerResult {
+    let Some(user) = reaction.user() else {
+        logging::append("telegram_reaction_ignore no_user");
+        return Ok(());
+    };
+    if user.id.0 != state.allowed_user_id {
+        logging::append(&format!("telegram_ignore user_id={}", user.id.0));
+        return Ok(());
+    }
+
+    let emoji = reaction
+        .new_reaction
+        .iter()
+        .filter_map(|reaction| reaction.emoji())
+        .map(|emoji| emoji.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
+    let emoji = if emoji.is_empty() {
+        "none".to_string()
+    } else {
+        emoji
+    };
+    logging::append(&format!(
+        "telegram_reaction emoji={emoji} message_id={}",
+        reaction.message_id.0
+    ));
     Ok(())
 }
 
@@ -386,6 +439,17 @@ mod tests {
     fn keeps_short_message_in_one_chunk() {
         let chunks = split_message("짧은 답변");
         assert_eq!(chunks, vec!["짧은 답변"]);
+    }
+
+    #[test]
+    fn normalizes_stickers() {
+        assert_eq!(
+            normalize_sticker(Some("😀"), Some("Cats")),
+            "[스티커 😀 (Cats)]"
+        );
+        assert_eq!(normalize_sticker(Some("😀"), None), "[스티커 😀]");
+        assert_eq!(normalize_sticker(None, Some("Cats")), "[스티커]");
+        assert_eq!(normalize_sticker(None, None), "[스티커]");
     }
 
     #[test]
