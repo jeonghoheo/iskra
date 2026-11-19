@@ -173,3 +173,41 @@
 
 ### 비고
 - 리액션은 기록만 하고 모델 호출을 붙이지 않는다. 다음 턴 맥락 주입은 실사용 게이트 이후 판단.
+
+## Block 6.2 — Self-state awareness + command discoverability (2026-11-19)
+
+### What changed
+- Added `src/usage.rs`, which owns the daily token aggregation shared by `/status` and the per-turn self-state:
+  - `today()` sums `prompt`, `completion`, and `total` from today's `model_call` log lines since local midnight.
+  - `self_state_block()` renders provider, model, today's tokens, estimated cost, balance, and an "estimate only" note.
+  - A small peak-list price table covers `deepseek-chat`, `deepseek-flash`, `deepseek-v4-flash`, `deepseek-reasoner`, and `deepseek-v4-pro`. Legacy aliases use the corresponding current model's peak rates. Unknown models show tokens only.
+- `src/loop_.rs` appends the self-state block to the system prompt at the start of every turn, before the first model call. This is shared by Telegram and `--cli`.
+- `src/brain.rs` adds the provider balance lookup:
+  - `GET {API_ROOT}/user/balance` with the configured bearer key, 3-second timeout.
+  - Official response shape verified against the DeepSeek API docs on 2026-11-19: `is_available` plus `balance_infos[{currency,total_balance,granted_balance,topped_up_balance}]`, with numeric values encoded as strings.
+  - `LLM_BASE_URL` in this codebase is the full chat-completions URL, so `balance_url()` strips a trailing `/chat/completions` before appending `/user/balance`. Default result: `https://api.deepseek.com/user/balance`.
+  - Failures are logged as `balance_error`, surfaced as `unavailable`, and never fail a turn or `/status`.
+  - A 60-second in-memory cache stores both success and failure. `/status` always forces a fresh fetch; turns reuse the cache.
+- `src/channel.rs`:
+  - `/status` now shows model, memory state, today's tokens, and balance.
+  - Registers `start`, `status`, `stop`, and `help` with `setMyCommands` at startup. Registration success logs `telegram_commands_registered`; failure logs `telegram_set_commands_error` and does not block startup.
+  - Adds `/help` and makes `/start` end with the same command list.
+- `src/main.rs` registers the new `usage` module.
+
+### Spec interpretation (recorded, not a temporary workaround)
+Scope item 2 says balance is fetched for `/status` only, while acceptance criterion 2 requires a natural-language answer that includes the actual balance. To satisfy both, the self-state fetches balance on demand at turn start through the same `balance()` path and caches the result for 60 seconds. There is no background polling. `/status` always performs a fresh fetch. This is a deliberate reconciliation of the two requirements.
+
+### Verification
+1. `cargo test`: **37 passed, 0 failed**. Existing 29 tests still pass. New coverage: usage aggregation, self-state assembly, known/unknown-model cost, provider labels, balance URL derivation, balance JSON parsing/formatting, and command-list/help assembly. The old channel-level usage-summing test moved to `usage`.
+2. Natural-language live check (`--cli`): asked for today's tokens, estimated cost, and balance. The model answered with today's token totals, the estimated cost, and the real provider balance. The exact balance amount is intentionally not recorded here.
+3. Live `/status`: confirmed via Telegram that it shows model, memory state, today's tokens, and the balance line.
+4. Command discoverability: `telegram_commands_registered` was logged at startup, the Telegram `/` menu showed `start`/`status`/`stop`/`help`, and `/help` listed the commands. `/start` ends with the same list (also covered by unit test).
+5. `cargo build` / `cargo build --release`: zero warnings for `iskra` itself. The transitive `proc-macro-error2 v2.0.1` future-incompatibility note remains unchanged (not our code).
+
+### Temporary workarounds
+- None.
+
+### Notes
+- The cost estimate uses peak public list prices and is explicitly labelled as an estimate. Prices may change; the table is intentionally small.
+- Balance amounts and API keys are never written to logs. Only failure reasons are logged.
+- The command menu is registered globally for the bot; no per-chat scoping was added.

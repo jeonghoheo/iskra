@@ -5,6 +5,7 @@ mod loop_;
 mod memory;
 mod prompt;
 mod tools;
+mod usage;
 
 use std::fs;
 use std::io::Write;

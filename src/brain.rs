@@ -1,9 +1,12 @@
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 pub const DEFAULT_BASE_URL: &str = "https://api.deepseek.com/chat/completions";
 pub const DEFAULT_MODEL: &str = "deepseek-chat";
 pub const MODEL_TIMEOUT_SECS: u64 = 60;
+const BALANCE_TIMEOUT_SECS: u64 = 3;
+const BALANCE_CACHE_TTL: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -50,6 +53,44 @@ fn non_empty(value: String) -> Option<String> {
     } else {
         Some(trimmed.to_string())
     }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct BalanceResponse {
+    #[serde(default)]
+    pub is_available: bool,
+    #[serde(default)]
+    pub balance_infos: Vec<BalanceInfo>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct BalanceInfo {
+    pub currency: String,
+    pub total_balance: String,
+}
+
+impl BalanceResponse {
+    pub fn display(&self) -> String {
+        if self.balance_infos.is_empty() {
+            return "unavailable".to_string();
+        }
+        let mut text = self
+            .balance_infos
+            .iter()
+            .map(|balance| format!("{} {}", balance.total_balance, balance.currency))
+            .collect::<Vec<_>>()
+            .join(", ");
+        if !self.is_available {
+            text.push_str(" (API 호출에 부족)");
+        }
+        text
+    }
+}
+
+pub fn balance_url(base_url: &str) -> String {
+    let trimmed = base_url.trim_end_matches('/');
+    let root = trimmed.strip_suffix("/chat/completions").unwrap_or(trimmed);
+    format!("{root}/user/balance")
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -137,9 +178,15 @@ struct Choice {
     message: Message,
 }
 
+struct BalanceCache {
+    fetched: Instant,
+    value: Result<BalanceResponse, String>,
+}
+
 pub struct Brain {
     client: reqwest::Client,
     config: Config,
+    balance_cache: Mutex<Option<BalanceCache>>,
 }
 
 impl Brain {
@@ -147,11 +194,16 @@ impl Brain {
         Self {
             client: reqwest::Client::new(),
             config,
+            balance_cache: Mutex::new(None),
         }
     }
 
     pub fn model(&self) -> &str {
         &self.config.model
+    }
+
+    pub fn base_url(&self) -> &str {
+        &self.config.base_url
     }
 
     pub async fn chat(&self, messages: &[Message]) -> Result<ChatReply, String> {
@@ -200,6 +252,61 @@ impl Brain {
             message: choice.message,
             usage: parsed.usage,
         })
+    }
+
+    pub async fn balance(&self) -> Result<BalanceResponse, String> {
+        let url = balance_url(&self.config.base_url);
+        let exchange = async {
+            let response = self
+                .client
+                .get(&url)
+                .bearer_auth(&self.config.api_key)
+                .send()
+                .await?;
+            let status = response.status();
+            let body = response.text().await?;
+            Ok::<_, reqwest::Error>((status, body))
+        };
+
+        let result =
+            match tokio::time::timeout(Duration::from_secs(BALANCE_TIMEOUT_SECS), exchange).await {
+                Err(_) => Err(format!("잔액 조회 타임아웃({BALANCE_TIMEOUT_SECS}초)")),
+                Ok(Err(e)) => Err(format!("잔액 조회 실패: {e}")),
+                Ok(Ok((status, body))) => {
+                    if !status.is_success() {
+                        Err(format!(
+                            "잔액 API 오류 {status}: {}",
+                            truncate_chars(&body, 300)
+                        ))
+                    } else {
+                        serde_json::from_str(&body).map_err(|e| format!("잔액 응답 파싱 실패: {e}"))
+                    }
+                }
+            };
+
+        if let Err(e) = &result {
+            crate::logging::append(&format!("balance_error {e}"));
+        }
+        *self.balance_cache.lock().unwrap() = Some(BalanceCache {
+            fetched: Instant::now(),
+            value: result.clone(),
+        });
+        result
+    }
+
+    pub async fn balance_cached(&self) -> Result<BalanceResponse, String> {
+        if let Some(value) = self.cached_balance() {
+            return value;
+        }
+        self.balance().await
+    }
+
+    fn cached_balance(&self) -> Option<Result<BalanceResponse, String>> {
+        let cache = self.balance_cache.lock().unwrap();
+        cache
+            .as_ref()
+            .filter(|entry| entry.fetched.elapsed() < BALANCE_CACHE_TTL)
+            .map(|entry| entry.value.clone())
     }
 }
 
@@ -263,5 +370,59 @@ mod tests {
         let err = Config::from_lookup(lookup(&[])).unwrap_err();
         assert!(err.contains("LLM_API_KEY"));
         assert!(err.contains("DEEPSEEK_API_KEY"));
+    }
+
+    #[test]
+    fn derives_balance_url_from_chat_endpoint() {
+        assert_eq!(
+            balance_url("https://api.deepseek.com/chat/completions"),
+            "https://api.deepseek.com/user/balance"
+        );
+        assert_eq!(
+            balance_url("https://api.deepseek.com"),
+            "https://api.deepseek.com/user/balance"
+        );
+        assert_eq!(
+            balance_url("https://proxy.example/v1/chat/completions/"),
+            "https://proxy.example/v1/user/balance"
+        );
+    }
+
+    #[test]
+    fn parses_and_formats_balance_response() {
+        let json = r#"{
+            "is_available": true,
+            "balance_infos": [
+                {
+                    "currency": "CNY",
+                    "total_balance": "110.00",
+                    "granted_balance": "10.00",
+                    "topped_up_balance": "100.00"
+                }
+            ]
+        }"#;
+        let response: BalanceResponse = serde_json::from_str(json).unwrap();
+        assert!(response.is_available);
+        assert_eq!(response.balance_infos[0].currency, "CNY");
+        assert_eq!(response.balance_infos[0].total_balance, "110.00");
+        assert_eq!(response.display(), "110.00 CNY");
+    }
+
+    #[test]
+    fn formats_unavailable_balances() {
+        let empty = BalanceResponse {
+            is_available: false,
+            balance_infos: vec![],
+        };
+        assert_eq!(empty.display(), "unavailable");
+
+        let insufficient = BalanceResponse {
+            is_available: false,
+            balance_infos: vec![BalanceInfo {
+                currency: "USD".to_string(),
+                total_balance: "0.10".to_string(),
+            }],
+        };
+        assert_eq!(insufficient.display(), "0.10 USD (API 호출에 부족)");
     }
 }

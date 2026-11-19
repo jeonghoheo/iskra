@@ -202,3 +202,28 @@
 2. 라이브: 스티커를 보내면 봇이 그 이모지 맥락에 맞는 답을 한다
 3. 라이브: 봇의 메시지에 리액션을 달면 로그에 `telegram_reaction`이 남는다
 4. SESSION-LOG.md에 Block 6.1 기록
+
+---
+
+## Block 6.2 (patch) — Self-state awareness + command discoverability
+
+Gate (fixed): ① No quick fixes — check the cause and current state first, not the symptom ② Write states and transitions before implementing ③ Read the verification method and acceptance criteria below before writing code ④ If a temporary workaround is needed, mark it in the log and leave a formal-fix task ⑤ If the same approach fails twice, switch approaches and record the cause in the log.
+
+Background: In real use (2026-11-19) the user asked the bot in natural language how much token usage / money was left. The model could not answer — it has no access to its own usage data and did not even know it runs on DeepSeek (it mentioned the Anthropic Console). Separately, the user did not know `/status` existed until told: the bot's commands are invisible in Telegram. Design refs: 종합설계 §0.6 (cost opacity is a listed discomfort), §2.2 channel/v1.
+
+### Scope
+1. **Self-state injected into the prompt**: When assembling the system prompt for a turn, append a short self-state block: current model name (from config), today's token total (reuse the same log aggregation `/status` uses), and an estimated cost for today. The estimate uses a small built-in price table for the known DeepSeek models and must be labelled an estimate; for unknown models, show tokens only. Goal: the model can answer "how much have you used / what's left" from context instead of guessing, and knows which provider/model it runs on.
+2. **Provider balance in `/status`**: Add a balance lookup for DeepSeek-compatible providers: `GET {LLM_BASE_URL}/user/balance` with the configured API key (verify the exact response shape against the official DeepSeek API docs before coding). Show the returned balance in `/status` next to today's usage. If the request fails or the provider does not support it, `/status` shows "balance: unavailable" and nothing else breaks (log the failure, never fail the command). Balance results are fetched on demand for `/status` only — no background polling.
+3. **Command discoverability**: Register the bot's commands with Telegram (`setMyCommands`) at startup: `start`, `status`, `stop`, `help` with short plain-language descriptions (no developer jargon, per the Telegram UX doc). Add a `/help` command that lists the commands and one line each on what they do. Extend the `/start` reply to end with the same short command list. Registration failure is logged and does not block startup.
+
+### Out of scope
+- Monthly caps, 80% warnings, per-turn cost footers (§0.6 full form — v2 candidates).
+- Balance for non-DeepSeek providers beyond the graceful "unavailable".
+- Inline buttons / approval cards (v2, channel/v1).
+
+### Acceptance criteria
+1. `cargo test` all passing (existing 29 + new: self-state assembly, balance response parsing, command list).
+2. Live: asking in natural language "how much have you used today / how much is left" gets an answer with today's tokens and, when the provider returns it, the actual balance.
+3. Live: `/status` shows a balance line (or an explicit "unavailable").
+4. Live: Telegram shows the command menu (menu button / typing `/`), and `/help` lists the commands.
+5. SESSION-LOG.md gains a Block 6.2 entry **written in English** (first entry under the §0.10 language policy).

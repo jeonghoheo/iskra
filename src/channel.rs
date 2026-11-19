@@ -2,18 +2,24 @@ use crate::brain::Brain;
 use crate::logging;
 use crate::loop_;
 use crate::tools::Tools;
+use crate::usage;
 
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use teloxide::dptree;
 use teloxide::prelude::*;
-use teloxide::types::{ChatAction, MessageReactionUpdated, ParseMode};
+use teloxide::types::{BotCommand, ChatAction, MessageReactionUpdated, ParseMode};
 use tokio::task::JoinHandle;
 
 const MAX_MESSAGE_CHARS: usize = 4096;
 const TYPING_REFRESH_SECS: u64 = 4;
-const START_TEXT: &str = "이스크라입니다. 메시지를 보내면 대화합니다. /status로 상태, /stop으로 현재 턴을 중단할 수 있습니다.";
+const COMMANDS: [(&str, &str); 4] = [
+    ("start", "시작 인사 보기"),
+    ("status", "오늘 사용량과 남은 금액 보기"),
+    ("stop", "하던 일 멈추기"),
+    ("help", "명령어 목록 보기"),
+];
 
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
@@ -73,6 +79,10 @@ pub async fn run(
         allowed_user_id,
     } = config;
     let bot = Bot::new(token);
+    match bot.set_my_commands(commands()).await {
+        Ok(_) => logging::append("telegram_commands_registered"),
+        Err(e) => logging::append(&format!("telegram_set_commands_error {e}")),
+    }
 
     let state = Arc::new(ChannelState {
         bot: bot.clone(),
@@ -129,7 +139,10 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
 
     match command_name(&user_message).as_deref() {
         Some("/start") => {
-            bot.send_message(chat_id, START_TEXT).await?;
+            bot.send_message(chat_id, start_text()).await?;
+        }
+        Some("/help") => {
+            bot.send_message(chat_id, help_text()).await?;
         }
         Some("/stop") => stop_turn(&state, chat_id).await?,
         Some("/status") => send_status(&state, chat_id).await?,
@@ -137,6 +150,28 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
     }
 
     Ok(())
+}
+
+fn commands() -> Vec<BotCommand> {
+    COMMANDS
+        .iter()
+        .map(|(command, description)| BotCommand::new(*command, *description))
+        .collect()
+}
+
+fn help_text() -> String {
+    let mut text = String::from("사용할 수 있는 명령어:");
+    for (command, description) in COMMANDS {
+        text.push_str(&format!("\n/{command} — {description}"));
+    }
+    text
+}
+
+fn start_text() -> String {
+    format!(
+        "이스크라입니다. 메시지를 보내면 대화합니다.\n\n{}",
+        help_text()
+    )
 }
 
 fn normalize_sticker(emoji: Option<&str>, set_name: Option<&str>) -> String {
@@ -284,11 +319,16 @@ async fn stop_turn(state: &Arc<ChannelState>, chat_id: ChatId) -> HandlerResult 
 }
 
 async fn send_status(state: &Arc<ChannelState>, chat_id: ChatId) -> HandlerResult {
+    let balance = match state.brain.balance().await {
+        Ok(balance) => balance.display(),
+        Err(_) => "unavailable".to_string(),
+    };
     let text = format!(
-        "모델: {}\n기억: {}\n오늘 토큰: {}",
+        "모델: {}\n기억: {}\n오늘 토큰: {}\n잔액: {}",
         state.brain.model(),
         state.memory_status,
-        today_token_usage()
+        usage::today().total,
+        balance
     );
     state.bot.send_message(chat_id, text).await?;
     Ok(())
@@ -349,75 +389,6 @@ fn split_message(text: &str) -> Vec<&str> {
     chunks
 }
 
-fn today_token_usage() -> u64 {
-    let Ok(log) = std::fs::read_to_string(logging::LOG_PATH) else {
-        return 0;
-    };
-    let since = local_midnight_secs().unwrap_or_else(utc_midnight_secs);
-    sum_tokens_since(&log, since)
-}
-
-fn sum_tokens_since(log: &str, since: i64) -> u64 {
-    let mut total = 0u64;
-    for line in log.lines() {
-        let Some(ts) = line
-            .strip_prefix("ts=")
-            .and_then(|rest| rest.split_whitespace().next())
-            .and_then(|value| value.parse::<i64>().ok())
-        else {
-            continue;
-        };
-        if ts < since || !line.contains(" model_call ") {
-            continue;
-        }
-        let Some((_, tail)) = line.rsplit_once("total=") else {
-            continue;
-        };
-        let digits: String = tail.chars().take_while(|c| c.is_ascii_digit()).collect();
-        if let Ok(value) = digits.parse::<u64>() {
-            total += value;
-        }
-    }
-    total
-}
-
-#[cfg(unix)]
-fn local_midnight_secs() -> Option<i64> {
-    unsafe {
-        let now = libc::time(std::ptr::null_mut());
-        if now == -1 {
-            return None;
-        }
-        let mut tm: libc::tm = std::mem::zeroed();
-        if libc::localtime_r(&now, &mut tm).is_null() {
-            return None;
-        }
-        tm.tm_hour = 0;
-        tm.tm_min = 0;
-        tm.tm_sec = 0;
-        tm.tm_isdst = -1;
-        let midnight = libc::mktime(&mut tm);
-        if midnight == -1 {
-            None
-        } else {
-            Some(midnight as i64)
-        }
-    }
-}
-
-#[cfg(not(unix))]
-fn local_midnight_secs() -> Option<i64> {
-    None
-}
-
-fn utc_midnight_secs() -> i64 {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    now - now.rem_euclid(86_400)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -464,14 +435,28 @@ mod tests {
     }
 
     #[test]
-    fn sums_only_model_calls_since_midnight() {
-        let log = "\
-ts=100 model_call tools=[none] usage=prompt=1 completion=2 total=3
-ts=200 model_call tools=[read_file] usage=prompt=4 completion=5 total=9
-ts=50 model_call tools=[none] usage=prompt=7 completion=8 total=15
-ts=300 turn_end answer
-ts=400 model_error err=timeout
-";
-        assert_eq!(sum_tokens_since(log, 100), 12);
+    fn registers_expected_commands_and_help() {
+        let registered = commands();
+        let names: Vec<&str> = registered
+            .iter()
+            .map(|command| command.command.as_str())
+            .collect();
+        assert_eq!(names, ["start", "status", "stop", "help"]);
+        assert!(
+            registered
+                .iter()
+                .all(|command| !command.description.trim().is_empty())
+        );
+        assert!(
+            registered
+                .iter()
+                .all(|command| command.description.chars().count() <= 256)
+        );
+
+        let help = help_text();
+        for name in &names {
+            assert!(help.contains(&format!("/{name}")));
+        }
+        assert!(start_text().ends_with(&help));
     }
 }

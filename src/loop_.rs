@@ -11,13 +11,21 @@ pub async fn run_turn(
     system_prompt: &str,
     user_input: &str,
 ) -> Result<String, String> {
-    let mut messages = vec![Message::system(system_prompt), Message::user(user_input)];
+    logging::append("turn_start");
+
+    let daily_usage = crate::usage::today();
+    let balance = match brain.balance_cached().await {
+        Ok(balance) => balance.display(),
+        Err(_) => "unavailable".to_string(),
+    };
+    let self_state =
+        crate::usage::self_state_block(brain.model(), brain.base_url(), &daily_usage, &balance);
+    let system_prompt = format!("{system_prompt}\n\n{self_state}");
+    let mut messages = vec![Message::system(&system_prompt), Message::user(user_input)];
     let mut roundtrips = 0usize;
     let mut last_error: Option<(String, String)> = None;
     let mut same_error_count = 0usize;
     let mut empty_retried = false;
-
-    logging::append("turn_start");
 
     loop {
         let reply = brain.chat(&messages).await.map_err(|e| {
