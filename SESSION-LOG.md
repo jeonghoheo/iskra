@@ -344,3 +344,71 @@ Scope item 2 says balance is fetched for `/status` only, while acceptance criter
 - Local `SOUL.md`/`USER.md`, memory/sticky contents, and the shipped `SOUL.example.md`/`USER.example.md` templates were intentionally left in their existing language as data/product templates.
 - README and docs were already English-first and were not changed.
 - Board messages already in chat history from before this patch keep their old text; they were never tracked and remain out of scope.
+
+## Block 6.6 — User-facing strings follow the user's language (2026-11-19)
+
+### What changed
+- Added `src/locale.rs` with `Locale` (`en`/`ko`/`ru`), primary-subtag normalization (`ko-KR` → `ko`), an English fallback for missing/unsupported codes, and a process-global "latest seen" locale updated from each allowed Telegram message/reaction.
+- Added a typed string table covering all human-facing bot strings. English is the source text; Korean and Russian are equal-meaning translations.
+- Command registration now calls `setMyCommands` three times: default English, `language_code="ko"`, and `language_code="ru"`. Startup logs `telegram_commands_registered locale=en|ko|ru`.
+- `/start`, `/help`, `/status`, board messages, sticky confirmations, credential refusal, busy/stop notices, and sticky error messages use the resolved locale.
+- `/status` labels, memory-state values, and balance-unavailable/insufficient text are localized. The model-facing self-state block remains English.
+- Board formatting now uses the localized title, empty text, and footer. Reply-to-board detection recognizes the English, Korean, and Russian titles plus the pre-6.6 English and pre-6.5 Korean legacy titles.
+- `main.rs` now passes a structured `MemoryStatus` (`truncated`, `warnings`) to the channel so `/status` can localize those values.
+- `sticky_note` tool results and the credential-refusal error use the latest locale; the channel board uses the locale captured for the current turn.
+
+### String table
+| Key | en | ko | ru |
+|---|---|---|---|
+| StartDescription | Show the welcome message | 시작 인사 보기 | Показать приветствие |
+| StatusDescription | Show today's usage and remaining balance | 오늘 사용량과 남은 금액 보기 | Показать расход за сегодня и баланс |
+| StickiesDescription | Show the sticky board | 스티키 보드 보기 | Показать доску стикеров |
+| StopDescription | Stop the current task | 하던 일 멈추기 | Остановить текущую задачу |
+| HelpDescription | List available commands | 명령어 목록 보기 | Показать список команд |
+| StartGreeting | I am Iskra. Send me a message to chat. | 이스크라입니다. 메시지를 보내면 대화합니다. | Я Искра. Отправьте сообщение, чтобы начать разговор. |
+| HelpHeader | Available commands: | 사용할 수 있는 명령어: | Доступные команды: |
+| StatusModel | Model: {} | 모델: {} | Модель: {} |
+| StatusMemory | Memory: {} | 기억: {} | Память: {} |
+| StatusTokens | Tokens today: {} | 오늘 토큰: {} | Токены сегодня: {} |
+| StatusBalance | Balance: {} | 잔액: {} | Баланс: {} |
+| BoardTitle | Sticky board | 스티키 보드 | Доска стикеров |
+| BoardEmpty | Sticky board is empty. | 스티키 보드가 비어 있습니다. | Доска стикеров пуста. |
+| BoardFooter | Delete: /stickies remove N | 삭제: /stickies remove N | Удалить: /stickies remove N |
+| StickyAdded | Sticky #{} added. | 스티키 #{}을 추가했습니다. | Стикер #{} добавлен. |
+| StickyRemoved | Sticky #{} removed. | 스티키 #{}을 삭제했습니다. | Стикер #{} удалён. |
+| StickyNotFound | Sticky #{} does not exist. | 스티키 #{}이 없습니다. | Стикер #{} не найден. |
+| CredentialRefused | Content that looks like a credential cannot be saved in a sticky. Remove the secret and try again | 자격증명처럼 보이는 내용은 스티키에 저장할 수 없습니다. 비밀값을 지우고 다시 시도해 주세요 | Содержимое, похожее на учётные данные, нельзя сохранить в стикере. Удалите секрет и попробуйте снова |
+| MemoryOk | ok | 정상 | в порядке |
+| MemoryPartial | partially loaded | 일부만 로드됨 | загружено частично |
+| MemoryWarnings | {} warning(s) | 경고 {}건 | предупреждений: {} |
+| TurnBusy | A previous turn is still running. Use /stop to interrupt it. | 이전 턴이 아직 진행 중입니다. /stop으로 중단할 수 있습니다. | Предыдущий ход ещё выполняется. Используйте /stop, чтобы прервать его. |
+| TurnStopped | Stopped: {} | 중단: {} | Остановлено: {} |
+| StopStopped | The current turn was stopped. | 현재 턴을 중단했습니다. | Текущий ход остановлен. |
+| StopNoActive | There is no turn in progress. | 진행 중인 턴이 없습니다. | Сейчас нет выполняющегося хода. |
+| StickyRemovedButBoardReadFailed | Sticky #{} was removed, but the board could not be read. | 스티키 #{}을 삭제했지만 보드를 읽지 못했습니다. | Стикер #{} удалён, но не удалось прочитать доску. |
+| StickyRemoveFailed | Failed to remove the sticky: {} | 스티키를 삭제하지 못했습니다: {} | Не удалось удалить стикер: {} |
+| StickyBoardSyncFailed | Failed to sync the sticky board. | 스티키 보드를 동기화하지 못했습니다. | Не удалось синхронизировать доску стикеров. |
+| StickyBoardDisplayFailed | Failed to display the sticky board. | 스티키 보드를 표시하지 못했습니다. | Не удалось показать доску стикеров. |
+| StickyBoardReadFailed | Could not read the sticky board. | 스티키 보드를 읽을 수 없습니다. | Не удалось прочитать доску стикеров. |
+| StickyRemovedButBoardUpdateFailed | Sticky #{} was removed, but the board could not be updated. | 스티키 #{}을 삭제했지만 보드를 갱신하지 못했습니다. | Стикер #{} удалён, но не удалось обновить доску. |
+| StickiesUsage | Usage: /stickies (show board), /stickies remove N (remove N) | 사용법: /stickies (보드 보기), /stickies remove N (N번 삭제) | Использование: /stickies (показать доску), /stickies remove N (удалить N) |
+| Unavailable | unavailable | 확인 불가 | недоступно |
+| BalanceInsufficient | (insufficient for API calls) | (API 호출에 부족) | (недостаточно для вызовов API) |
+
+`BalanceInsufficient` values include a leading space when appended to the balance.
+
+### Verification
+1. `cargo test`: **55 passed, 0 failed**. Existing 51 tests still pass. New tests cover locale normalization/fallback, string-table completeness in all three languages, template formatting/memory status, and board-title recognition across English/Korean/Russian plus legacy titles.
+2. Live startup logged `telegram_commands_registered` for `locale=en`, `locale=ko`, and `locale=ru`.
+3. Live Telegram (Korean app language): the `/` command menu showed Korean descriptions, `/help` answered in Korean, `/stickies` showed the Korean empty-board title, and `/status` used Korean labels. The user confirmed all of these.
+4. Live conversation: a Korean message still received a Korean answer. The model-facing system prompt remains English, while behavior language comes from the unchanged local SOUL/USER data.
+5. `cargo build` / `cargo build --release`: zero warnings for `iskra` itself. The transitive `proc-macro-error2 v2.0.1` future-incompatibility note is unchanged.
+
+### Temporary workarounds
+- None.
+
+### Notes
+- Locale is process state only; it is re-detected from the first message after a restart. Command menus remain language-correct because Telegram selects the registered per-language set.
+- Model-facing strings (tool descriptions, system prompt, self-state) and log strings remain English, per the localization rule.
+- User data and the `SOUL.example.md`/`USER.example.md` templates remain in their existing language.
+- Manual language settings, persistence, and languages beyond en/ko/ru remain out of scope.

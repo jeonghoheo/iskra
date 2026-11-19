@@ -336,3 +336,30 @@ Background: §0.10 set the repo to a single English source; its transition rule 
 2. `cargo test` all passing; the assembled-token scanner test still passes.
 3. Live: command menu and `/help` show English descriptions; the sticky board title is English; the bot still converses in the user's language (model behavior comes from SOUL/USER data, unchanged).
 4. SESSION-LOG.md gains a Block 6.5 entry written in English.
+
+---
+
+## Block 6.6 (patch) — User-facing strings follow the user's language
+
+Gate (fixed): ① No quick fixes — check the cause and current state first ② Write states and transitions before implementing ③ Read the verification method and acceptance criteria below before writing code ④ Mark any temporary workaround in the log and leave a formal-fix task ⑤ If the same approach fails twice, switch approaches and record the cause in the log.
+
+Background: Block 6.5 unified in-code strings to English, which also made the bot's own menus English for a Korean user. §0.10's localization rule (added 2026-11-19) splits strings by reader: machine-facing stays English; human-facing follows the user's language. Telegram provides the signal (`language_code` on the user object) and per-language command registration (`setMyCommands` with `language_code`). Design refs: §0.10 (localization rule), UX-텔레그램 (no developer jargon — in the user's language).
+
+### Scope
+1. **Locale resolution**: read `language_code` from the Telegram user on each update; normalize to the primary subtag (`ko-KR` → `ko`). Supported: `en`, `ko`, `ru`. Anything else or missing → `en`. Keep the latest seen locale in process state (single-user bot; no persistence needed for this patch).
+2. **String table**: a small localization module holding the human-facing strings as (key × en/ko/ru). Keys cover: command descriptions (start/status/stickies/stop/help), `/start` greeting tail, `/help` body, `/status` labels, sticky board title, board empty text, board footer hint, sticky add/remove user-facing confirmations and the credential-refusal message. English is the source text (the current 6.5 strings); Korean and Russian are translations of equal meaning — no developer jargon in any language.
+3. **Command registration**: call `setMyCommands` for the default (English) plus `language_code` = `ko` and `ru`, so Telegram shows each user the descriptions in their app language automatically.
+4. **Bot-sent messages** use the string table with the resolved locale: `/start`, `/help`, `/status`, board messages.
+5. **Board compatibility**: reply-to-board removal detects the board by title — it must recognize the title in all three languages, plus the pre-6.6 English title and the pre-6.5 Korean title, so boards sent by older versions keep working.
+
+### Out of scope
+- Manual language setting / settings UI (Block 10).
+- Model-facing strings (tool descriptions, prompts) and log strings — they stay English (§0.10).
+- Persisting the locale across restarts (first message after a restart re-detects; command menus are language-correct regardless because Telegram picks them).
+- Languages beyond en/ko/ru.
+
+### Acceptance criteria
+1. `cargo test` all passing (existing 51 + new: locale normalization and fallback, string-table completeness — every key present in all three languages, board-title recognition across languages and legacy titles).
+2. Live: with the Telegram app language set to Korean, the command menu shows Korean descriptions and `/help` answers in Korean; the sticky board title is Korean.
+3. Live: `/status` labels follow the same language; the bot's conversational replies are unaffected (they come from the model).
+4. SESSION-LOG.md gains a Block 6.6 entry written in English, including the full string table for review.

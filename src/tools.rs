@@ -168,7 +168,7 @@ impl Tools {
                 self.sticky_changed.store(true, Ordering::SeqCst);
                 Ok(board)
             }
-            "list" => crate::stickies::board(),
+            "list" => crate::stickies::board(crate::locale::latest()),
             "remove" => {
                 let number = args
                     .get("number")

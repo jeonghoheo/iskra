@@ -1,5 +1,6 @@
 mod brain;
 mod channel;
+mod locale;
 mod logging;
 mod loop_;
 mod memory;
@@ -35,16 +36,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         println!("Notice: {warning}");
     }
     let system_prompt = prompt::assemble(&identity, &memory);
-    let memory_status = {
-        let mut status = if memory.truncated {
-            "partially loaded".to_string()
-        } else {
-            "ok".to_string()
-        };
-        if !memory.warnings.is_empty() {
-            status.push_str(&format!(", {} warning(s)", memory.warnings.len()));
-        }
-        status
+    let memory_status = channel::MemoryStatus {
+        truncated: memory.truncated,
+        warnings: memory.warnings.len(),
     };
 
     let tools = tools::Tools::new()?;

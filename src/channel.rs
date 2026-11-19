@@ -1,4 +1,5 @@
-use crate::brain::Brain;
+use crate::brain::{BalanceResponse, Brain};
+use crate::locale::{self, Key, Locale};
 use crate::logging;
 use crate::loop_;
 use crate::stickies;
@@ -16,13 +17,19 @@ use tokio::task::JoinHandle;
 
 const MAX_MESSAGE_CHARS: usize = 4096;
 const TYPING_REFRESH_SECS: u64 = 4;
-const COMMANDS: [(&str, &str); 5] = [
-    ("start", "Show the welcome message"),
-    ("status", "Show today's usage and remaining balance"),
-    ("stickies", "Show the sticky board"),
-    ("stop", "Stop the current task"),
-    ("help", "List available commands"),
+const COMMAND_KEYS: [(&str, Key); 5] = [
+    ("start", Key::StartDescription),
+    ("status", Key::StatusDescription),
+    ("stickies", Key::StickiesDescription),
+    ("stop", Key::StopDescription),
+    ("help", Key::HelpDescription),
 ];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MemoryStatus {
+    pub truncated: bool,
+    pub warnings: usize,
+}
 
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
@@ -58,7 +65,7 @@ struct ChannelState {
     brain: Brain,
     tools: Tools,
     system_prompt: String,
-    memory_status: String,
+    memory_status: MemoryStatus,
     allowed_user_id: u64,
     current_turn: Mutex<Option<JoinHandle<()>>>,
 }
@@ -67,7 +74,7 @@ pub async fn run(
     brain: Brain,
     tools: Tools,
     system_prompt: String,
-    memory_status: String,
+    memory_status: MemoryStatus,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = match TelegramConfig::from_env() {
         Ok(config) => config,
@@ -82,10 +89,7 @@ pub async fn run(
         allowed_user_id,
     } = config;
     let bot = Bot::new(token);
-    match bot.set_my_commands(commands()).await {
-        Ok(_) => logging::append("telegram_commands_registered"),
-        Err(e) => logging::append(&format!("telegram_set_commands_error {e}")),
-    }
+    register_commands(&bot).await;
 
     let state = Arc::new(ChannelState {
         bot: bot.clone(),
@@ -121,6 +125,9 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
         return Ok(());
     }
 
+    let lang = Locale::from_language_code(from.language_code.as_deref());
+    locale::set_latest(lang);
+
     let chat_id = msg.chat.id;
     let user_message = if let Some(text) = msg.text() {
         let text = text.trim();
@@ -146,15 +153,16 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
                 match stickies::remove(number) {
                     Ok(_) => {
                         logging::append(&format!("telegram_sticky_remove number={number}"));
-                        let board = match stickies::board() {
+                        let board = match stickies::board(lang) {
                             Ok(board) => board,
                             Err(e) => {
                                 logging::append(&format!("sticky_board_error {e}"));
                                 bot.send_message(
                                     chat_id,
-                                    format!(
-                                        "Sticky #{} was removed, but the board could not be read.",
-                                        number
+                                    locale::with(
+                                        lang,
+                                        Key::StickyRemovedButBoardReadFailed,
+                                        number,
                                     ),
                                 )
                                 .await?;
@@ -168,8 +176,11 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
                             Ok(_) => {}
                             Err(e) => {
                                 logging::append(&format!("telegram_board_sync_error {e}"));
-                                bot.send_message(chat_id, "Failed to sync the sticky board.")
-                                    .await?;
+                                bot.send_message(
+                                    chat_id,
+                                    locale::text(lang, Key::StickyBoardSyncFailed),
+                                )
+                                .await?;
                             }
                         }
                     }
@@ -177,7 +188,7 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
                         logging::append(&format!(
                             "telegram_sticky_remove_error number={number} err={e}"
                         ));
-                        bot.send_message(chat_id, format!("Failed to remove the sticky: {e}"))
+                        bot.send_message(chat_id, locale::with(lang, Key::StickyRemoveFailed, e))
                             .await?;
                     }
                 }
@@ -188,15 +199,15 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
 
     match command_name(&user_message).as_deref() {
         Some("/start") => {
-            bot.send_message(chat_id, start_text()).await?;
+            bot.send_message(chat_id, start_text(lang)).await?;
         }
         Some("/help") => {
-            bot.send_message(chat_id, help_text()).await?;
+            bot.send_message(chat_id, help_text(lang)).await?;
         }
-        Some("/stickies") => handle_stickies_command(&state, chat_id, &user_message).await?,
-        Some("/stop") => stop_turn(&state, chat_id).await?,
-        Some("/status") => send_status(&state, chat_id).await?,
-        _ => start_turn(&state, chat_id, &user_message),
+        Some("/stickies") => handle_stickies_command(&state, chat_id, &user_message, lang).await?,
+        Some("/stop") => stop_turn(&state, chat_id, lang).await?,
+        Some("/status") => send_status(&state, chat_id, lang).await?,
+        _ => start_turn(&state, chat_id, &user_message, lang),
     }
 
     Ok(())
@@ -207,24 +218,49 @@ fn is_board_reply(reply: &Message) -> bool {
         && reply.text().is_some_and(stickies::is_board_text)
 }
 
-fn commands() -> Vec<BotCommand> {
-    COMMANDS
+async fn register_commands(bot: &Bot) {
+    for lang in Locale::ALL {
+        let request = bot.set_my_commands(commands(lang));
+        let request = match lang {
+            Locale::En => request,
+            Locale::Ko | Locale::Ru => request.language_code(lang.code()),
+        };
+        match request.await {
+            Ok(_) => logging::append(&format!(
+                "telegram_commands_registered locale={}",
+                lang.code()
+            )),
+            Err(e) => logging::append(&format!(
+                "telegram_set_commands_error locale={} err={e}",
+                lang.code()
+            )),
+        }
+    }
+}
+
+fn commands(lang: Locale) -> Vec<BotCommand> {
+    COMMAND_KEYS
         .iter()
-        .map(|(command, description)| BotCommand::new(*command, *description))
+        .map(|(command, key)| BotCommand::new(*command, locale::text(lang, *key)))
         .collect()
 }
 
-fn help_text() -> String {
-    let mut text = String::from("Available commands:");
-    for (command, description) in COMMANDS {
-        text.push_str(&format!("\n/{command} — {description}"));
+fn help_text(lang: Locale) -> String {
+    let mut text = String::from(locale::text(lang, Key::HelpHeader));
+    for (command, key) in COMMAND_KEYS {
+        text.push_str(&format!("\n/{command} — {}", locale::text(lang, key)));
     }
-    text.push_str("\n\nDelete a sticky: /stickies remove N");
+    text.push_str("\n\n");
+    text.push_str(locale::text(lang, Key::BoardFooter));
     text
 }
 
-fn start_text() -> String {
-    format!("I am Iskra. Send me a message to chat.\n\n{}", help_text())
+fn start_text(lang: Locale) -> String {
+    format!(
+        "{}\n\n{}",
+        locale::text(lang, Key::StartGreeting),
+        help_text(lang)
+    )
 }
 
 fn normalize_sticker(emoji: Option<&str>, set_name: Option<&str>) -> String {
@@ -249,6 +285,8 @@ async fn handle_reaction(
         logging::append(&format!("telegram_ignore user_id={}", user.id.0));
         return Ok(());
     }
+
+    locale::set_latest(Locale::from_language_code(user.language_code.as_deref()));
 
     let emoji = reaction
         .new_reaction
@@ -311,14 +349,15 @@ async fn handle_stickies_command(
     state: &Arc<ChannelState>,
     chat_id: ChatId,
     text: &str,
+    lang: Locale,
 ) -> HandlerResult {
     match parse_stickies_command(text) {
-        StickiesCommand::Show => send_stickies(state, chat_id).await,
+        StickiesCommand::Show => send_stickies(state, chat_id, lang).await,
         StickiesCommand::Remove(number) => {
             match stickies::remove(number) {
                 Ok(_) => {
                     logging::append(&format!("telegram_sticky_remove number={number}"));
-                    let board = match stickies::board() {
+                    let board = match stickies::board(lang) {
                         Ok(board) => board,
                         Err(e) => {
                             logging::append(&format!("sticky_board_error {e}"));
@@ -326,9 +365,10 @@ async fn handle_stickies_command(
                                 .bot
                                 .send_message(
                                     chat_id,
-                                    format!(
-                                        "Sticky #{} was removed, but the board could not be read.",
-                                        number
+                                    locale::with(
+                                        lang,
+                                        Key::StickyRemovedButBoardReadFailed,
+                                        number,
                                     ),
                                 )
                                 .await?;
@@ -339,7 +379,10 @@ async fn handle_stickies_command(
                         Ok(_) => {
                             state
                                 .bot
-                                .send_message(chat_id, format!("Sticky #{number} removed."))
+                                .send_message(
+                                    chat_id,
+                                    locale::with(lang, Key::StickyRemoved, number),
+                                )
                                 .await?;
                         }
                         Err(e) => {
@@ -348,8 +391,10 @@ async fn handle_stickies_command(
                                 .bot
                                 .send_message(
                                     chat_id,
-                                    format!(
-                                        "Sticky #{number} was removed, but the board could not be updated."
+                                    locale::with(
+                                        lang,
+                                        Key::StickyRemovedButBoardUpdateFailed,
+                                        number,
                                     ),
                                 )
                                 .await?;
@@ -362,7 +407,7 @@ async fn handle_stickies_command(
                     ));
                     state
                         .bot
-                        .send_message(chat_id, format!("Failed to remove the sticky: {e}"))
+                        .send_message(chat_id, locale::with(lang, Key::StickyRemoveFailed, e))
                         .await?;
                 }
             }
@@ -371,17 +416,14 @@ async fn handle_stickies_command(
         StickiesCommand::Usage => {
             state
                 .bot
-                .send_message(
-                    chat_id,
-                    "Usage: /stickies (show board), /stickies remove N (remove N)",
-                )
+                .send_message(chat_id, locale::text(lang, Key::StickiesUsage))
                 .await?;
             Ok(())
         }
     }
 }
 
-fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str) {
+fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str, lang: Locale) {
     let busy = {
         let slot = state.current_turn.lock().unwrap();
         slot.as_ref().is_some_and(|handle| !handle.is_finished())
@@ -391,10 +433,7 @@ fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str) {
         let bot = state.bot.clone();
         tokio::spawn(async move {
             let _ = bot
-                .send_message(
-                    chat_id,
-                    "A previous turn is still running. Use /stop to interrupt it.",
-                )
+                .send_message(chat_id, locale::text(lang, Key::TurnBusy))
                 .await;
         });
         return;
@@ -421,7 +460,7 @@ fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str) {
             Ok(answer) => answer,
             Err(e) => {
                 logging::append(&format!("telegram_turn_error {e}"));
-                format!("Stopped: {e}")
+                locale::with(lang, Key::TurnStopped, e)
             }
         };
         if let Err(e) = send_reply(&task_state.bot, chat_id, &answer).await {
@@ -429,7 +468,7 @@ fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str) {
         }
 
         if sticky_changed {
-            match stickies::board() {
+            match stickies::board(lang) {
                 Ok(board) => {
                     if let Err(e) =
                         sync_board(&task_state.bot, chat_id, &board, BoardMode::Update).await
@@ -471,37 +510,58 @@ async fn typing_loop(bot: Bot, chat_id: ChatId, mut stop: tokio::sync::watch::Re
     logging::append("telegram_typing_stop");
 }
 
-async fn stop_turn(state: &Arc<ChannelState>, chat_id: ChatId) -> HandlerResult {
+async fn stop_turn(state: &Arc<ChannelState>, chat_id: ChatId, lang: Locale) -> HandlerResult {
     let handle = { state.current_turn.lock().unwrap().take() };
     let message = match handle {
         Some(handle) if !handle.is_finished() => {
             handle.abort();
             logging::append("telegram_stop aborted");
-            "The current turn was stopped."
+            locale::text(lang, Key::StopStopped)
         }
         _ => {
             logging::append("telegram_stop idle");
-            "There is no turn in progress."
+            locale::text(lang, Key::StopNoActive)
         }
     };
     state.bot.send_message(chat_id, message).await?;
     Ok(())
 }
 
-async fn send_status(state: &Arc<ChannelState>, chat_id: ChatId) -> HandlerResult {
+async fn send_status(state: &Arc<ChannelState>, chat_id: ChatId, lang: Locale) -> HandlerResult {
     let balance = match state.brain.balance().await {
-        Ok(balance) => balance.display(),
-        Err(_) => "unavailable".to_string(),
+        Ok(balance) => balance_display(lang, &balance),
+        Err(_) => locale::text(lang, Key::Unavailable).to_string(),
     };
+    let memory = locale::memory_status(
+        lang,
+        state.memory_status.truncated,
+        state.memory_status.warnings,
+    );
     let text = format!(
-        "Model: {}\nMemory: {}\nTokens today: {}\nBalance: {}",
-        state.brain.model(),
-        state.memory_status,
-        usage::today().total,
-        balance
+        "{}\n{}\n{}\n{}",
+        locale::with(lang, Key::StatusModel, state.brain.model()),
+        locale::with(lang, Key::StatusMemory, memory),
+        locale::with(lang, Key::StatusTokens, usage::today().total),
+        locale::with(lang, Key::StatusBalance, balance)
     );
     state.bot.send_message(chat_id, text).await?;
     Ok(())
+}
+
+fn balance_display(lang: Locale, balance: &BalanceResponse) -> String {
+    if balance.balance_infos.is_empty() {
+        return locale::text(lang, Key::Unavailable).to_string();
+    }
+    let mut text = balance
+        .balance_infos
+        .iter()
+        .map(|info| format!("{} {}", info.total_balance, info.currency))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if !balance.is_available {
+        text.push_str(locale::text(lang, Key::BalanceInsufficient));
+    }
+    text
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -548,14 +608,14 @@ fn fallback_after_edit_failure(plan: BoardPlan) -> BoardPlan {
     }
 }
 
-async fn send_stickies(state: &Arc<ChannelState>, chat_id: ChatId) -> HandlerResult {
-    match stickies::board() {
+async fn send_stickies(state: &Arc<ChannelState>, chat_id: ChatId, lang: Locale) -> HandlerResult {
+    match stickies::board(lang) {
         Ok(board) => {
             if let Err(e) = sync_board(&state.bot, chat_id, &board, BoardMode::Show).await {
                 logging::append(&format!("telegram_board_sync_error {e}"));
                 state
                     .bot
-                    .send_message(chat_id, "Failed to display the sticky board.")
+                    .send_message(chat_id, locale::text(lang, Key::StickyBoardDisplayFailed))
                     .await?;
             }
         }
@@ -563,7 +623,7 @@ async fn send_stickies(state: &Arc<ChannelState>, chat_id: ChatId) -> HandlerRes
             logging::append(&format!("sticky_board_error {e}"));
             state
                 .bot
-                .send_message(chat_id, "Could not read the sticky board.")
+                .send_message(chat_id, locale::text(lang, Key::StickyBoardReadFailed))
                 .await?;
         }
     }
@@ -806,29 +866,31 @@ mod tests {
 
     #[test]
     fn registers_expected_commands_and_help() {
-        let registered = commands();
-        let names: Vec<&str> = registered
-            .iter()
-            .map(|command| command.command.as_str())
-            .collect();
-        assert_eq!(names, ["start", "status", "stickies", "stop", "help"]);
-        assert!(
-            registered
+        for lang in Locale::ALL {
+            let registered = commands(lang);
+            let names: Vec<&str> = registered
                 .iter()
-                .all(|command| !command.description.trim().is_empty())
-        );
-        assert!(
-            registered
-                .iter()
-                .all(|command| command.description.chars().count() <= 256)
-        );
+                .map(|command| command.command.as_str())
+                .collect();
+            assert_eq!(names, ["start", "status", "stickies", "stop", "help"]);
+            assert!(
+                registered
+                    .iter()
+                    .all(|command| !command.description.trim().is_empty())
+            );
+            assert!(
+                registered
+                    .iter()
+                    .all(|command| command.description.chars().count() <= 256)
+            );
 
-        let help = help_text();
-        for name in &names {
-            assert!(help.contains(&format!("/{name}")));
+            let help = help_text(lang);
+            for name in &names {
+                assert!(help.contains(&format!("/{name}")));
+            }
+            assert!(help.contains("/stickies remove N"));
+            assert!(start_text(lang).ends_with(&help));
         }
-        assert!(help.contains("/stickies remove N"));
-        assert!(start_text().ends_with(&help));
     }
 
     #[test]
