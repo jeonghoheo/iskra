@@ -33,7 +33,7 @@
 - `workspace/`의 파일과 `logs/agent.log`는 런타임 산출물이라 git 추적에서 제외함.
 - 텔레그램 창구(Block 5), 기억 파일(`memory.rs`, Block 4)은 이번 블록에서 만들지 않음.
 
-## Block 4 — 기억 + 정체성 파일 (2026-11-18)
+## Block 4 — 기억 + 정체성 파일 (2026-11-19)
 
 ### 한 일
 - `src/memory.rs` 신설: 기억 읽기·쓰기 전담.
@@ -68,3 +68,49 @@
 ### 비고
 - `memory/`는 실제 사용자 데이터가 쌓이므로 git 추적에서 제외. `SOUL.md`·`USER.md`는 코드와 함께 추적.
 - 자동 회상(관련 노트 검색 삽입), 기억 자동 정리, 일별 노트 자동 기록은 범위 외(v2).
+
+## Block 5 — 모델 설정 외부화 + 텔레그램 창구 (2026-11-19)
+
+### Step 0 — 사전 정리
+- Block 4 항목 날짜를 실제 실행·push 날짜인 2026-11-19로 정정.
+
+### 한 일
+- `src/brain.rs`: 모델 설정을 코드 밖으로 분리.
+  - `Config::from_env`/`from_lookup`: 키는 `LLM_API_KEY` 우선, 없으면 `DEEPSEEK_API_KEY`(호환). 주소는 `LLM_BASE_URL`(기본 `https://api.deepseek.com/chat/completions`), 모델은 `LLM_MODEL`(기본 `deepseek-chat`). 빈 값은 미설정으로 취급.
+  - 두 키가 모두 없으면 필요한 변수 이름을 명시해 실패(fail-closed). `Brain::new(Config)`, `Brain::model()` 추가. reqwest 직접 HTTP·OpenAI 호환 형식은 그대로 유지.
+  - 단위 테스트 4개: 기본값 적용, `LLM_*` 우선, `DEEPSEEK_API_KEY` 호환, 키 누락 오류 메시지.
+- `.env.example`: `LLM_API_KEY`·`LLM_BASE_URL`·`LLM_MODEL`과 텔레그램용 `TELEGRAM_BOT_TOKEN`·`ALLOWED_USER_ID`를 기본값 주석과 함께 추가.
+- `src/channel.rs` 신설: 텔레그램 창구 격리.
+  - 시작 시 `TELEGRAM_BOT_TOKEN`·`ALLOWED_USER_ID`를 검증하고, 없거나 형식이 틀리면 사유만 로그에 남기고 종료. 토큰 값은 로그·출력에 쓰지 않음.
+  - teloxide 롱폴링(Dispatcher). 발신자 ID가 `ALLOWED_USER_ID`와 다르면 무응답 + `telegram_ignore user_id=...` 로그.
+  - `/start`(환영·사용법 1줄), `/stop`(진행 중 턴 태스크 abort), `/status`(모델명·기억 로드 상태·오늘 토큰 사용량). 그 외 텍스트는 기존 `loop_::run_turn`으로 전달.
+  - 답변은 4,096자 단위로 분할 전송. 먼저 `ParseMode::Markdown`으로 보내고 실패하면 평문으로 1회 재전송. 모든 전송 실패는 로그 후 1회 재시도. 성공 시 `telegram_reply_sent chunks=N` 기록.
+  - 오늘 토큰 사용량: `logs/agent.log`의 로컬 자정 이후 `model_call` 라인의 `total=` 합계.
+- `src/main.rs`: 인수 없으면 텔레그램 모드, `--cli`면 기존 터미널 모드. 설정 로드 실패는 사유를 로그·stderr에 남기고 종료.
+- `src/loop_.rs`: 상태 기계·멈춤 조건은 그대로 두고, 최종 답변을 stdout에 직접 쓰는 대신 `Result<String, String>`으로 반환하도록 출력 경계만 변경(CLI가 출력). 창구가 답변을 전달하기 위한 인터페이스 변경이며 로직 우회 아님.
+- `src/loop_.rs` 로그에 모델명 추가: `model_call model=<name> ...` (비밀값 아님).
+
+### 의존성
+- `teloxide = { version = "0.17", default-features = false, features = ["rustls"] }` 추가. 기본 TLS(native-tls) 대신 이미 쓰는 rustls를 사용하고, webhook·저장소·매크로 기능은 켜지 않아 크기를 억제. 직접 의존성 6 → 7개.
+
+### 검증 실측 결과
+1. `cargo test`: 23개 전부 통과 (Block 4의 15개 회귀 없음 + brain 4개 + channel 4개).
+2. 소유자 ID만 응답 / 다른 ID 무응답 + 로그: 코드 경로 구현 및 발신자 비교는 완료. 라이브 실행에서 봇은 텔레그램에 연결됐으나(`149.154.166.110:443` ESTABLISHED) 수신 업데이트가 없어(`telegram_start` 외 이벤트 없음) 실제 수신 기반 검증은 **미완료**. 실제 메시지 수신 후 로그의 `telegram_ignore user_id=...`로 확인 필요.
+3. 4,096자 초과 답변 분할: 단위 테스트로 9,000자 입력이 4,096자 이하 3개 조각으로 나뉘고 원문이 보존됨을 확인(`splits_long_messages_into_bounded_chunks`). 실제 텔레그램 다중 수신은 수신 업데이트가 없어 **미완료**.
+4. 기본 설정 대화 + `LLM_MODEL` 교체:
+   - 기본: CLI 1턴 성공, 로그 `model_call model=deepseek-chat ...`.
+   - `LLM_MODEL=deepseek-reasoner`: CLI 1턴 성공, 로그 `model_call model=deepseek-reasoner ...`.
+5. `cargo build`/`cargo build --release`: `iskra` 자체 경고 0개. 단, 전이 의존성 `proc-macro-error2 v2.0.1`(teloxide의 aquamarine 경유)에 대해 rustc 미래 호환성 안내가 1건 출력됨(우리 코드 경고 아님, 최신 2.0.1이 해당).
+
+### Step 3 — 가벼움 예산 실측 (릴리스, 텔레그램 연결 후 유휴)
+- 바이너리 크기(strip 후): **5,856,520 bytes = 5.86 MB (5.59 MiB)** — 기준 ≤ 20MB 통과.
+- 유휴 RAM: 텔레그램 롱폴링 연결 대기 상태 RSS **14,288 KB = 13.95 MiB** — 기준 ≤ 30MB 통과.
+- 직접 의존성 수: **7개** — 기준 ≤ 15 통과.
+- 셋 다 기준 안이므로 중단 조건 미해당.
+
+### 임시 우회
+- 없음. 임의로 teloxide를 reqwest 직접 호출로 교체하지 않음.
+
+### 비고
+- 실제 텔레그램 수신 기반 검증(2·3)은 남은 항목이다. 코드·단위 테스트·릴리스 예산·기본/교체 모델 호출은 실행 결과로 확인했다.
+- `logs/`, `memory/`, `workspace/`, `.env`는 계속 git 추적 제외.

@@ -10,7 +10,7 @@ pub async fn run_turn(
     tools: &Tools,
     system_prompt: &str,
     user_input: &str,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let mut messages = vec![Message::system(system_prompt), Message::user(user_input)];
     let mut roundtrips = 0usize;
     let mut last_error: Option<(String, String)> = None;
@@ -40,7 +40,10 @@ pub async fn run_turn(
                 .join(","),
             _ => "none".to_string(),
         };
-        logging::append(&format!("model_call tools=[{tool_names}] usage={usage}"));
+        logging::append(&format!(
+            "model_call model={} tools=[{tool_names}] usage={usage}",
+            brain.model()
+        ));
 
         let has_tools = reply
             .message
@@ -60,9 +63,8 @@ pub async fn run_turn(
                 continue;
             }
 
-            println!("{content}");
             logging::append("turn_end answer");
-            return Ok(());
+            return Ok(content);
         }
 
         roundtrips += 1;
