@@ -26,7 +26,7 @@ Iskra — персональный агент, который живёт в ме
 
 ## Текущее состояние (v1)
 
-- [x] Скелет на Rust + мозг DeepSeek (прямые HTTP-запросы, без SDK)
+- [x] Скелет на Rust + мозг (прямые HTTP-запросы, без SDK) — модель сменная, в v1 по умолчанию DeepSeek
 - [x] Цикл диалога с условиями остановки (лимит кругов инструментов, остановка при повторяющейся ошибке)
 - [x] Файловые инструменты (`read_file`, `write_file`), ограниченные папкой `workspace/`
 - [x] Память в Markdown с бюджетной загрузкой и маскируемым сохранением, файлы идентичности (SOUL.md / USER.md)
@@ -48,7 +48,7 @@ Iskra — персональный агент, который живёт в ме
 ```bash
 git clone https://github.com/jeonghoheo/iskra.git
 cd iskra
-cp .env.example .env   # добавьте свой DEEPSEEK_API_KEY
+cp .env.example .env   # добавьте ключ API модели (по умолчанию в v1 — DeepSeek: DEEPSEEK_API_KEY)
 cargo run
 ```
 

@@ -26,7 +26,7 @@ Iskra는 메신저 안에 살면서 재시작해도 기억을 유지하고, 엄�
 
 ## 현재 상태 (v1)
 
-- [x] Rust 골격 + DeepSeek 두뇌 (SDK 없이 HTTP 직접 호출)
+- [x] Rust 골격 + 두뇌 (SDK 없이 HTTP 직접 호출) — 모델은 교체 가능한 부품, v1 기본값은 DeepSeek
 - [x] 멈춤 조건이 있는 대화 루프 (도구 왕복 상한, 같은 오류 반복 시 정지)
 - [x] `workspace/`로 샌드박스된 파일 도구 (`read_file`, `write_file`)
 - [x] 예산 로드 + 가림 저장되는 마크다운 기억, 정체성 파일 (SOUL.md / USER.md)
@@ -48,7 +48,7 @@ Iskra는 메신저 안에 살면서 재시작해도 기억을 유지하고, 엄�
 ```bash
 git clone https://github.com/jeonghoheo/iskra.git
 cd iskra
-cp .env.example .env   # DEEPSEEK_API_KEY를 넣으세요
+cp .env.example .env   # 모델 API 키를 넣으세요 (v1 기본값 DeepSeek: DEEPSEEK_API_KEY)
 cargo run
 ```
 

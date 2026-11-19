@@ -38,7 +38,7 @@ and reassembled — swap the model, the channel, or the tools without touching t
 
 ## Current state (v1)
 
-- [x] Rust skeleton + DeepSeek brain (direct HTTP, no SDK)
+- [x] Rust skeleton + brain (direct HTTP, no SDK) — the model is a swappable part; v1 ships with DeepSeek as the default
 - [x] Conversation loop with stop conditions (max tool round-trips, repeated-error halt)
 - [x] File tools (`read_file`, `write_file`) sandboxed to `workspace/`
 - [x] Markdown memory with budgeted load + redacted save, identity files (SOUL.md / USER.md)
@@ -60,7 +60,7 @@ and reassembled — swap the model, the channel, or the tools without touching t
 ```bash
 git clone https://github.com/jeonghoheo/iskra.git
 cd iskra
-cp .env.example .env   # add your DEEPSEEK_API_KEY
+cp .env.example .env   # add your model API key (v1 default: DEEPSEEK_API_KEY)
 cargo run
 ```
 

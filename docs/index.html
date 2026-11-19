@@ -272,7 +272,7 @@
         <h1 data-i18n="h1">A lightweight AI agent,<br><em>built by hand</em>
           <span class="en">Iskra (искра) means “spark” — a personal agent harness, written in Rust.</span>
         </h1>
-        <p class="hero-sub" data-i18n="heroSub">Iskra is a personal agent harness built from the loop up — not a giant framework you adopt off the shelf, but <b>a small core you write and understand yourself</b>. A single Rust binary, a DeepSeek brain, and file tools that cannot leak outside their sandbox.</p>
+        <p class="hero-sub" data-i18n="heroSub">Iskra is a personal agent harness built from the loop up — not a giant framework you adopt off the shelf, but <b>a small core you write and understand yourself</b>. A single Rust binary, a brain you plug in yourself — any model, your own API key (BYO-key) — and file tools that cannot leak outside their sandbox.</p>
         <div class="hero-ctas">
           <a class="btn btn-primary" href="https://github.com/jeonghoheo/iskra" target="_blank" rel="noopener"><span data-i18n="ctaGithub">View on GitHub</span>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
@@ -311,7 +311,7 @@
     <div class="wrap"><div class="stack"><div class="stack-in">
       <span class="lbl">BUILT WITH</span>
       <span class="pill">Rust 1.100</span><span class="pill">Tokio</span><span class="pill">Reqwest · rustls</span>
-      <span class="pill">DeepSeek API</span><span class="pill">serde_json</span><span class="pill">dotenvy</span>
+      <span class="pill">Any LLM API · BYO-key</span><span class="pill">serde_json</span><span class="pill">dotenvy</span>
     </div></div></div>
   </div>
 
@@ -324,7 +324,7 @@
         <p data-i18n="howP">Around the heart of the system — a loop where the model alternates between answers and tool calls — the brain, the tools and the logs attach loosely. Each file owns exactly one role, so the code stays easy to read and to change.</p>
       </div>
       <div class="flow">
-        <div class="flow-step"><span class="n">STEP 1 · BRAIN</span><h3 data-i18n="s1h">Ask the brain</h3><p data-i18n="s1p"><code>brain.rs</code> sends the conversation and the tool list to the DeepSeek API and brings the reply back.</p></div>
+        <div class="flow-step"><span class="n">STEP 1 · BRAIN</span><h3 data-i18n="s1h">Ask the brain</h3><p data-i18n="s1p"><code>brain.rs</code> sends the conversation and the tool list to the model API you plugged in — any provider, your own key — and brings the reply back.</p></div>
         <div class="flow-step"><span class="n">STEP 2 · LOOP</span><h3 data-i18n="s2h">The loop decides</h3><p data-i18n="s2p"><code>loop_.rs</code> separates a final answer from a tool call — and enforces the guardrails.</p></div>
         <div class="flow-step"><span class="n">STEP 3 · TOOLS</span><h3 data-i18n="s3h">Tools execute</h3><p data-i18n="s3p">File reads and writes in <code>tools.rs</code> work only inside <code>workspace/</code>.</p></div>
         <div class="flow-step"><span class="n">STEP 4 · LOG</span><h3 data-i18n="s4h">Everything is logged</h3><p data-i18n="s4p">Even token usage lands in <code>logs/agent.log</code> as hard numbers.</p></div>
@@ -426,7 +426,7 @@
       <div class="sec-head">
         <span class="sec-tag" data-i18n="qsTag">QUICKSTART</span>
         <h2 data-i18n="qsH2">Five minutes to your first conversation</h2>
-        <p data-i18n="qsP">All you need is Rust and a DeepSeek API key. Put the key in <span class="mono" style="font-size:.92em">.env</span> only — and never commit it to the repository.</p>
+        <p data-i18n="qsP">All you need is Rust and an API key for a model of your choice — Iskra is not tied to any single provider. Put the key in <span class="mono" style="font-size:.92em">.env</span> only — and never commit it to the repository.</p>
       </div>
       <div class="tabs">
         <div class="tab-bar" role="tablist" aria-label="Quickstart tabs">
@@ -440,9 +440,9 @@
 git clone https://github.com/jeonghoheo/iskra.git
 <span class="kw">cd</span> iskra
 
-<span class="cm"># 2) Add your DeepSeek key (.env is gitignored)</span>
+<span class="cm"># 2) Add your own model key — any provider (.env is gitignored)</span>
 cat &gt; .env &lt;&lt; <span class="st">'EOF'</span>
-DEEPSEEK_API_KEY=your_key_here
+LLM_API_KEY=your_key_here
 <span class="st">EOF</span>
 
 <span class="cm"># 3) Run — the first build compiles dependencies and may take a few minutes</span>
@@ -454,22 +454,22 @@ cargo run</pre></div>
         </div>
 
         <div class="tab-panel" id="t2">
-          <div class="code-card"><pre data-i18n="codeMain"><span class="cm">// The minimal circuit from Block 2 — ask DeepSeek one sentence, print the answer</span>
+          <div class="code-card"><pre data-i18n="codeMain"><span class="cm">// The minimal circuit from Block 2 — ask the model one sentence, print the answer</span>
 <span class="kw">use</span> serde_json::json;
 
 #[tokio::main]
 <span class="kw">async fn</span> <span class="fn">main</span>() -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt; {
     dotenvy::dotenv().ok();
-    <span class="kw">let</span> key = env::var(<span class="st">"DEEPSEEK_API_KEY"</span>)?;
+    <span class="kw">let</span> key = env::var(<span class="st">"LLM_API_KEY"</span>)?;
 
     <span class="kw">let</span> body = json!({
-        <span class="st">"model"</span>: <span class="st">"deepseek-chat"</span>,
+        <span class="st">"model"</span>: <span class="st">"your-model"</span>,
         <span class="st">"messages"</span>: [{ <span class="st">"role"</span>: <span class="st">"user"</span>,
           <span class="st">"content"</span>: <span class="st">"Introduce yourself in one sentence"</span> }]
     });
 
     <span class="kw">let</span> res = Client::new()
-        .post(<span class="st">"https://api.deepseek.com/chat/completions"</span>)
+        .post(<span class="st">"https://your-provider.example/v1/chat/completions"</span>)
         .bearer_auth(key).json(&amp;body).send().<span class="kw">await</span>?;
     <span class="kw">let</span> v: Value = res.json().<span class="kw">await</span>?;
     println!(<span class="st">"{}"</span>, v[<span class="st">"choices"</span>][0][<span class="st">"message"</span>][<span class="st">"content"</span>]);
@@ -483,7 +483,7 @@ cargo run</pre></div>
 ├─ Cargo.toml
 ├─ src/
 │  ├─ main.rs    <span class="cm">— entry point</span>
-│  ├─ brain.rs   <span class="cm">— DeepSeek calls</span>
+│  ├─ brain.rs   <span class="cm">— LLM API calls (any provider)</span>
 │  ├─ loop_.rs   <span class="cm">— agent loop + guardrails</span>
 │  └─ tools.rs   <span class="cm">— sandboxed file tools</span>
 ├─ workspace/    <span class="cm">— the only folder tools may touch (not in git)</span>
@@ -509,7 +509,7 @@ cargo run</pre></div>
       </div>
       <div class="road">
         <div class="block done"><div class="bn">01</div><div><h3><span data-i18n="b1t">Skeleton</span> <span class="status done" data-i18n="stDone">Done</span></h3><p data-i18n="b1p">From installing Rust to <span class="mono">cargo new iskra</span> — a minimal project that compiles and runs.</p></div></div>
-        <div class="block done"><div class="bn">02</div><div><h3><span data-i18n="b2t">First call</span> <span class="status done" data-i18n="stDone">Done</span></h3><p data-i18n="b2p">The minimal circuit that asks DeepSeek one sentence and prints the answer. The key is isolated in .env.</p></div></div>
+        <div class="block done"><div class="bn">02</div><div><h3><span data-i18n="b2t">First call</span> <span class="status done" data-i18n="stDone">Done</span></h3><p data-i18n="b2p">The minimal circuit that asks the model one sentence and prints the answer. Your own key, isolated in .env.</p></div></div>
         <div class="block done"><div class="bn">03</div><div><h3><span data-i18n="b3t">Loop + file tools</span> <span class="status done" data-i18n="stDoneVer">Done · verified</span></h3><p data-i18n="b3p">The agent loop and sandboxed read/write — verified down to the <span class="mono">../secret.txt</span> refusal.</p></div></div>
         <div class="block next"><div class="bn">04</div><div><h3><span data-i18n="b4t">Memory</span> <span class="status next" data-i18n="stNext">Next</span></h3><p data-i18n="b4p">MEMORY.md loading + the memory_save tool. The acceptance test: does it still remember your favourite colour after a restart?</p></div></div>
         <div class="block"><div class="bn">05</div><div><h3><span data-i18n="b5t">Telegram</span> <span class="status plan" data-i18n="stPlan">Planned</span></h3><p data-i18n="b5p">An agent you can call from a messenger — the step where it enters daily life.</p></div></div>
@@ -563,7 +563,7 @@ cargo run</pre></div>
     navHow: "How it works", navFeat: "Features", navSafe: "Sandbox", navStart: "Quickstart", navRoad: "Roadmap",
     badge: `<span class="dot" aria-hidden="true">✦</span><span>v1 in development · Block <b>&nbsp;3 / 6 complete</b></span>`,
     h1: `A lightweight AI agent,<br><em>built by hand</em><span class="en">Iskra (искра) means “spark” — a personal agent harness, written in Rust.</span>`,
-    heroSub: `Iskra is a personal agent harness built from the loop up — not a giant framework you adopt off the shelf, but <b>a small core you write and understand yourself</b>. A single Rust binary, a DeepSeek brain, and file tools that cannot leak outside their sandbox.`,
+    heroSub: `Iskra is a personal agent harness built from the loop up — not a giant framework you adopt off the shelf, but <b>a small core you write and understand yourself</b>. A single Rust binary, a brain you plug in yourself — any model, your own API key (BYO-key) — and file tools that cannot leak outside their sandbox.`,
     ctaGithub: "View on GitHub", ctaQuick: "Quickstart →",
     meta1: `<span class="ok">✓</span> Public repository · fair-code approach`,
     meta2: `<span class="ok">✓</span> Keys live in .env — never in the repo`,
@@ -578,7 +578,7 @@ cargo run</pre></div>
     usageIdle: "usage — idle", usageRunning: "usage — running", usageDone: "usage · prompt=509 completion=62 total=571",
     howTag: "HOW IT WORKS", howH2: "An agent is, in the end, one well-built loop",
     howP: "Around the heart of the system — a loop where the model alternates between answers and tool calls — the brain, the tools and the logs attach loosely. Each file owns exactly one role, so the code stays easy to read and to change.",
-    s1h: "Ask the brain", s1p: `<code>brain.rs</code> sends the conversation and the tool list to the DeepSeek API and brings the reply back.`,
+    s1h: "Ask the brain", s1p: `<code>brain.rs</code> sends the conversation and the tool list to the model API you plugged in — any provider, your own key — and brings the reply back.`,
     s2h: "The loop decides", s2p: `<code>loop_.rs</code> separates a final answer from a tool call — and enforces the guardrails.`,
     s3h: "Tools execute", s3p: `File reads and writes in <code>tools.rs</code> work only inside <code>workspace/</code>.`,
     s4h: "Everything is logged", s4p: `Even token usage lands in <code>logs/agent.log</code> as hard numbers.`,
@@ -619,35 +619,35 @@ cargo run</pre></div>
   <span class="kw">if</span> !real.starts_with(workspace) { Err(<span class="st">"rejected"</span>) }
 }`,
     qsTag: "QUICKSTART", qsH2: "Five minutes to your first conversation",
-    qsP: `All you need is Rust and a DeepSeek API key. Put the key in <span class="mono" style="font-size:.92em">.env</span> only — and never commit it to the repository.`,
+    qsP: `All you need is Rust and an API key for a model of your choice — Iskra is not tied to any single provider. Put the key in <span class="mono" style="font-size:.92em">.env</span> only — and never commit it to the repository.`,
     tab1: "Install · Run", tab3: "Project structure",
     codeInstall: `<span class="cm"># 1) Clone the repository</span>
 git clone https://github.com/jeonghoheo/iskra.git
 <span class="kw">cd</span> iskra
 
-<span class="cm"># 2) Add your DeepSeek key (.env is gitignored)</span>
+<span class="cm"># 2) Add your own model key — any provider (.env is gitignored)</span>
 cat &gt; .env &lt;&lt; <span class="st">'EOF'</span>
-DEEPSEEK_API_KEY=your_key_here
+LLM_API_KEY=your_key_here
 <span class="st">EOF</span>
 
 <span class="cm"># 3) Run — the first build compiles dependencies and may take a few minutes</span>
 cargo run`,
-    codeMain: `<span class="cm">// The minimal circuit from Block 2 — ask DeepSeek one sentence, print the answer</span>
+    codeMain: `<span class="cm">// The minimal circuit from Block 2 — ask the model one sentence, print the answer</span>
 <span class="kw">use</span> serde_json::json;
 
 #[tokio::main]
 <span class="kw">async fn</span> <span class="fn">main</span>() -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt; {
     dotenvy::dotenv().ok();
-    <span class="kw">let</span> key = env::var(<span class="st">"DEEPSEEK_API_KEY"</span>)?;
+    <span class="kw">let</span> key = env::var(<span class="st">"LLM_API_KEY"</span>)?;
 
     <span class="kw">let</span> body = json!({
-        <span class="st">"model"</span>: <span class="st">"deepseek-chat"</span>,
+        <span class="st">"model"</span>: <span class="st">"your-model"</span>,
         <span class="st">"messages"</span>: [{ <span class="st">"role"</span>: <span class="st">"user"</span>,
           <span class="st">"content"</span>: <span class="st">"Introduce yourself in one sentence"</span> }]
     });
 
     <span class="kw">let</span> res = Client::new()
-        .post(<span class="st">"https://api.deepseek.com/chat/completions"</span>)
+        .post(<span class="st">"https://your-provider.example/v1/chat/completions"</span>)
         .bearer_auth(key).json(&amp;body).send().<span class="kw">await</span>?;
     <span class="kw">let</span> v: Value = res.json().<span class="kw">await</span>?;
     println!(<span class="st">"{}"</span>, v[<span class="st">"choices"</span>][0][<span class="st">"message"</span>][<span class="st">"content"</span>]);
@@ -657,7 +657,7 @@ cargo run`,
 ├─ Cargo.toml
 ├─ src/
 │  ├─ main.rs    <span class="cm">— entry point</span>
-│  ├─ brain.rs   <span class="cm">— DeepSeek calls</span>
+│  ├─ brain.rs   <span class="cm">— LLM API calls (any provider)</span>
 │  ├─ loop_.rs   <span class="cm">— agent loop + guardrails</span>
 │  └─ tools.rs   <span class="cm">— sandboxed file tools</span>
 ├─ workspace/    <span class="cm">— the only folder tools may touch (not in git)</span>
@@ -672,7 +672,7 @@ cargo run`,
     rmP: "Not everything at once. Every block has acceptance criteria, and the next block starts only after verification passes.",
     progLabel: "v1 progress", progMeta: "BLOCK 3 / 6 · 50%",
     b1t: "Skeleton", b1p: `From installing Rust to <span class="mono">cargo new iskra</span> — a minimal project that compiles and runs.`,
-    b2t: "First call", b2p: "The minimal circuit that asks DeepSeek one sentence and prints the answer. The key is isolated in .env.",
+    b2t: "First call", b2p: "The minimal circuit that asks the model one sentence and prints the answer. Your own key, isolated in .env.",
     b3t: "Loop + file tools", b3p: `The agent loop and sandboxed read/write — verified down to the <span class="mono">../secret.txt</span> refusal.`,
     b4t: "Memory", b4p: "MEMORY.md loading + the memory_save tool. The acceptance test: does it still remember your favourite colour after a restart?",
     b5t: "Telegram", b5p: "An agent you can call from a messenger — the step where it enters daily life.",
@@ -693,7 +693,7 @@ cargo run`,
     navHow: "Как это работает", navFeat: "Возможности", navSafe: "Песочница", navStart: "Быстрый старт", navRoad: "Дорожная карта",
     badge: `<span class="dot" aria-hidden="true">✦</span><span>v1 в разработке · Блок <b>&nbsp;3 / 6 готов</b></span>`,
     h1: `Лёгкий AI-агент,<br><em>собранный своими руками</em><span class="en">ISKRA — персональный агентный харнесс, написанный на Rust.</span>`,
-    heroSub: `«Искра» — это персональный агентный харнесс, построенный начиная с самой петли (loop), а не гигантский фреймворк, который берут готовым: <b>маленькое ядро, которое пишешь и понимаешь сам</b>. Один бинарник на Rust, мозг на DeepSeek и файловые инструменты, которые не могут выйти за пределы песочницы.`,
+    heroSub: `«Искра» — это персональный агентный харнесс, построенный начиная с самой петли (loop), а не гигантский фреймворк, который берут готовым: <b>маленькое ядро, которое пишешь и понимаешь сам</b>. Один бинарник на Rust, мозг, который подключаете вы сами, — любая модель, ваш собственный API-ключ (BYO-key), — и файловые инструменты, которые не могут выйти за пределы песочницы.`,
     ctaGithub: "Смотреть на GitHub", ctaQuick: "Быстрый старт →",
     meta1: `<span class="ok">✓</span> Публичный репозиторий · подход fair-code`,
     meta2: `<span class="ok">✓</span> Ключи живут в .env — и никогда в репозитории`,
@@ -708,7 +708,7 @@ cargo run`,
     usageIdle: "usage — ожидание", usageRunning: "usage — выполняется", usageDone: "usage · prompt=509 completion=62 total=571",
     howTag: "КАК ЭТО РАБОТАЕТ", howH2: "Агент — это, в сущности, одна хорошо сделанная петля",
     howP: "Вокруг сердца системы — петли, в которой модель чередует ответы и вызовы инструментов, — свободно крепятся мозг, инструменты и логи. У каждого файла ровно одна роль, поэтому код легко читать и менять.",
-    s1h: "Спрашиваем мозг", s1p: `<code>brain.rs</code> отправляет разговор и список инструментов в DeepSeek API и получает ответ.`,
+    s1h: "Спрашиваем мозг", s1p: `<code>brain.rs</code> отправляет разговор и список инструментов в API модели, которую вы подключили сами, — любой провайдер, ваш ключ — и получает ответ.`,
     s2h: "Петля решает", s2p: `<code>loop_.rs</code> отделяет финальный ответ от вызова инструмента — и следит за ограничителями.`,
     s3h: "Инструменты выполняют", s3p: `Чтение и запись файлов в <code>tools.rs</code> работают только внутри <code>workspace/</code>.`,
     s4h: "Всё записывается", s4p: `Даже расход токенов попадает в <code>logs/agent.log</code> в виде точных цифр.`,
@@ -749,35 +749,35 @@ cargo run`,
   <span class="kw">if</span> !real.starts_with(workspace) { Err(<span class="st">"rejected"</span>) }
 }`,
     qsTag: "БЫСТРЫЙ СТАРТ", qsH2: "Пять минут до первого разговора",
-    qsP: `Нужны только Rust и API-ключ DeepSeek. Ключ кладите только в <span class="mono" style="font-size:.92em">.env</span> — и никогда не коммитьте его в репозиторий.`,
+    qsP: `Нужны только Rust и API-ключ любой модели на ваш выбор — «Искра» не привязана к одному провайдеру. Ключ кладите только в <span class="mono" style="font-size:.92em">.env</span> — и никогда не коммитьте его в репозиторий.`,
     tab1: "Установка · Запуск", tab3: "Структура проекта",
     codeInstall: `<span class="cm"># 1) Клонируем репозиторий</span>
 git clone https://github.com/jeonghoheo/iskra.git
 <span class="kw">cd</span> iskra
 
-<span class="cm"># 2) Кладём ключ DeepSeek (.env закрыт через gitignore)</span>
+<span class="cm"># 2) Кладём свой ключ модели — любого провайдера (.env закрыт через gitignore)</span>
 cat &gt; .env &lt;&lt; <span class="st">'EOF'</span>
-DEEPSEEK_API_KEY=ваш_ключ_сюда
+LLM_API_KEY=ваш_ключ_сюда
 <span class="st">EOF</span>
 
 <span class="cm"># 3) Запуск — первая сборка компилирует зависимости и может занять несколько минут</span>
 cargo run`,
-    codeMain: `<span class="cm">// Минимальный контур из Блока 2 — задать DeepSeek одно предложение и напечатать ответ</span>
+    codeMain: `<span class="cm">// Минимальный контур из Блока 2 — задать модели одно предложение и напечатать ответ</span>
 <span class="kw">use</span> serde_json::json;
 
 #[tokio::main]
 <span class="kw">async fn</span> <span class="fn">main</span>() -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt; {
     dotenvy::dotenv().ok();
-    <span class="kw">let</span> key = env::var(<span class="st">"DEEPSEEK_API_KEY"</span>)?;
+    <span class="kw">let</span> key = env::var(<span class="st">"LLM_API_KEY"</span>)?;
 
     <span class="kw">let</span> body = json!({
-        <span class="st">"model"</span>: <span class="st">"deepseek-chat"</span>,
+        <span class="st">"model"</span>: <span class="st">"your-model"</span>,
         <span class="st">"messages"</span>: [{ <span class="st">"role"</span>: <span class="st">"user"</span>,
           <span class="st">"content"</span>: <span class="st">"Представься одним предложением"</span> }]
     });
 
     <span class="kw">let</span> res = Client::new()
-        .post(<span class="st">"https://api.deepseek.com/chat/completions"</span>)
+        .post(<span class="st">"https://your-provider.example/v1/chat/completions"</span>)
         .bearer_auth(key).json(&amp;body).send().<span class="kw">await</span>?;
     <span class="kw">let</span> v: Value = res.json().<span class="kw">await</span>?;
     println!(<span class="st">"{}"</span>, v[<span class="st">"choices"</span>][0][<span class="st">"message"</span>][<span class="st">"content"</span>]);
@@ -787,7 +787,7 @@ cargo run`,
 ├─ Cargo.toml
 ├─ src/
 │  ├─ main.rs    <span class="cm">— точка входа</span>
-│  ├─ brain.rs   <span class="cm">— вызовы DeepSeek</span>
+│  ├─ brain.rs   <span class="cm">— вызовы API модели</span>
 │  ├─ loop_.rs   <span class="cm">— петля агента + ограничители</span>
 │  └─ tools.rs   <span class="cm">— файловые инструменты в песочнице</span>
 ├─ workspace/    <span class="cm">— единственная папка, доступная инструментам (не в git)</span>
@@ -802,7 +802,7 @@ cargo run`,
     rmP: "Не всё сразу. У каждого блока есть критерии приёмки, и следующий блок начинается только после прохождения проверки.",
     progLabel: "Прогресс v1", progMeta: "БЛОК 3 / 6 · 50%",
     b1t: "Каркас", b1p: `От установки Rust до <span class="mono">cargo new iskra</span> — минимальный проект, который компилируется и запускается.`,
-    b2t: "Первый вызов", b2p: "Минимальный контур, который задаёт DeepSeek одно предложение и печатает ответ. Ключ изолирован в .env.",
+    b2t: "Первый вызов", b2p: "Минимальный контур, который задаёт модели одно предложение и печатает ответ. Ваш собственный ключ, изолированный в .env.",
     b3t: "Петля + файловые инструменты", b3p: `Агентная петля и чтение/запись в песочнице — проверено вплоть до отказа на <span class="mono">../secret.txt</span>.`,
     b4t: "Память", b4p: "Загрузка MEMORY.md + инструмент memory_save. Критерий приёмки: помнит ли агент ваш любимый цвет после перезапуска?",
     b5t: "Telegram", b5p: "Агент, которого можно позвать из мессенджера, — шаг, на котором он входит в повседневную жизнь.",
@@ -823,7 +823,7 @@ cargo run`,
     navHow: "작동 방식", navFeat: "기능", navSafe: "샌드박스", navStart: "빠른 시작", navRoad: "로드맵",
     badge: `<span class="dot" aria-hidden="true">✦</span><span>v1 개발 중 · Block <b>&nbsp;3 / 6 완료</b></span>`,
     h1: `내 손으로 만드는<br><em>가벼운 AI 에이전트</em><span class="en">ISKRA — Rust로 쓴 개인용 에이전트 하네스.</span>`,
-    heroSub: `이스크라(искра, “불꽃”)는 거대한 프레임워크를 가져다 쓰는 대신, <b>에이전트의 심장인 루프부터 직접 만든</b> 개인용 에이전트 하네스입니다. Rust 단일 바이너리, DeepSeek 두뇌, 그리고 밖으로 새지 않는 샌드박스 파일 도구.`,
+    heroSub: `이스크라(искра, “불꽃”)는 거대한 프레임워크를 가져다 쓰는 대신, <b>에이전트의 심장인 루프부터 직접 만든</b> 개인용 에이전트 하네스입니다. Rust 단일 바이너리, 직접 연결하는 두뇌 — 어떤 모델이든 본인의 API 키로(BYO-key) — 그리고 밖으로 새지 않는 샌드박스 파일 도구.`,
     ctaGithub: "GitHub에서 보기", ctaQuick: "빠른 시작 →",
     meta1: `<span class="ok">✓</span> 공개 저장소 · fair-code 방침`,
     meta2: `<span class="ok">✓</span> .env 키는 저장소에 올라가지 않음`,
@@ -838,7 +838,7 @@ cargo run`,
     usageIdle: "usage — 대기 중", usageRunning: "usage — 실행 중", usageDone: "usage · prompt=509 completion=62 total=571",
     howTag: "작동 방식 · HOW IT WORKS", howH2: "에이전트는 결국, 잘 만든 루프 하나입니다",
     howP: "모델이 “답변”과 “도구 사용”을 오가는 심장부(loop)를 중심으로, 두뇌·도구·기록이 느슨하게 붙는 구조. 파일이 역할마다 나뉘어 있어 읽고 고치기 쉽습니다.",
-    s1h: "두뇌에 묻는다", s1p: `<code>brain.rs</code>가 DeepSeek API에 대화와 도구 목록을 보내고, 답을 받아옵니다.`,
+    s1h: "두뇌에 묻는다", s1p: `<code>brain.rs</code>가 본인이 연결한 모델 API에 대화와 도구 목록을 보내고, 답을 받아옵니다 — 공급자는 자유롭게, 키는 본인 것으로.`,
     s2h: "루프가 판단한다", s2p: `<code>loop_.rs</code>가 “끝낼 답”인지 “도구 호출”인지 가르고, 가드레일을 지킵니다.`,
     s3h: "도구가 실행한다", s3p: `<code>tools.rs</code>의 파일 읽기와 쓰기가 <code>workspace/</code> 안에서만 동작합니다.`,
     s4h: "전부 기록한다", s4p: `토큰 사용량(usage)까지 <code>logs/agent.log</code>에 숫자로 남습니다.`,
@@ -879,35 +879,35 @@ cargo run`,
   <span class="kw">if</span> !real.starts_with(workspace) { Err(<span class="st">"rejected"</span>) }
 }`,
     qsTag: "빠른 시작 · QUICKSTART", qsH2: "5분이면 첫 대화까지",
-    qsP: `Rust와 DeepSeek API 키만 있으면 됩니다. 키는 <span class="mono" style="font-size:.92em">.env</span>에만 넣고, 저장소에는 절대 올리지 마세요.`,
+    qsP: `Rust와 본인이 고른 모델의 API 키만 있으면 됩니다 — 특정 공급자·모델에 묶이지 않습니다. 키는 <span class="mono" style="font-size:.92em">.env</span>에만 넣고, 저장소에는 절대 올리지 마세요.`,
     tab1: "설치 · 실행", tab3: "프로젝트 구조",
     codeInstall: `<span class="cm"># 1) 저장소 받기</span>
 git clone https://github.com/jeonghoheo/iskra.git
 <span class="kw">cd</span> iskra
 
-<span class="cm"># 2) DeepSeek 키 넣기 (.env는 gitignore 처리됨)</span>
+<span class="cm"># 2) 본인 모델 키 넣기 — 공급자는 자유롭게 (.env는 gitignore 처리됨)</span>
 cat &gt; .env &lt;&lt; <span class="st">'EOF'</span>
-DEEPSEEK_API_KEY=여기에_본인_키
+LLM_API_KEY=여기에_본인_키
 <span class="st">EOF</span>
 
 <span class="cm"># 3) 실행 — 첫 실행은 의존성 컴파일로 몇 분 걸립니다</span>
 cargo run`,
-    codeMain: `<span class="cm">// Block 2의 최소 회로 — DeepSeek에 한 문장 묻고 답 받기</span>
+    codeMain: `<span class="cm">// Block 2의 최소 회로 — 모델에 한 문장 묻고 답 받기</span>
 <span class="kw">use</span> serde_json::json;
 
 #[tokio::main]
 <span class="kw">async fn</span> <span class="fn">main</span>() -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt; {
     dotenvy::dotenv().ok();
-    <span class="kw">let</span> key = env::var(<span class="st">"DEEPSEEK_API_KEY"</span>)?;
+    <span class="kw">let</span> key = env::var(<span class="st">"LLM_API_KEY"</span>)?;
 
     <span class="kw">let</span> body = json!({
-        <span class="st">"model"</span>: <span class="st">"deepseek-chat"</span>,
+        <span class="st">"model"</span>: <span class="st">"your-model"</span>,
         <span class="st">"messages"</span>: [{ <span class="st">"role"</span>: <span class="st">"user"</span>,
           <span class="st">"content"</span>: <span class="st">"한 문장으로 자기소개 해줘"</span> }]
     });
 
     <span class="kw">let</span> res = Client::new()
-        .post(<span class="st">"https://api.deepseek.com/chat/completions"</span>)
+        .post(<span class="st">"https://your-provider.example/v1/chat/completions"</span>)
         .bearer_auth(key).json(&amp;body).send().<span class="kw">await</span>?;
     <span class="kw">let</span> v: Value = res.json().<span class="kw">await</span>?;
     println!(<span class="st">"{}"</span>, v[<span class="st">"choices"</span>][0][<span class="st">"message"</span>][<span class="st">"content"</span>]);
@@ -917,7 +917,7 @@ cargo run`,
 ├─ Cargo.toml
 ├─ src/
 │  ├─ main.rs    <span class="cm">— 진입점</span>
-│  ├─ brain.rs   <span class="cm">— DeepSeek 호출</span>
+│  ├─ brain.rs   <span class="cm">— 모델 API 호출</span>
 │  ├─ loop_.rs   <span class="cm">— 에이전트 루프 + 가드레일</span>
 │  └─ tools.rs   <span class="cm">— 샌드박스 파일 도구</span>
 ├─ workspace/    <span class="cm">— 도구가 닿을 수 있는 유일한 폴더 (git 제외)</span>
@@ -932,7 +932,7 @@ cargo run`,
     rmP: "한 번에 다 만들지 않습니다. 블록마다 합격 기준이 있고, 검수를 통과해야 다음으로 넘어갑니다.",
     progLabel: "v1 진행률", progMeta: "BLOCK 3 / 6 · 50%",
     b1t: "뼈대", b1p: `Rust 설치부터 <span class="mono">cargo new iskra</span>까지 — 컴파일·실행되는 최소 프로젝트.`,
-    b2t: "첫 호출", b2p: "DeepSeek API에 한 문장을 묻고 답을 받는 최소 회로. 키는 .env로 격리.",
+    b2t: "첫 호출", b2p: "본인이 연결한 모델에 한 문장을 묻고 답을 받는 최소 회로. 키는 .env로 격리.",
     b3t: "루프 + 파일 도구", b3p: `에이전트 루프와 샌드박스 read/write. <span class="mono">../secret.txt</span> 거부까지 검증.`,
     b4t: "기억", b4p: "MEMORY.md 로드 + memory_save 도구. 합격 기준은 “재시작 후에도 좋아하는 색을 기억하는가”.",
     b5t: "텔레그램", b5p: "메신저에서 부르는 에이전트. 일상 동선 안으로 들어오는 단계.",
