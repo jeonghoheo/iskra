@@ -195,7 +195,7 @@
   .progress-top b{font-size:16px}
   .progress-top .mono{font-size:13px;color:var(--ink-3)}
   .bar{height:10px;border-radius:99px;background:var(--surface-2);border:1px solid var(--line);margin-top:13px;overflow:hidden}
-  .bar i{display:block;height:100%;width:50%;background:linear-gradient(90deg,var(--amber),var(--ember));border-radius:99px}
+  .bar i{display:block;height:100%;width:67%;background:linear-gradient(90deg,var(--amber),var(--ember));border-radius:99px}
   .road{margin-top:16px;display:grid;gap:12px}
   @media(min-width:900px){.road{grid-template-columns:1fr 1fr}}
   .block{display:flex;gap:16px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px}
@@ -268,7 +268,7 @@
     <canvas id="sparks" aria-hidden="true"></canvas>
     <div class="wrap hero-grid">
       <div>
-        <span class="badge" data-i18n="badge"><span class="dot" aria-hidden="true">✦</span><span>v1 in development · Block <b>&nbsp;3 / 6 complete</b></span></span>
+        <span class="badge" data-i18n="badge"><span class="dot" aria-hidden="true">✦</span><span>v1 in development · Block <b>&nbsp;4 / 6 complete</b></span></span>
         <h1 data-i18n="h1">A lightweight AI agent,<br><em>built by hand</em>
           <span class="en">Iskra (искра) means “spark” — a personal agent harness, written in Rust.</span>
         </h1>
@@ -355,13 +355,13 @@
         </article>
         <article class="feat amber">
           <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4H6.5A2.5 2.5 0 0 0 4 6.5v13z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg></div>
-          <h3><span data-i18n="f3t">Memory (MEMORY.md)</span> <span class="status next" data-i18n="stNext4">Next · Block 4</span></h3>
+          <h3><span data-i18n="f3t">Memory (MEMORY.md)</span> <span class="status done" data-i18n="stDoneVer">Done · verified</span></h3>
           <p data-i18n="f3p">On startup the agent loads its memory file, and a <code>memory_save</code> tool adds new memories. Credentials such as API keys are automatically redacted before anything is stored.</p>
           <div class="spec" data-i18n="f3spec">Budget 200 lines / 24 KB · atomic writes<br>Permissions 0600 · automatic credential redaction</div>
         </article>
         <article class="feat">
           <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"/></svg></div>
-          <h3><span data-i18n="f4t">Telegram connection</span> <span class="status plan" data-i18n="stPlan5">Planned · Block 5</span></h3>
+          <h3><span data-i18n="f4t">Telegram connection</span> <span class="status next" data-i18n="stNext5">Next · Block 5</span></h3>
           <p data-i18n="f4p">Leave the terminal behind and call your agent from the messenger you already use every day — it has to live where your hands already are.</p>
           <div class="spec" data-i18n="f4spec">Telegram Bot API integration planned</div>
         </article>
@@ -373,7 +373,7 @@
         </article>
         <article class="feat amber">
           <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg></div>
-          <h3><span data-i18n="f6t">Personality as files</span> <span class="status next" data-i18n="stIn4">In Block 4</span></h3>
+          <h3><span data-i18n="f6t">Personality as files</span> <span class="status done" data-i18n="stDone">Done</span></h3>
           <p data-i18n="f6p">The agent's character (SOUL) and the user profile (USER) live outside the code, as files. Changing its personality needs no recompilation.</p>
           <div class="spec" data-i18n="f6spec">SOUL.md · USER.md — edit a file, not the code</div>
         </article>
@@ -504,15 +504,15 @@ cargo run</pre></div>
         <p data-i18n="rmP">Not everything at once. Every block has acceptance criteria, and the next block starts only after verification passes.</p>
       </div>
       <div class="progress-wrap">
-        <div class="progress-top"><b data-i18n="progLabel">v1 progress</b><span class="mono" data-i18n="progMeta">BLOCK 3 / 6 · 50%</span></div>
-        <div class="bar" role="progressbar" aria-valuenow="50" aria-valuemin="0" aria-valuemax="100" aria-label="v1 progress 50%"><i></i></div>
+        <div class="progress-top"><b data-i18n="progLabel">v1 progress</b><span class="mono" data-i18n="progMeta">BLOCK 4 / 6 · 67%</span></div>
+        <div class="bar" role="progressbar" aria-valuenow="67" aria-valuemin="0" aria-valuemax="100" aria-label="v1 progress 67%"><i></i></div>
       </div>
       <div class="road">
         <div class="block done"><div class="bn">01</div><div><h3><span data-i18n="b1t">Skeleton</span> <span class="status done" data-i18n="stDone">Done</span></h3><p data-i18n="b1p">From installing Rust to <span class="mono">cargo new iskra</span> — a minimal project that compiles and runs.</p></div></div>
         <div class="block done"><div class="bn">02</div><div><h3><span data-i18n="b2t">First call</span> <span class="status done" data-i18n="stDone">Done</span></h3><p data-i18n="b2p">The minimal circuit that asks the model one sentence and prints the answer. Your own key, isolated in .env.</p></div></div>
         <div class="block done"><div class="bn">03</div><div><h3><span data-i18n="b3t">Loop + file tools</span> <span class="status done" data-i18n="stDoneVer">Done · verified</span></h3><p data-i18n="b3p">The agent loop and sandboxed read/write — verified down to the <span class="mono">../secret.txt</span> refusal.</p></div></div>
-        <div class="block next"><div class="bn">04</div><div><h3><span data-i18n="b4t">Memory</span> <span class="status next" data-i18n="stNext">Next</span></h3><p data-i18n="b4p">MEMORY.md loading + the memory_save tool. The acceptance test: does it still remember your favourite colour after a restart?</p></div></div>
-        <div class="block"><div class="bn">05</div><div><h3><span data-i18n="b5t">Telegram</span> <span class="status plan" data-i18n="stPlan">Planned</span></h3><p data-i18n="b5p">An agent you can call from a messenger — the step where it enters daily life.</p></div></div>
+        <div class="block done"><div class="bn">04</div><div><h3><span data-i18n="b4t">Memory</span> <span class="status done" data-i18n="stDoneVer">Done · verified</span></h3><p data-i18n="b4p">MEMORY.md loading + the memory_save tool. The acceptance test: does it still remember your favourite colour after a restart?</p></div></div>
+        <div class="block next"><div class="bn">05</div><div><h3><span data-i18n="b5t">Telegram</span> <span class="status next" data-i18n="stNext">Next</span></h3><p data-i18n="b5p">An agent you can call from a messenger — the step where it enters daily life.</p></div></div>
         <div class="block"><div class="bn">06</div><div><h3><span data-i18n="b6t">Shell + coding task</span> <span class="status plan" data-i18n="stPlan">Planned</span></h3><p data-i18n="b6p">Attach the shell tool and verify all of v1 on one real coding task.</p></div></div>
       </div>
 
@@ -561,7 +561,7 @@ cargo run</pre></div>
     title: "Iskra — A tiny personal agent harness in Rust",
     brandSub: "PERSONAL AGENT HARNESS",
     navHow: "How it works", navFeat: "Features", navSafe: "Sandbox", navStart: "Quickstart", navRoad: "Roadmap",
-    badge: `<span class="dot" aria-hidden="true">✦</span><span>v1 in development · Block <b>&nbsp;3 / 6 complete</b></span>`,
+    badge: `<span class="dot" aria-hidden="true">✦</span><span>v1 in development · Block <b>&nbsp;4 / 6 complete</b></span>`,
     h1: `A lightweight AI agent,<br><em>built by hand</em><span class="en">Iskra (искра) means “spark” — a personal agent harness, written in Rust.</span>`,
     heroSub: `Iskra is a personal agent harness built from the loop up — not a giant framework you adopt off the shelf, but <b>a small core you write and understand yourself</b>. A single Rust binary, a brain you plug in yourself — any model, your own API key (BYO-key) — and file tools that cannot leak outside their sandbox.`,
     ctaGithub: "View on GitHub", ctaQuick: "Quickstart →",
@@ -584,7 +584,7 @@ cargo run</pre></div>
     s4h: "Everything is logged", s4p: `Even token usage lands in <code>logs/agent.log</code> as hard numbers.`,
     featTag: "FEATURES", featH2: "Small — but with hard boundaries",
     featP: "Three criteria chose Iskra's shape: lightweight, directly customisable, and structured so it could one day be sold. What is already built and what comes next are labelled honestly.",
-    stDone: "Done", stDoneVer: "Done · verified", stNext: "Next", stNext4: "Next · Block 4", stPlan: "Planned", stPlan5: "Planned · Block 5", stPlan6: "Planned · Block 6", stIn4: "In Block 4",
+    stDone: "Done", stDoneVer: "Done · verified", stNext: "Next", stNext4: "Next · Block 4", stNext5: "Next · Block 5", stPlan: "Planned", stPlan5: "Planned · Block 5", stPlan6: "Planned · Block 6", stIn4: "In Block 4",
     f1t: "A loop that knows when to stop",
     f1p: "Stop conditions are hard-coded as constants, so the agent cannot spin forever. When the model repeats the same mistake, the agent stops first.",
     f2t: "Sandboxed file tools",
@@ -670,7 +670,7 @@ cargo run`,
     toastCopied: "Command copied", toastFail: "Copy failed — select and copy it manually", toastUnsupported: "Copying is not supported in this browser",
     rmTag: "ROADMAP · V1", rmH2: "Building v1 in six blocks",
     rmP: "Not everything at once. Every block has acceptance criteria, and the next block starts only after verification passes.",
-    progLabel: "v1 progress", progMeta: "BLOCK 3 / 6 · 50%",
+    progLabel: "v1 progress", progMeta: "BLOCK 4 / 6 · 67%",
     b1t: "Skeleton", b1p: `From installing Rust to <span class="mono">cargo new iskra</span> — a minimal project that compiles and runs.`,
     b2t: "First call", b2p: "The minimal circuit that asks the model one sentence and prints the answer. Your own key, isolated in .env.",
     b3t: "Loop + file tools", b3p: `The agent loop and sandboxed read/write — verified down to the <span class="mono">../secret.txt</span> refusal.`,
@@ -691,7 +691,7 @@ cargo run`,
     title: "Искра — лёгкий персональный агентный харнесс на Rust",
     brandSub: "PERSONAL AGENT HARNESS",
     navHow: "Как это работает", navFeat: "Возможности", navSafe: "Песочница", navStart: "Быстрый старт", navRoad: "Дорожная карта",
-    badge: `<span class="dot" aria-hidden="true">✦</span><span>v1 в разработке · Блок <b>&nbsp;3 / 6 готов</b></span>`,
+    badge: `<span class="dot" aria-hidden="true">✦</span><span>v1 в разработке · Блок <b>&nbsp;4 / 6 готов</b></span>`,
     h1: `Лёгкий AI-агент,<br><em>собранный своими руками</em><span class="en">ISKRA — персональный агентный харнесс, написанный на Rust.</span>`,
     heroSub: `«Искра» — это персональный агентный харнесс, построенный начиная с самой петли (loop), а не гигантский фреймворк, который берут готовым: <b>маленькое ядро, которое пишешь и понимаешь сам</b>. Один бинарник на Rust, мозг, который подключаете вы сами, — любая модель, ваш собственный API-ключ (BYO-key), — и файловые инструменты, которые не могут выйти за пределы песочницы.`,
     ctaGithub: "Смотреть на GitHub", ctaQuick: "Быстрый старт →",
@@ -714,7 +714,7 @@ cargo run`,
     s4h: "Всё записывается", s4p: `Даже расход токенов попадает в <code>logs/agent.log</code> в виде точных цифр.`,
     featTag: "ВОЗМОЖНОСТИ", featH2: "Маленький — но с жёсткими границами",
     featP: "Форму «Искры» выбрали три критерия: лёгкость, возможность править всё самому и структура, которую однажды можно будет продать. Что уже сделано, а что дальше, — честно подписано.",
-    stDone: "Готово", stDoneVer: "Готово · проверено", stNext: "Далее", stNext4: "Далее · Блок 4", stPlan: "План", stPlan5: "План · Блок 5", stPlan6: "План · Блок 6", stIn4: "В Блоке 4",
+    stDone: "Готово", stDoneVer: "Готово · проверено", stNext: "Далее", stNext4: "Далее · Блок 4", stNext5: "Далее · Блок 5", stPlan: "План", stPlan5: "План · Блок 5", stPlan6: "План · Блок 6", stIn4: "В Блоке 4",
     f1t: "Петля, которая умеет останавливаться",
     f1p: "Условия остановки зашиты константами, чтобы агент не крутился бесконечно. Когда модель повторяет одну и ту же ошибку, агент останавливается первым.",
     f2t: "Файловые инструменты в песочнице",
@@ -800,7 +800,7 @@ cargo run`,
     toastCopied: "Команда скопирована", toastFail: "Не удалось скопировать — выделите и скопируйте вручную", toastUnsupported: "В этом браузере копирование не поддерживается",
     rmTag: "ДОРОЖНАЯ КАРТА · V1", rmH2: "Собираем v1 за шесть блоков",
     rmP: "Не всё сразу. У каждого блока есть критерии приёмки, и следующий блок начинается только после прохождения проверки.",
-    progLabel: "Прогресс v1", progMeta: "БЛОК 3 / 6 · 50%",
+    progLabel: "Прогресс v1", progMeta: "БЛОК 4 / 6 · 67%",
     b1t: "Каркас", b1p: `От установки Rust до <span class="mono">cargo new iskra</span> — минимальный проект, который компилируется и запускается.`,
     b2t: "Первый вызов", b2p: "Минимальный контур, который задаёт модели одно предложение и печатает ответ. Ваш собственный ключ, изолированный в .env.",
     b3t: "Петля + файловые инструменты", b3p: `Агентная петля и чтение/запись в песочнице — проверено вплоть до отказа на <span class="mono">../secret.txt</span>.`,
@@ -821,7 +821,7 @@ cargo run`,
     title: "Iskra — Rust로 만든 가벼운 개인용 에이전트 하네스",
     brandSub: "PERSONAL AGENT HARNESS",
     navHow: "작동 방식", navFeat: "기능", navSafe: "샌드박스", navStart: "빠른 시작", navRoad: "로드맵",
-    badge: `<span class="dot" aria-hidden="true">✦</span><span>v1 개발 중 · Block <b>&nbsp;3 / 6 완료</b></span>`,
+    badge: `<span class="dot" aria-hidden="true">✦</span><span>v1 개발 중 · Block <b>&nbsp;4 / 6 완료</b></span>`,
     h1: `내 손으로 만드는<br><em>가벼운 AI 에이전트</em><span class="en">ISKRA — Rust로 쓴 개인용 에이전트 하네스.</span>`,
     heroSub: `이스크라(искра, “불꽃”)는 거대한 프레임워크를 가져다 쓰는 대신, <b>에이전트의 심장인 루프부터 직접 만든</b> 개인용 에이전트 하네스입니다. Rust 단일 바이너리, 직접 연결하는 두뇌 — 어떤 모델이든 본인의 API 키로(BYO-key) — 그리고 밖으로 새지 않는 샌드박스 파일 도구.`,
     ctaGithub: "GitHub에서 보기", ctaQuick: "빠른 시작 →",
@@ -844,7 +844,7 @@ cargo run`,
     s4h: "전부 기록한다", s4p: `토큰 사용량(usage)까지 <code>logs/agent.log</code>에 숫자로 남습니다.`,
     featTag: "기능 · FEATURES", featH2: "작지만, 경계는 단단하게",
     featP: "“가벼움 · 직접 커스텀 가능 · 나중에 팔 수 있는 구조” — 이 세 가지가 이스크라의 선정 기준입니다. 구현된 것과 다음 차례인 것을 정직하게 나눠 표시합니다.",
-    stDone: "구현됨", stDoneVer: "완료 · 검수 통과", stNext: "다음", stNext4: "다음 · Block 4", stPlan: "예정", stPlan5: "예정 · Block 5", stPlan6: "예정 · Block 6", stIn4: "Block 4에서",
+    stDone: "구현됨", stDoneVer: "완료 · 검수 통과", stNext: "다음", stNext4: "다음 · Block 4", stNext5: "다음 · Block 5", stPlan: "예정", stPlan5: "예정 · Block 5", stPlan6: "예정 · Block 6", stIn4: "Block 4에서",
     f1t: "멈출 줄 아는 루프",
     f1p: "무한 루프에 빠지지 않도록 정지 조건이 전부 상수로 박혀 있습니다. 모델이 같은 실수를 반복하면 에이전트가 먼저 멈춥니다.",
     f2t: "샌드박스 파일 도구",
@@ -930,7 +930,7 @@ cargo run`,
     toastCopied: "명령어가 복사됐습니다", toastFail: "복사에 실패했습니다 — 직접 선택해 복사하세요", toastUnsupported: "이 브라우저에서는 복사가 지원되지 않습니다",
     rmTag: "로드맵 · ROADMAP V1", rmH2: "여섯 블록으로 짓는 v1",
     rmP: "한 번에 다 만들지 않습니다. 블록마다 합격 기준이 있고, 검수를 통과해야 다음으로 넘어갑니다.",
-    progLabel: "v1 진행률", progMeta: "BLOCK 3 / 6 · 50%",
+    progLabel: "v1 진행률", progMeta: "BLOCK 4 / 6 · 67%",
     b1t: "뼈대", b1p: `Rust 설치부터 <span class="mono">cargo new iskra</span>까지 — 컴파일·실행되는 최소 프로젝트.`,
     b2t: "첫 호출", b2p: "본인이 연결한 모델에 한 문장을 묻고 답을 받는 최소 회로. 키는 .env로 격리.",
     b3t: "루프 + 파일 도구", b3p: `에이전트 루프와 샌드박스 read/write. <span class="mono">../secret.txt</span> 거부까지 검증.`,
