@@ -2,8 +2,17 @@ use serde_json::{Value, json};
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
+use std::process::Stdio;
+use std::time::Duration;
+use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::process::Command;
 
 pub const WORKSPACE_DIR: &str = "workspace";
+pub const RUN_TIMEOUT_SECS: u64 = 120;
+pub const OUTPUT_LIMIT_CHARS: usize = 10_000;
+const OUTPUT_READ_LIMIT_BYTES: usize = 80_000;
+const ALLOWED_PROGRAMS: [&str; 4] = ["ls", "cat", "git", "cargo"];
+const SECRET_ENV_VARS: [&str; 3] = ["DEEPSEEK_API_KEY", "LLM_API_KEY", "TELEGRAM_BOT_TOKEN"];
 
 pub fn schemas() -> Value {
     json!([
@@ -64,6 +73,30 @@ pub fn schemas() -> Value {
                     "additionalProperties": false
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_command",
+                "description": "workspace 폴더에서 허용된 프로그램(ls, cat, git, cargo)을 셸 없이 직접 실행합니다. 작업 폴더는 workspace이며 셸 메타문자는 해석되지 않습니다. 출력은 stdout+stderr 합쳐 10,000자에서 잘라 표시하고, 120초를 넘으면 프로세스를 종료합니다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "program": {
+                            "type": "string",
+                            "enum": ["ls", "cat", "git", "cargo"],
+                            "description": "실행할 프로그램 이름 (경로 불가)"
+                        },
+                        "args": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "프로그램에 전달할 인자 배열"
+                        }
+                    },
+                    "required": ["program", "args"],
+                    "additionalProperties": false
+                }
+            }
         }
     ])
 }
@@ -80,11 +113,12 @@ impl Tools {
         Ok(Self { root })
     }
 
-    pub fn execute(&self, name: &str, args: &Value) -> Result<String, String> {
+    pub async fn execute(&self, name: &str, args: &Value) -> Result<String, String> {
         match name {
             "read_file" => self.read_file(args),
             "write_file" => self.write_file(args),
             "memory_save" => crate::memory::save(arg_str(args, "text")?),
+            "run_command" => self.run_command(args).await,
             other => Err(format!("알 수 없는 도구입니다: {other}")),
         }
     }
@@ -107,6 +141,42 @@ impl Tools {
         }
         fs::write(&resolved, content).map_err(|e| format!("파일 쓰기 실패({path}): {e}"))?;
         Ok(format!("{path}에 {} 바이트를 저장했습니다", content.len()))
+    }
+
+    async fn run_command(&self, args: &Value) -> Result<String, String> {
+        let program = arg_str(args, "program")?;
+        let program_args = arg_str_array(args, "args")?;
+
+        if !ALLOWED_PROGRAMS.contains(&program) {
+            crate::logging::append(&format!("run_command_rejected program={program}"));
+            return Err(format!(
+                "허용되지 않는 프로그램입니다: {program} (허용: {})",
+                ALLOWED_PROGRAMS.join(", ")
+            ));
+        }
+
+        crate::logging::append(&format!(
+            "run_command program={program} args={program_args:?}"
+        ));
+        let outcome = run_process(
+            &self.root,
+            program,
+            &program_args,
+            Duration::from_secs(RUN_TIMEOUT_SECS),
+        )
+        .await;
+
+        match &outcome {
+            Ok(outcome) => crate::logging::append(&format!(
+                "run_command_exit program={program} code={}",
+                outcome.code
+            )),
+            Err(e) => {
+                crate::logging::append(&format!("run_command_error program={program} err={e}"))
+            }
+        }
+
+        outcome.map(|outcome| outcome.text)
     }
 
     fn resolve(&self, raw: &str) -> Result<PathBuf, String> {
@@ -164,10 +234,171 @@ impl Tools {
     }
 }
 
+struct CommandOutcome {
+    code: String,
+    text: String,
+}
+
+async fn run_process(
+    root: &Path,
+    program: &str,
+    args: &[String],
+    timeout: Duration,
+) -> Result<CommandOutcome, String> {
+    let mut command = Command::new(program);
+    command
+        .args(args)
+        .current_dir(root)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    for key in SECRET_ENV_VARS {
+        command.env_remove(key);
+    }
+
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("명령 실행 실패({program}): {e}"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "stdout 파이프를 얻지 못했습니다".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "stderr 파이프를 얻지 못했습니다".to_string())?;
+    let stdout_task = tokio::spawn(read_capped(stdout));
+    let stderr_task = tokio::spawn(read_capped(stderr));
+
+    let waited = tokio::time::timeout(timeout, child.wait()).await;
+    let (code, timed_out) = match waited {
+        Ok(Ok(status)) => (status_label(status), false),
+        Ok(Err(e)) => return Err(format!("명령 대기 실패({program}): {e}")),
+        Err(_) => {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            ("timeout".to_string(), true)
+        }
+    };
+
+    let (stdout, stdout_truncated) = stdout_task
+        .await
+        .map_err(|e| format!("stdout 수집 실패: {e}"))?;
+    let (stderr, stderr_truncated) = stderr_task
+        .await
+        .map_err(|e| format!("stderr 수집 실패: {e}"))?;
+    let text = format_result(
+        &code,
+        &stdout,
+        &stderr,
+        stdout_truncated || stderr_truncated,
+        timeout,
+        timed_out,
+    );
+
+    Ok(CommandOutcome { code, text })
+}
+
+fn status_label(status: std::process::ExitStatus) -> String {
+    match status.code() {
+        Some(code) => code.to_string(),
+        None => "signal".to_string(),
+    }
+}
+
+async fn read_capped<R>(mut reader: R) -> (String, bool)
+where
+    R: AsyncRead + Unpin,
+{
+    let mut buffer = [0u8; 8192];
+    let mut stored = Vec::new();
+    let mut truncated = false;
+
+    loop {
+        match reader.read(&mut buffer).await {
+            Ok(0) => break,
+            Ok(read) => {
+                let remaining = OUTPUT_READ_LIMIT_BYTES.saturating_sub(stored.len());
+                if remaining > 0 {
+                    let take = remaining.min(read);
+                    stored.extend_from_slice(&buffer[..take]);
+                    if take < read {
+                        truncated = true;
+                    }
+                } else {
+                    truncated = true;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+
+    (String::from_utf8_lossy(&stored).to_string(), truncated)
+}
+
+fn format_result(
+    code: &str,
+    stdout: &str,
+    stderr: &str,
+    stream_truncated: bool,
+    timeout: Duration,
+    timed_out: bool,
+) -> String {
+    let mut body = String::new();
+    if !stdout.is_empty() {
+        body.push_str(stdout);
+    }
+    if !stderr.is_empty() {
+        if !body.is_empty() && !body.ends_with('\n') {
+            body.push('\n');
+        }
+        body.push_str("[stderr]\n");
+        body.push_str(stderr);
+    }
+
+    let truncated = stream_truncated || body.chars().count() > OUTPUT_LIMIT_CHARS;
+    let body: String = body.chars().take(OUTPUT_LIMIT_CHARS).collect();
+
+    let mut result = String::new();
+    if timed_out {
+        result.push_str(&format!(
+            "타임아웃({}초)으로 프로세스를 종료했습니다.\n",
+            timeout.as_secs_f64()
+        ));
+    }
+    result.push_str(&format!("exit={code}\n"));
+    if !body.is_empty() {
+        result.push_str(&body);
+        if !result.ends_with('\n') {
+            result.push('\n');
+        }
+    }
+    if truncated {
+        result.push_str("...(출력이 10,000자에서 잘렸습니다)\n");
+    }
+    result
+}
+
 fn arg_str<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
     args.get(key)
         .and_then(Value::as_str)
         .ok_or_else(|| format!("'{key}' 인자가 문자열로 필요합니다"))
+}
+
+fn arg_str_array(args: &Value, key: &str) -> Result<Vec<String>, String> {
+    let array = args
+        .get(key)
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("'{key}' 인자가 문자열 배열로 필요합니다"))?;
+    array
+        .iter()
+        .map(|item| {
+            item.as_str()
+                .map(|value| value.to_string())
+                .ok_or_else(|| format!("'{key}' 배열의 모든 원소는 문자열이어야 합니다"))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -233,5 +464,110 @@ mod tests {
 
         let _ = fs::remove_dir_all(&root);
         let _ = fs::remove_dir_all(&outside);
+    }
+
+    #[tokio::test]
+    async fn rejects_programs_outside_allowlist() {
+        let root = temp_root("reject");
+        let tools = Tools { root: root.clone() };
+
+        for program in ["rm", "curl", "sh", "/bin/ls", "ls "] {
+            let args = serde_json::json!({"program": program, "args": []});
+            let result = tools.execute("run_command", &args).await;
+            assert!(result.is_err(), "{program} should be rejected");
+            assert!(
+                result.unwrap_err().contains("허용되지 않는"),
+                "{program} rejection should name the allowlist"
+            );
+        }
+
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn does_not_interpret_shell_metacharacters() {
+        let root = temp_root("metachar");
+        fs::write(root.join("safe.txt"), "safe").unwrap();
+
+        for (name, arg) in [
+            ("pwned-semicolon", "safe.txt; touch pwned-semicolon"),
+            ("pwned-and", "safe.txt && touch pwned-and"),
+            ("pwned-pipe", "safe.txt | touch pwned-pipe"),
+        ] {
+            let outcome = run_process(&root, "cat", &[arg.to_string()], Duration::from_secs(5))
+                .await
+                .unwrap();
+            assert!(!outcome.text.starts_with("exit=0"));
+            assert!(!root.join(name).exists(), "{name} must not be created");
+        }
+
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn caps_command_output() {
+        let root = temp_root("output-cap");
+        let content = "a".repeat(OUTPUT_LIMIT_CHARS + 2_000);
+        fs::write(root.join("big.txt"), content).unwrap();
+
+        let outcome = run_process(
+            &root,
+            "cat",
+            &["big.txt".to_string()],
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
+
+        assert!(outcome.text.contains("10,000자에서 잘렸습니다"));
+        let a_count = outcome.text.chars().filter(|c| *c == 'a').count();
+        assert_eq!(a_count, OUTPUT_LIMIT_CHARS);
+
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn kills_command_on_timeout() {
+        let root = temp_root("timeout");
+        let started = std::time::Instant::now();
+
+        let outcome = run_process(
+            &root,
+            "sleep",
+            &["5".to_string()],
+            Duration::from_millis(100),
+        )
+        .await
+        .unwrap();
+
+        assert!(started.elapsed() < Duration::from_secs(3));
+        assert!(outcome.text.contains("타임아웃"));
+        assert_eq!(outcome.code, "timeout");
+
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn runs_commands_inside_workspace() {
+        let root = temp_root("cwd");
+        fs::write(root.join("inside.txt"), "inside-content").unwrap();
+
+        let outcome = run_process(
+            &root,
+            "cat",
+            &["inside.txt".to_string()],
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
+
+        assert!(outcome.text.starts_with("exit=0"));
+        assert!(outcome.text.contains("inside-content"));
+
+        fs::remove_dir_all(&root).unwrap();
     }
 }

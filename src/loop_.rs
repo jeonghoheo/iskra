@@ -82,7 +82,7 @@ pub async fn run_turn(
             let name = call.function.name.clone();
             let outcome = match serde_json::from_str::<serde_json::Value>(&call.function.arguments)
             {
-                Ok(args) => tools.execute(&name, &args),
+                Ok(args) => tools.execute(&name, &args).await,
                 Err(e) => Err(format!("arguments JSON 파싱 실패: {e}")),
             };
 

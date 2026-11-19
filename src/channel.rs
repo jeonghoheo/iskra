@@ -4,14 +4,15 @@ use crate::loop_;
 use crate::tools::Tools;
 
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use teloxide::dptree;
 use teloxide::prelude::*;
-use teloxide::types::ParseMode;
+use teloxide::types::{ChatAction, ParseMode};
 use tokio::task::JoinHandle;
 
 const MAX_MESSAGE_CHARS: usize = 4096;
+const TYPING_REFRESH_SECS: u64 = 4;
 const START_TEXT: &str = "이스크라입니다. 메시지를 보내면 대화합니다. /status로 상태, /stop으로 현재 턴을 중단할 수 있습니다.";
 
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
@@ -158,6 +159,10 @@ fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str) {
     let task_state = Arc::clone(state);
     let input = text.to_string();
     let handle = tokio::spawn(async move {
+        let (typing_stop, typing_rx) = tokio::sync::watch::channel(false);
+        let typing_guard = TypingGuard(typing_stop);
+        tokio::spawn(typing_loop(task_state.bot.clone(), chat_id, typing_rx));
+
         let reply = loop_::run_turn(
             &task_state.brain,
             &task_state.tools,
@@ -165,6 +170,8 @@ fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str) {
             &input,
         )
         .await;
+        drop(typing_guard);
+
         let answer = match reply {
             Ok(answer) => answer,
             Err(e) => {
@@ -177,6 +184,33 @@ fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str) {
         }
     });
     *state.current_turn.lock().unwrap() = Some(handle);
+}
+
+struct TypingGuard(tokio::sync::watch::Sender<bool>);
+
+impl Drop for TypingGuard {
+    fn drop(&mut self) {
+        let _ = self.0.send(true);
+    }
+}
+
+async fn typing_loop(bot: Bot, chat_id: ChatId, mut stop: tokio::sync::watch::Receiver<bool>) {
+    logging::append("telegram_typing_start");
+    loop {
+        if *stop.borrow() {
+            break;
+        }
+        match bot.send_chat_action(chat_id, ChatAction::Typing).await {
+            Ok(_) => logging::append("telegram_typing_sent"),
+            Err(e) => logging::append(&format!("telegram_typing_error {e}")),
+        }
+
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(TYPING_REFRESH_SECS)) => {}
+            _ = stop.changed() => break,
+        }
+    }
+    logging::append("telegram_typing_stop");
 }
 
 async fn stop_turn(state: &Arc<ChannelState>, chat_id: ChatId) -> HandlerResult {

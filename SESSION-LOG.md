@@ -96,7 +96,7 @@
 ### 검증 실측 결과
 1. `cargo test`: 23개 전부 통과 (Block 4의 15개 회귀 없음 + brain 4개 + channel 4개).
 2. 소유자 ID만 응답 / 다른 ID 무응답 + 로그: 봇 연결 후 실제 소유자 메시지 수신 1건을 확인. 로그는 `telegram_start → turn_start → model_call model=deepseek-chat → turn_end answer → telegram_reply_sent chunks=1` 순서로 기록됨. 다른 ID 무응답은 다른 계정 테스트를 생략해 **미완료**(코드 경로는 `telegram_ignore user_id=...` 로그로 구현됨).
-3. 4,096자 초과 답변 분할: 단위 테스트로 9,000자 입력이 4,096자 이하 3개 조각으로 나뉘고 원문이 보존됨을 확인(`splits_long_messages_into_bounded_chunks`). 실제 텔레그램 다중 수신 테스트는 생략해 **미완료**.
+3. 4,096자 초과 답변 분할: 단위 테스트로 9,000자 입력이 4,096자 이하 3개 조각으로 나뉘고 원문이 보존됨을 확인(`splits_long_messages_into_bounded_chunks`). Block 6 Step 0 라이브 검증에서 긴 답변이 `telegram_reply_sent chunks=2`로 기록되고 사용자가 여러 조각이 끝까지 도착함을 확인함.
 4. 기본 설정 대화 + `LLM_MODEL` 교체:
    - 기본: CLI 1턴 성공, 로그 `model_call model=deepseek-chat ...`.
    - `LLM_MODEL=deepseek-reasoner`: CLI 1턴 성공, 로그 `model_call model=deepseek-reasoner ...`.
@@ -112,5 +112,44 @@
 - 없음. 임의로 teloxide를 reqwest 직접 호출로 교체하지 않음.
 
 ### 비고
-- 실제 소유자 메시지 수신·답변 전송은 확인했다. 다른 ID 무응답(기준 2의 비소유자 부분)과 4,096자 초과 실전송(기준 3)은 사용자가 테스트를 생략해 남은 항목이다. 코드·단위 테스트·릴리스 예산·기본/교체 모델 호출은 실행 결과로 확인했다.
+- 실제 소유자 메시지 수신·답변 전송은 확인했다. 4,096자 초과 실전송도 Block 6 Step 0 라이브 검증에서 확인(chunks=2). 다른 ID 무응답(기준 2의 비소유자 부분)만 남은 항목이다. 코드·단위 테스트·릴리스 예산·기본/교체 모델 호출은 실행 결과로 확인했다.
 - `logs/`, `memory/`, `workspace/`, `.env`는 계속 git 추적 제외.
+
+## Block 6 — 접수 신호 + 셸 도구 + 코딩 과제 실증 (2026-11-19)
+
+### 한 일 — Step 0: 접수 신호
+- `src/channel.rs`: 턴 시작 시 `sendChatAction(Typing)`을 보내고 4초 간격으로 갱신하는 `typing_loop` 추가.
+- 턴 태스크가 답변 전송 전에 `TypingGuard`를 drop해 신호를 중단. `/stop`으로 턴 태스크가 abort돼도 guard의 Drop이 신호를 보내 루프가 종료됨.
+- 신호 전송 실패는 `telegram_typing_error`로 로그만 남기고 본 흐름을 막지 않음. CLI 모드는 변경 없음.
+
+### 한 일 — Step 1: `run_command`
+- `src/tools.rs`: `run_command(program, args)` 도구 추가. 스키마는 `program`(enum: ls, cat, git, cargo)과 문자열 배열 `args`.
+- 허용 목록 밖 프로그램은 실행하지 않고 거부 + `run_command_rejected` 로그. 경로(`/bin/ls`)와 공백 포함 이름(`"ls "`)도 거부.
+- 셸 미사용: `tokio::process::Command`에 프로그램과 인자 배열을 직접 전달. 작업 폴더는 canonical `workspace/` 고정, stdin은 null.
+- 타임아웃 120초: 초과 시 `start_kill` + `wait`로 프로세스를 종료하고 결과에 `타임아웃(...)` 명시. `kill_on_drop(true)`로 `/stop` 등 future 취소 시에도 자식 프로세스가 남지 않게 함.
+- 출력 상한: stdout/stderr를 각각 최대 80KB만 저장하고 동시에 끝까지 drain. 합친 뒤 10,000자에서 자르고 `...(출력이 10,000자에서 잘렸습니다)` 표시.
+- 로그는 `run_command program=... args=[...]`와 `run_command_exit ... code=...`만 기록(명령 출력은 모델 반환용, 로그 미기록). 자식 프로세스 환경에서 `DEEPSEEK_API_KEY`·`LLM_API_KEY`·`TELEGRAM_BOT_TOKEN`을 제거.
+- `src/loop_.rs`: `tools.execute(...)`를 async로 호출하도록 변경. `src/prompt.rs`: run_command 사용 규칙 한 줄 추가.
+
+### 한 일 — Step 2: 코딩 과제 실증
+- `workspace/trial_project/`에 최소 Rust 프로젝트 생성. `add(2,3)`이 `left - right`라 테스트가 실패하는 상태로 시작.
+- `--cli`로 "run_command로 실패 확인 → write_file로 수정 → 재실행" 지시. 에이전트가 `cargo test`(exit 101) → `read_file` → `write_file` → `cargo test`(exit 0) 순서로 수행.
+- 수정 결과 `left + right`로 바뀌었고 테스트 코드는 그대로. 실증 후 프로젝트를 `workspace/`에 남겨 회귀 확인에 사용.
+
+### 검증 실측 결과
+1. `cargo test`: **28개 전부 통과** (Block 5의 23개 회귀 없음 + run_command 5개: 허용 목록 거부, 셸 메타문자 무력화, 출력 캡, 타임아웃, 작업 폴더 고정).
+2. 허용 목록 밖 명령: 테스트에서 `rm`, `curl`, `sh`, `/bin/ls`, `"ls "`를 호출해 모두 거부됨. `logs/agent.log`에 `run_command_rejected program=...` 10건 기록 확인.
+3. Step 2 실증 로그:
+   - `run_command program=cargo args=["test", "--manifest-path", "trial_project/Cargo.toml"]` → `run_command_exit ... code=101`
+   - `read_file` → `write_file` → 같은 `run_command` → `run_command_exit ... code=0`
+   - 최종 `cargo test`: 1 passed / 0 failed. `src/lib.rs`는 `left + right`, 테스트 코드는 원본 유지.
+4. 접수 신호 라이브 확인: 실제 턴에서 `telegram_typing_start` → `telegram_typing_sent` 6회(약 4~5초 간격) → `telegram_typing_stop` → `telegram_reply_sent chunks=2`. 사용자가 "입력 중" 표시 유지·소멸과 긴 답변의 다중 조각 도착을 확인.
+5. `cargo build`/`cargo build --release`: `iskra` 자체 경고 0개. 전이 의존성 `proc-macro-error2 v2.0.1` 미래 호환성 안내 1건은 그대로(우리 코드 경고 아님).
+6. 릴리스 바이너리(strip 후): **6,094,400 bytes = 6.09 MB (5.81 MiB)**. 직접 의존성 변화 없음(7개).
+
+### 임시 우회
+- 없음.
+
+### 비고
+- `run_command`는 셸을 거치지 않지만 허용된 프로그램 자체의 기능(예: `git`의 외부 명령 실행)까지 제한하지는 않는다. 허용 목록·인자 정책 확장은 v1 이후 판단 범위.
+- `workspace/trial_project/`는 런타임 산출물과 함께 git 추적 제외(`/workspace`). 실증 후 남겨 회귀 확인에 사용.
