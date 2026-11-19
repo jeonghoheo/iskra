@@ -23,7 +23,10 @@ fn load_from(dir: &Path) -> LoadedMemory {
     let mut warnings = Vec::new();
 
     if let Err(e) = fs::create_dir_all(dir) {
-        warnings.push(format!("기억 폴더 생성 실패({}): {e}", dir.display()));
+        warnings.push(format!(
+            "Failed to create memory directory ({}): {e}",
+            dir.display()
+        ));
         return LoadedMemory {
             text: String::new(),
             truncated: false,
@@ -39,9 +42,12 @@ fn load_from(dir: &Path) -> LoadedMemory {
         }
         Ok(None) => {
             if let Err(e) = fs::write(&memory_path, b"") {
-                warnings.push(format!("{} 생성 실패: {e}", memory_path.display()));
+                warnings.push(format!("Failed to create {}: {e}", memory_path.display()));
             } else if let Err(e) = set_private_permissions(&memory_path) {
-                warnings.push(format!("{} 권한 설정 실패: {e}", memory_path.display()));
+                warnings.push(format!(
+                    "{}: failed to set permissions: {e}",
+                    memory_path.display()
+                ));
             }
             (String::new(), false)
         }
@@ -87,9 +93,9 @@ fn read_utf8(path: &Path) -> Result<Option<String>, String> {
     match fs::read(path) {
         Ok(bytes) => String::from_utf8(bytes)
             .map(Some)
-            .map_err(|_| "UTF-8로 읽을 수 없어 건너뜁니다".to_string()),
+            .map_err(|_| "Cannot read as UTF-8; skipping".to_string()),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("읽기 실패: {e}")),
+        Err(e) => Err(format!("Read failed: {e}")),
     }
 }
 
@@ -115,13 +121,13 @@ pub fn save(text: &str) -> Result<String, String> {
 fn save_to(dir: &Path, text: &str) -> Result<String, String> {
     let text = text.trim();
     if text.is_empty() {
-        return Err("저장할 내용이 비어 있습니다".to_string());
+        return Err("Nothing to save".to_string());
     }
 
     let input_chars = text.chars().count();
     if input_chars > MAX_ENTRY_CHARS {
         return Err(format!(
-            "항목 1개는 최대 {MAX_ENTRY_CHARS}자까지 저장할 수 있습니다 (입력 {input_chars}자)"
+            "Each entry can contain at most {MAX_ENTRY_CHARS} characters (input: {input_chars})"
         ));
     }
 
@@ -129,18 +135,18 @@ fn save_to(dir: &Path, text: &str) -> Result<String, String> {
     let entry = redacted.replace('\n', " ").replace('\r', " ");
     if entry.chars().count() > MAX_ENTRY_CHARS {
         return Err(format!(
-            "치환 후 항목이 최대 {MAX_ENTRY_CHARS}자를 넘습니다 ({}자)",
+            "Entry exceeds the {MAX_ENTRY_CHARS}-character limit after redaction ({} characters)",
             entry.chars().count()
         ));
     }
 
-    fs::create_dir_all(dir).map_err(|e| format!("기억 폴더 생성 실패: {e}"))?;
+    fs::create_dir_all(dir).map_err(|e| format!("Failed to create memory directory: {e}"))?;
     let path = dir.join(MEMORY_FILE);
     let existing = match fs::read(&path) {
         Ok(bytes) => String::from_utf8(bytes)
-            .map_err(|_| "기존 MEMORY.md를 UTF-8로 읽을 수 없어 저장을 중단했습니다".to_string())?,
+            .map_err(|_| "Cannot read the existing MEMORY.md as UTF-8; save aborted".to_string())?,
         Err(e) if e.kind() == io::ErrorKind::NotFound => String::new(),
-        Err(e) => return Err(format!("기존 MEMORY.md 읽기 실패: {e}")),
+        Err(e) => return Err(format!("Failed to read existing MEMORY.md: {e}")),
     };
 
     let mut content = existing;
@@ -154,10 +160,10 @@ fn save_to(dir: &Path, text: &str) -> Result<String, String> {
     atomic_write(&path, content.as_bytes())?;
 
     if redactions == 0 {
-        Ok(format!("{MEMORY_FILE}에 저장했습니다."))
+        Ok(format!("Saved to {MEMORY_FILE}."))
     } else {
         Ok(format!(
-            "{MEMORY_FILE}에 저장했습니다. 자격증명 {redactions}건을 «redacted …»로 치환했습니다."
+            "Saved to {MEMORY_FILE}. Redacted {redactions} credential(s) as «redacted …»."
         ))
     }
 }
@@ -165,7 +171,7 @@ fn save_to(dir: &Path, text: &str) -> Result<String, String> {
 pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let dir = path
         .parent()
-        .ok_or_else(|| "기억 파일 경로 오류".to_string())?;
+        .ok_or_else(|| "Invalid memory file path".to_string())?;
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -186,12 +192,12 @@ pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
 
     if let Err(e) = write_result {
         let _ = fs::remove_file(&tmp);
-        return Err(format!("임시 파일 쓰기 실패: {e}"));
+        return Err(format!("Failed to write temporary file: {e}"));
     }
 
     if let Err(e) = fs::rename(&tmp, path) {
         let _ = fs::remove_file(&tmp);
-        return Err(format!("기억 파일 교체 실패: {e}"));
+        return Err(format!("Failed to replace memory file: {e}"));
     }
 
     Ok(())
@@ -496,7 +502,7 @@ mod tests {
 
     #[test]
     fn redacts_sk_tokens() {
-        let (text, count) = redact_credentials("내 키는 sk-test1234567890이야");
+        let (text, count) = redact_credentials("my key is sk-test1234567890");
         assert_eq!(count, 1);
         assert!(!text.contains("sk-test1234567890"));
         assert!(text.contains("«redacted 17 chars»"));
@@ -504,7 +510,7 @@ mod tests {
 
     #[test]
     fn redacts_password_values() {
-        let (text, count) = redact_credentials("password=hunter2 그리고 password: swordfish");
+        let (text, count) = redact_credentials("password=hunter2 and password: swordfish");
         assert_eq!(count, 2);
         assert!(!text.contains("hunter2"));
         assert!(!text.contains("swordfish"));
@@ -514,28 +520,29 @@ mod tests {
 
     #[test]
     fn redacts_private_key_blocks() {
-        let input = "앞\n-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----\n뒤";
+        let input =
+            "before\n-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----\nafter";
         let (text, count) = redact_credentials(input);
         assert_eq!(count, 1);
         assert!(!text.contains("MIIE"));
-        assert!(text.contains("앞"));
-        assert!(text.contains("뒤"));
+        assert!(text.contains("before"));
+        assert!(text.contains("after"));
         assert!(text.contains("«redacted "));
     }
 
     #[test]
     fn redacts_telegram_tokens() {
-        let token = "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw";
-        let (text, count) = redact_credentials(&format!("토큰 {token}"));
+        let token = format!("{}{}", "123456789", ":AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw");
+        let (text, count) = redact_credentials(&format!("token {token}"));
         assert_eq!(count, 1);
-        assert!(!text.contains(token));
+        assert!(!text.contains(&token));
         assert!(text.contains("«redacted "));
     }
 
     #[test]
     fn rejects_entries_over_limit() {
         let dir = temp_dir("limit");
-        let long = "가".repeat(MAX_ENTRY_CHARS + 1);
+        let long = "a".repeat(MAX_ENTRY_CHARS + 1);
         assert!(save_to(&dir, &long).is_err());
         assert!(!dir.join(MEMORY_FILE).exists());
         let _ = fs::remove_dir_all(&dir);
@@ -544,8 +551,8 @@ mod tests {
     #[test]
     fn saves_redacted_entry_and_permissions() {
         let dir = temp_dir("save");
-        let result = save_to(&dir, "내 키는 sk-test1234567890").unwrap();
-        assert!(result.contains("치환"));
+        let result = save_to(&dir, "my key is sk-test1234567890").unwrap();
+        assert!(result.contains("Redacted"));
 
         let path = dir.join(MEMORY_FILE);
         let content = fs::read_to_string(&path).unwrap();
@@ -584,15 +591,15 @@ mod tests {
     #[test]
     fn loads_memory_and_daily_notes() {
         let dir = temp_dir("load");
-        fs::write(dir.join(MEMORY_FILE), "- 사실\n").unwrap();
+        fs::write(dir.join(MEMORY_FILE), "- fact\n").unwrap();
         let today = date_for_offset(0);
-        fs::write(dir.join(format!("{today}.md")), "오늘 노트\n").unwrap();
+        fs::write(dir.join(format!("{today}.md")), "today note\n").unwrap();
 
         let loaded = load_from(&dir);
         assert!(loaded.text.contains("[MEMORY.md]"));
-        assert!(loaded.text.contains("- 사실"));
+        assert!(loaded.text.contains("- fact"));
         assert!(loaded.text.contains(&format!("[{today}.md]")));
-        assert!(loaded.text.contains("오늘 노트"));
+        assert!(loaded.text.contains("today note"));
         assert!(loaded.warnings.is_empty());
 
         let _ = fs::remove_dir_all(&dir);

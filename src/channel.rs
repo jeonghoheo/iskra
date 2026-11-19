@@ -17,11 +17,11 @@ use tokio::task::JoinHandle;
 const MAX_MESSAGE_CHARS: usize = 4096;
 const TYPING_REFRESH_SECS: u64 = 4;
 const COMMANDS: [(&str, &str); 5] = [
-    ("start", "시작 인사 보기"),
-    ("status", "오늘 사용량과 남은 금액 보기"),
-    ("stickies", "스티키 보드 보기"),
-    ("stop", "하던 일 멈추기"),
-    ("help", "명령어 목록 보기"),
+    ("start", "Show the welcome message"),
+    ("status", "Show today's usage and remaining balance"),
+    ("stickies", "Show the sticky board"),
+    ("stop", "Stop the current task"),
+    ("help", "List available commands"),
 ];
 
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
@@ -34,11 +34,11 @@ struct TelegramConfig {
 impl TelegramConfig {
     fn from_env() -> Result<Self, String> {
         let token = env_non_empty("TELEGRAM_BOT_TOKEN")
-            .ok_or_else(|| "TELEGRAM_BOT_TOKEN이 .env에 없습니다".to_string())?;
+            .ok_or_else(|| "TELEGRAM_BOT_TOKEN is missing from .env".to_string())?;
         let allowed_user_id = env_non_empty("ALLOWED_USER_ID")
-            .ok_or_else(|| "ALLOWED_USER_ID가 .env에 없습니다".to_string())?
+            .ok_or_else(|| "ALLOWED_USER_ID is missing from .env".to_string())?
             .parse::<u64>()
-            .map_err(|_| "ALLOWED_USER_ID는 숫자여야 합니다".to_string())?;
+            .map_err(|_| "ALLOWED_USER_ID must be a number".to_string())?;
         Ok(Self {
             token,
             allowed_user_id,
@@ -153,7 +153,7 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
                                 bot.send_message(
                                     chat_id,
                                     format!(
-                                        "스티키 #{}은 삭제했지만 보드를 읽지 못했습니다.",
+                                        "Sticky #{} was removed, but the board could not be read.",
                                         number
                                     ),
                                 )
@@ -168,7 +168,7 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
                             Ok(_) => {}
                             Err(e) => {
                                 logging::append(&format!("telegram_board_sync_error {e}"));
-                                bot.send_message(chat_id, "스티키 보드를 동기화하지 못했습니다.")
+                                bot.send_message(chat_id, "Failed to sync the sticky board.")
                                     .await?;
                             }
                         }
@@ -177,7 +177,7 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
                         logging::append(&format!(
                             "telegram_sticky_remove_error number={number} err={e}"
                         ));
-                        bot.send_message(chat_id, format!("스티키를 삭제하지 못했습니다: {e}"))
+                        bot.send_message(chat_id, format!("Failed to remove the sticky: {e}"))
                             .await?;
                     }
                 }
@@ -215,28 +215,25 @@ fn commands() -> Vec<BotCommand> {
 }
 
 fn help_text() -> String {
-    let mut text = String::from("사용할 수 있는 명령어:");
+    let mut text = String::from("Available commands:");
     for (command, description) in COMMANDS {
         text.push_str(&format!("\n/{command} — {description}"));
     }
-    text.push_str("\n\n스티키 삭제: /stickies remove N");
+    text.push_str("\n\nDelete a sticky: /stickies remove N");
     text
 }
 
 fn start_text() -> String {
-    format!(
-        "이스크라입니다. 메시지를 보내면 대화합니다.\n\n{}",
-        help_text()
-    )
+    format!("I am Iskra. Send me a message to chat.\n\n{}", help_text())
 }
 
 fn normalize_sticker(emoji: Option<&str>, set_name: Option<&str>) -> String {
     match emoji {
         Some(emoji) => match set_name {
-            Some(set_name) => format!("[스티커 {emoji} ({set_name})]"),
-            None => format!("[스티커 {emoji}]"),
+            Some(set_name) => format!("[sticker {emoji} ({set_name})]"),
+            None => format!("[sticker {emoji}]"),
         },
-        None => "[스티커]".to_string(),
+        None => "[sticker]".to_string(),
     }
 }
 
@@ -330,7 +327,7 @@ async fn handle_stickies_command(
                                 .send_message(
                                     chat_id,
                                     format!(
-                                        "스티키 #{}은 삭제했지만 보드를 읽지 못했습니다.",
+                                        "Sticky #{} was removed, but the board could not be read.",
                                         number
                                     ),
                                 )
@@ -342,7 +339,7 @@ async fn handle_stickies_command(
                         Ok(_) => {
                             state
                                 .bot
-                                .send_message(chat_id, format!("스티키 #{number}을 삭제했습니다."))
+                                .send_message(chat_id, format!("Sticky #{number} removed."))
                                 .await?;
                         }
                         Err(e) => {
@@ -352,7 +349,7 @@ async fn handle_stickies_command(
                                 .send_message(
                                     chat_id,
                                     format!(
-                                        "스티키 #{number}을 삭제했지만 보드를 갱신하지 못했습니다."
+                                        "Sticky #{number} was removed, but the board could not be updated."
                                     ),
                                 )
                                 .await?;
@@ -365,7 +362,7 @@ async fn handle_stickies_command(
                     ));
                     state
                         .bot
-                        .send_message(chat_id, format!("스티키를 삭제하지 못했습니다: {e}"))
+                        .send_message(chat_id, format!("Failed to remove the sticky: {e}"))
                         .await?;
                 }
             }
@@ -376,7 +373,7 @@ async fn handle_stickies_command(
                 .bot
                 .send_message(
                     chat_id,
-                    "사용법: /stickies (보드 보기), /stickies remove N (N번 삭제)",
+                    "Usage: /stickies (show board), /stickies remove N (remove N)",
                 )
                 .await?;
             Ok(())
@@ -396,7 +393,7 @@ fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str) {
             let _ = bot
                 .send_message(
                     chat_id,
-                    "이전 턴이 진행 중입니다. /stop으로 중단할 수 있습니다.",
+                    "A previous turn is still running. Use /stop to interrupt it.",
                 )
                 .await;
         });
@@ -424,7 +421,7 @@ fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str) {
             Ok(answer) => answer,
             Err(e) => {
                 logging::append(&format!("telegram_turn_error {e}"));
-                format!("중단: {e}")
+                format!("Stopped: {e}")
             }
         };
         if let Err(e) = send_reply(&task_state.bot, chat_id, &answer).await {
@@ -480,11 +477,11 @@ async fn stop_turn(state: &Arc<ChannelState>, chat_id: ChatId) -> HandlerResult 
         Some(handle) if !handle.is_finished() => {
             handle.abort();
             logging::append("telegram_stop aborted");
-            "현재 턴을 중단했습니다."
+            "The current turn was stopped."
         }
         _ => {
             logging::append("telegram_stop idle");
-            "진행 중인 턴이 없습니다."
+            "There is no turn in progress."
         }
     };
     state.bot.send_message(chat_id, message).await?;
@@ -497,7 +494,7 @@ async fn send_status(state: &Arc<ChannelState>, chat_id: ChatId) -> HandlerResul
         Err(_) => "unavailable".to_string(),
     };
     let text = format!(
-        "모델: {}\n기억: {}\n오늘 토큰: {}\n잔액: {}",
+        "Model: {}\nMemory: {}\nTokens today: {}\nBalance: {}",
         state.brain.model(),
         state.memory_status,
         usage::today().total,
@@ -558,7 +555,7 @@ async fn send_stickies(state: &Arc<ChannelState>, chat_id: ChatId) -> HandlerRes
                 logging::append(&format!("telegram_board_sync_error {e}"));
                 state
                     .bot
-                    .send_message(chat_id, "스티키 보드를 표시하지 못했습니다.")
+                    .send_message(chat_id, "Failed to display the sticky board.")
                     .await?;
             }
         }
@@ -566,7 +563,7 @@ async fn send_stickies(state: &Arc<ChannelState>, chat_id: ChatId) -> HandlerRes
             logging::append(&format!("sticky_board_error {e}"));
             state
                 .bot
-                .send_message(chat_id, "스티키 보드를 읽을 수 없습니다.")
+                .send_message(chat_id, "Could not read the sticky board.")
                 .await?;
         }
     }
@@ -768,7 +765,7 @@ mod tests {
 
     #[test]
     fn splits_long_messages_into_bounded_chunks() {
-        let text = "가".repeat(MAX_MESSAGE_CHARS * 2 + 5);
+        let text = "a".repeat(MAX_MESSAGE_CHARS * 2 + 5);
         let chunks = split_message(&text);
         assert_eq!(chunks.len(), 3);
         assert!(
@@ -781,19 +778,19 @@ mod tests {
 
     #[test]
     fn keeps_short_message_in_one_chunk() {
-        let chunks = split_message("짧은 답변");
-        assert_eq!(chunks, vec!["짧은 답변"]);
+        let chunks = split_message("short reply");
+        assert_eq!(chunks, vec!["short reply"]);
     }
 
     #[test]
     fn normalizes_stickers() {
         assert_eq!(
             normalize_sticker(Some("😀"), Some("Cats")),
-            "[스티커 😀 (Cats)]"
+            "[sticker 😀 (Cats)]"
         );
-        assert_eq!(normalize_sticker(Some("😀"), None), "[스티커 😀]");
-        assert_eq!(normalize_sticker(None, Some("Cats")), "[스티커]");
-        assert_eq!(normalize_sticker(None, None), "[스티커]");
+        assert_eq!(normalize_sticker(Some("😀"), None), "[sticker 😀]");
+        assert_eq!(normalize_sticker(None, Some("Cats")), "[sticker]");
+        assert_eq!(normalize_sticker(None, None), "[sticker]");
     }
 
     #[test]
@@ -804,7 +801,7 @@ mod tests {
             Some("/status")
         );
         assert_eq!(command_name("/unknown").as_deref(), Some("/unknown"));
-        assert_eq!(command_name("안녕").as_deref(), None);
+        assert_eq!(command_name("hello").as_deref(), None);
     }
 
     #[test]

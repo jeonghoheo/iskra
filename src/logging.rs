@@ -16,6 +16,6 @@ pub fn append(line: &str) {
         .open(LOG_PATH)
         .and_then(|mut file| file.write_all(entry.as_bytes()));
     if let Err(e) = result {
-        eprintln!("로그 기록 실패: {e}");
+        eprintln!("Failed to write log: {e}");
     }
 }

@@ -56,20 +56,20 @@ fn extract_value(line: &str, key: &str) -> Option<u64> {
 
 pub fn self_state_block(model: &str, base_url: &str, usage: &DailyUsage, balance: &str) -> String {
     let mut block = String::from("# Self-state\n");
-    block.push_str(&format!("- 제공자: {}\n", provider_label(base_url)));
-    block.push_str(&format!("- 모델: {model}\n"));
+    block.push_str(&format!("- Provider: {}\n", provider_label(base_url)));
+    block.push_str(&format!("- Model: {model}\n"));
     block.push_str(&format!(
-        "- 오늘 사용한 토큰: {} (입력 {}, 출력 {})\n",
+        "- Tokens today: {} (input {}, output {})\n",
         usage.total, usage.prompt, usage.completion
     ));
     match estimate_cost(model, usage) {
         Some(cost) => block.push_str(&format!(
-            "- 오늘 예상 비용: 약 ${cost:.6} (추정치, DeepSeek 계열 공개 목록가 피크 기준)\n"
+            "- Estimated cost today: ~${cost:.6} (estimate; DeepSeek public list peak prices)\n"
         )),
-        None => block.push_str("- 오늘 예상 비용: 알 수 없음(가격표에 없는 모델)\n"),
+        None => block.push_str("- Estimated cost today: unknown (model not in price table)\n"),
     }
-    block.push_str(&format!("- 잔액: {balance}\n"));
-    block.push_str("- 위 토큰·비용은 추정치이며 실제 청구와 다를 수 있다.\n");
+    block.push_str(&format!("- Balance: {balance}\n"));
+    block.push_str("- Token and cost figures are estimates and may differ from actual billing.\n");
     block
 }
 
@@ -166,8 +166,8 @@ ts=400 model_error err=timeout
             &usage,
             "110.00 CNY",
         );
-        assert!(block.contains("제공자: DeepSeek"));
-        assert!(block.contains("모델: deepseek-chat"));
+        assert!(block.contains("Provider: DeepSeek"));
+        assert!(block.contains("Model: deepseek-chat"));
         assert!(block.contains("2000000"));
         assert!(block.contains("1.500000"));
         assert!(block.contains("110.00 CNY"));
@@ -188,8 +188,8 @@ ts=400 model_error err=timeout
         );
         assert!(block.contains("unknown-model"));
         assert!(block.contains("1500"));
-        assert!(block.contains("알 수 없음"));
-        assert!(!block.contains("약 $"));
+        assert!(block.contains("unknown"));
+        assert!(!block.contains("~$"));
     }
 
     #[test]

@@ -316,3 +316,31 @@ Scope item 2 says balance is fetched for `/status` only, while acceptance criter
 - The tracked board remains the single pinned post-it. Explicit `/stickies` views are untracked snapshots so users can read the content without scrolling; repeated views add normal chat messages, never a second pinned board.
 - Pre-patch stray board messages already in chat history are still out of scope; the bot never tracked their ids.
 - Sticky storage, numbering, and credential refusal were not changed.
+
+## Block 6.5 — English unification of in-code strings (2026-11-19)
+
+### What changed
+- Translated every Korean string literal in `src/*.rs` to English. The Hangul scan over `src/` now returns **0 matches**.
+  - `tools.rs`: model-facing tool and parameter descriptions, tool errors, command/path errors, timeout and truncation messages.
+  - `prompt.rs`: default SOUL/USER text, identity fallback warnings, memory placeholder/truncation text, safety rules, and tool usage rules.
+  - `channel.rs`: command descriptions, `/start` and `/help`, `/status`, board/sync notices, busy/stop messages, sticker normalization, and Telegram config errors.
+  - `stickies.rs`: board title (`Sticky board`), empty-board text, add/remove messages, credential refusal, and storage errors.
+  - `brain.rs`, `loop_.rs`, `main.rs`, `memory.rs`, `usage.rs`, `logging.rs`: runtime errors, stop reasons, CLI messages, memory save/load messages, self-state labels, and log-write failures.
+- Translated test fixtures and updated assertions only where they asserted on translated text.
+- The Telegram sample token test fixture in `src/memory.rs` is now assembled at runtime from two halves, so the full token literal is no longer present. The same approach was applied to the credential-refusal fixture in `src/stickies.rs`, which used the same sample token.
+- Behavior is unchanged: same control flow, same conditions, same tool semantics, same tests.
+
+### Verification
+1. Hangul scan over `src/`: **0 matches**.
+2. `cargo test`: **51 passed, 0 failed**. The assembled-token scanner test still catches the token and still redacts it.
+3. Live Telegram: the `/` command menu and `/help` show English descriptions, and `/stickies` shows the English empty-board title `Sticky board is empty.`. The user confirmed all three.
+4. Live conversation language: a Korean Telegram message still received a Korean answer, and a `--cli` Korean prompt answered in Korean. Model behavior still comes from the local SOUL/USER data, which remains out of scope for this patch.
+5. `cargo build` / `cargo build --release`: zero warnings for `iskra` itself. The transitive `proc-macro-error2 v2.0.1` future-incompatibility note is unchanged.
+
+### Temporary workarounds
+- None. The token-fixture assembly is the requested permanent cleanup, not a behavioral workaround.
+
+### Notes
+- Local `SOUL.md`/`USER.md`, memory/sticky contents, and the shipped `SOUL.example.md`/`USER.example.md` templates were intentionally left in their existing language as data/product templates.
+- README and docs were already English-first and were not changed.
+- Board messages already in chat history from before this patch keep their old text; they were never tracked and remain out of scope.

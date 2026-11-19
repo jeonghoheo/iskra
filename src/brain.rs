@@ -28,7 +28,7 @@ impl Config {
             .and_then(non_empty)
             .or_else(|| lookup("DEEPSEEK_API_KEY").and_then(non_empty))
             .ok_or_else(|| {
-                "모델 API 키가 없습니다: LLM_API_KEY 또는 DEEPSEEK_API_KEY를 설정하세요".to_string()
+                "Model API key is missing: set LLM_API_KEY or DEEPSEEK_API_KEY".to_string()
             })?;
 
         let base_url = lookup("LLM_BASE_URL")
@@ -81,7 +81,7 @@ impl BalanceResponse {
             .collect::<Vec<_>>()
             .join(", ");
         if !self.is_available {
-            text.push_str(" (API 호출에 부족)");
+            text.push_str(" (insufficient for API calls)");
         }
         text
     }
@@ -230,23 +230,23 @@ impl Brain {
         let (status, body) =
             tokio::time::timeout(Duration::from_secs(MODEL_TIMEOUT_SECS), exchange)
                 .await
-                .map_err(|_| format!("모델 호출 타임아웃({MODEL_TIMEOUT_SECS}초)"))?
-                .map_err(|e| format!("모델 호출 실패: {e}"))?;
+                .map_err(|_| format!("Model call timed out after {MODEL_TIMEOUT_SECS}s"))?
+                .map_err(|e| format!("Model call failed: {e}"))?;
 
         if !status.is_success() {
             return Err(format!(
-                "모델 API 오류 {status}: {}",
+                "Model API error {status}: {}",
                 truncate_chars(&body, 300)
             ));
         }
 
-        let parsed: ChatResponse =
-            serde_json::from_str(&body).map_err(|e| format!("응답 JSON 파싱 실패: {e}"))?;
+        let parsed: ChatResponse = serde_json::from_str(&body)
+            .map_err(|e| format!("Failed to parse response JSON: {e}"))?;
         let choice = parsed
             .choices
             .into_iter()
             .next()
-            .ok_or_else(|| "모델 응답에 choices가 없습니다".to_string())?;
+            .ok_or_else(|| "Model response has no choices".to_string())?;
 
         Ok(ChatReply {
             message: choice.message,
@@ -270,16 +270,19 @@ impl Brain {
 
         let result =
             match tokio::time::timeout(Duration::from_secs(BALANCE_TIMEOUT_SECS), exchange).await {
-                Err(_) => Err(format!("잔액 조회 타임아웃({BALANCE_TIMEOUT_SECS}초)")),
-                Ok(Err(e)) => Err(format!("잔액 조회 실패: {e}")),
+                Err(_) => Err(format!(
+                    "Balance lookup timed out after {BALANCE_TIMEOUT_SECS}s"
+                )),
+                Ok(Err(e)) => Err(format!("Balance lookup failed: {e}")),
                 Ok(Ok((status, body))) => {
                     if !status.is_success() {
                         Err(format!(
-                            "잔액 API 오류 {status}: {}",
+                            "Balance API error {status}: {}",
                             truncate_chars(&body, 300)
                         ))
                     } else {
-                        serde_json::from_str(&body).map_err(|e| format!("잔액 응답 파싱 실패: {e}"))
+                        serde_json::from_str(&body)
+                            .map_err(|e| format!("Failed to parse balance response: {e}"))
                     }
                 }
             };
@@ -423,6 +426,9 @@ mod tests {
                 total_balance: "0.10".to_string(),
             }],
         };
-        assert_eq!(insufficient.display(), "0.10 USD (API 호출에 부족)");
+        assert_eq!(
+            insufficient.display(),
+            "0.10 USD (insufficient for API calls)"
+        );
     }
 }

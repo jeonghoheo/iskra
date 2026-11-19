@@ -64,7 +64,7 @@ pub async fn run_turn(
             if content.trim().is_empty() {
                 if empty_retried {
                     logging::append("stop empty_response");
-                    return Err("모델이 빈 응답을 두 번 보냈습니다".to_string());
+                    return Err("The model returned an empty response twice".to_string());
                 }
                 empty_retried = true;
                 logging::append("empty_response_retry");
@@ -79,7 +79,7 @@ pub async fn run_turn(
         if roundtrips > MAX_TOOL_ROUNDTRIPS {
             logging::append("stop max_roundtrips");
             return Err(format!(
-                "도구 왕복이 최대 {MAX_TOOL_ROUNDTRIPS}회를 넘어 중단했습니다"
+                "Stopped after exceeding the maximum of {MAX_TOOL_ROUNDTRIPS} tool round-trips"
             ));
         }
 
@@ -91,7 +91,7 @@ pub async fn run_turn(
             let outcome = match serde_json::from_str::<serde_json::Value>(&call.function.arguments)
             {
                 Ok(args) => tools.execute(&name, &args).await,
-                Err(e) => Err(format!("arguments JSON 파싱 실패: {e}")),
+                Err(e) => Err(format!("Failed to parse arguments JSON: {e}")),
             };
 
             match outcome {
@@ -107,10 +107,10 @@ pub async fn run_turn(
                     if stop {
                         logging::append("stop repeated_tool_error");
                         return Err(format!(
-                            "같은 도구 오류가 {MAX_CONSECUTIVE_SAME_ERROR}회 연속 발생해 중단했습니다: {name} ({err})"
+                            "Stopped after the same tool error occurred {MAX_CONSECUTIVE_SAME_ERROR} times consecutively: {name} ({err})"
                         ));
                     }
-                    messages.push(Message::tool(&call.id, &format!("도구 오류: {err}")));
+                    messages.push(Message::tool(&call.id, &format!("Tool error: {err}")));
                 }
             }
         }

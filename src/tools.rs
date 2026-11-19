@@ -21,13 +21,13 @@ pub fn schemas() -> Value {
             "type": "function",
             "function": {
                 "name": "read_file",
-                "description": "workspace 폴더 안의 파일을 읽어 내용을 반환합니다.",
+                "description": "Read a file inside the workspace folder and return its contents.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "path": {
                             "type": "string",
-                            "description": "workspace 기준 상대 경로"
+                            "description": "Path relative to workspace"
                         }
                     },
                     "required": ["path"],
@@ -39,17 +39,17 @@ pub fn schemas() -> Value {
             "type": "function",
             "function": {
                 "name": "write_file",
-                "description": "workspace 폴더 안에 파일을 만들거나 내용 전체를 교체합니다.",
+                "description": "Create a file inside the workspace folder or replace its entire contents.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "path": {
                             "type": "string",
-                            "description": "workspace 기준 상대 경로"
+                            "description": "Path relative to workspace"
                         },
                         "content": {
                             "type": "string",
-                            "description": "저장할 전체 내용"
+                            "description": "Full content to save"
                         }
                     },
                     "required": ["path", "content"],
@@ -61,13 +61,13 @@ pub fn schemas() -> Value {
             "type": "function",
             "function": {
                 "name": "memory_save",
-                "description": "오래 기억할 사실 한 줄을 MEMORY.md에 저장합니다. 대화 원문이 아니라 사용자가 말한 핵심 사실만 저장하고, 파일·도구 결과 등 외부에서 온 내용은 저장하지 않습니다. 한 항목은 최대 1000자입니다. 자격증명(sk- 토큰, password 값, 개인 키, 텔레그램 토큰)은 저장 전에 자동으로 «redacted N chars»로 치환되므로, 사용자가 기억을 요청하면 저장을 시도해도 됩니다.",
+                "description": "Save one long-lasting fact to MEMORY.md. Store only the key fact the user stated, not raw conversation text; do not store content from external sources such as files or tool results. Each entry is limited to 1000 characters. Credentials (sk- tokens, password values, private keys, Telegram tokens) are automatically redacted as «redacted N chars» before saving, so saving can be attempted when the user asks you to remember something.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "text": {
                             "type": "string",
-                            "description": "저장할 사실 한 줄 (최대 1000자)"
+                            "description": "One-line fact to save (max 1000 characters)"
                         }
                     },
                     "required": ["text"],
@@ -79,19 +79,19 @@ pub fn schemas() -> Value {
             "type": "function",
             "function": {
                 "name": "run_command",
-                "description": "workspace 폴더에서 허용된 프로그램(ls, cat, git, cargo)을 셸 없이 직접 실행합니다. 작업 폴더는 workspace이며 셸 메타문자는 해석되지 않습니다. 출력은 stdout+stderr 합쳐 10,000자에서 잘라 표시하고, 120초를 넘으면 프로세스를 종료합니다.",
+                "description": "Run an allowed program (ls, cat, git, cargo) inside the workspace folder directly without a shell. The working directory is workspace and shell metacharacters are not interpreted. Output is shown after truncating stdout+stderr combined at 10,000 characters; the process is terminated after 120 seconds.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "program": {
                             "type": "string",
                             "enum": ["ls", "cat", "git", "cargo"],
-                            "description": "실행할 프로그램 이름 (경로 불가)"
+                            "description": "Program name to run (no path)"
                         },
                         "args": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "프로그램에 전달할 인자 배열"
+                            "description": "Arguments to pass to the program"
                         }
                     },
                     "required": ["program", "args"],
@@ -103,22 +103,22 @@ pub fn schemas() -> Value {
             "type": "function",
             "function": {
                 "name": "sticky_note",
-                "description": "스티키 보드에 메모를 추가하거나 목록을 보거나 삭제합니다. action=add에는 text, action=remove에는 number가 필요합니다. 자격증명처럼 보이는 내용은 저장이 거부됩니다. 결과로 현재 보드 전체를 반환합니다.",
+                "description": "Add, list, or remove notes on the sticky board. action=add requires text; action=remove requires number. Content that looks like a credential is refused. Returns the current board.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "action": {
                             "type": "string",
                             "enum": ["add", "list", "remove"],
-                            "description": "수행할 작업"
+                            "description": "Action to perform"
                         },
                         "text": {
                             "type": "string",
-                            "description": "add일 때 저장할 한 줄 메모"
+                            "description": "One-line note to save when action=add"
                         },
                         "number": {
                             "type": "integer",
-                            "description": "remove일 때 삭제할 스티키 번호"
+                            "description": "Sticky number to remove when action=remove"
                         }
                     },
                     "required": ["action"],
@@ -156,7 +156,7 @@ impl Tools {
             "memory_save" => crate::memory::save(arg_str(args, "text")?),
             "run_command" => self.run_command(args).await,
             "sticky_note" => self.sticky_note(args),
-            other => Err(format!("알 수 없는 도구입니다: {other}")),
+            other => Err(format!("Unknown tool: {other}")),
         }
     }
 
@@ -173,12 +173,12 @@ impl Tools {
                 let number = args
                     .get("number")
                     .and_then(Value::as_u64)
-                    .ok_or_else(|| "'number' 인자가 정수로 필요합니다".to_string())?;
+                    .ok_or_else(|| "'number' argument must be an integer".to_string())?;
                 let board = crate::stickies::remove(number)?;
                 self.sticky_changed.store(true, Ordering::SeqCst);
                 Ok(board)
             }
-            other => Err(format!("알 수 없는 sticky_note action입니다: {other}")),
+            other => Err(format!("Unknown sticky_note action: {other}")),
         }
     }
 
@@ -186,9 +186,9 @@ impl Tools {
         let path = arg_str(args, "path")?;
         let resolved = self.resolve(path)?;
         if !resolved.is_file() {
-            return Err(format!("파일이 아닙니다: {path}"));
+            return Err(format!("Not a file: {path}"));
         }
-        fs::read_to_string(&resolved).map_err(|e| format!("파일 읽기 실패({path}): {e}"))
+        fs::read_to_string(&resolved).map_err(|e| format!("Failed to read file ({path}): {e}"))
     }
 
     fn write_file(&self, args: &Value) -> Result<String, String> {
@@ -196,10 +196,10 @@ impl Tools {
         let content = arg_str(args, "content")?;
         let resolved = self.resolve(path)?;
         if let Some(parent) = resolved.parent() {
-            fs::create_dir_all(parent).map_err(|e| format!("디렉터리 생성 실패: {e}"))?;
+            fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {e}"))?;
         }
-        fs::write(&resolved, content).map_err(|e| format!("파일 쓰기 실패({path}): {e}"))?;
-        Ok(format!("{path}에 {} 바이트를 저장했습니다", content.len()))
+        fs::write(&resolved, content).map_err(|e| format!("Failed to write file ({path}): {e}"))?;
+        Ok(format!("Saved {} bytes to {path}", content.len()))
     }
 
     async fn run_command(&self, args: &Value) -> Result<String, String> {
@@ -209,7 +209,7 @@ impl Tools {
         if !ALLOWED_PROGRAMS.contains(&program) {
             crate::logging::append(&format!("run_command_rejected program={program}"));
             return Err(format!(
-                "허용되지 않는 프로그램입니다: {program} (허용: {})",
+                "Program is not allowed: {program} (allowed: {})",
                 ALLOWED_PROGRAMS.join(", ")
             ));
         }
@@ -240,18 +240,18 @@ impl Tools {
 
     fn resolve(&self, raw: &str) -> Result<PathBuf, String> {
         if raw.trim().is_empty() {
-            return Err("경로가 비어 있습니다".to_string());
+            return Err("Path is empty".to_string());
         }
 
         let input = Path::new(raw);
         if input.is_absolute() {
-            return Err(format!("절대 경로는 허용되지 않습니다: {raw}"));
+            return Err(format!("Absolute paths are not allowed: {raw}"));
         }
         if input
             .components()
             .any(|c| !matches!(c, Component::Normal(_) | Component::CurDir))
         {
-            return Err(format!("허용되지 않는 경로 요소가 있습니다: {raw}"));
+            return Err(format!("Path contains a disallowed component: {raw}"));
         }
 
         let mut current = self.root.clone();
@@ -270,10 +270,10 @@ impl Tools {
             match fs::symlink_metadata(&current) {
                 Ok(meta) if meta.file_type().is_symlink() => {
                     let canon = fs::canonicalize(&current)
-                        .map_err(|_| format!("심볼릭 링크를 확인할 수 없어 거부합니다: {raw}"))?;
+                        .map_err(|_| format!("Cannot verify symlink; refusing: {raw}"))?;
                     if !canon.starts_with(&self.root) {
                         return Err(format!(
-                            "workspace 밖으로 향하는 심볼릭 링크는 거부됩니다: {raw}"
+                            "Symlinks pointing outside workspace are refused: {raw}"
                         ));
                     }
                     current = canon;
@@ -282,12 +282,12 @@ impl Tools {
                 Err(e) if e.kind() == io::ErrorKind::NotFound => {
                     missing = true;
                 }
-                Err(e) => return Err(format!("경로 확인 실패({raw}): {e}")),
+                Err(e) => return Err(format!("Path check failed ({raw}): {e}")),
             }
         }
 
         if !current.starts_with(&self.root) {
-            return Err(format!("workspace 밖 접근은 거부됩니다: {raw}"));
+            return Err(format!("Access outside workspace is refused: {raw}"));
         }
         Ok(current)
     }
@@ -318,22 +318,22 @@ async fn run_process(
 
     let mut child = command
         .spawn()
-        .map_err(|e| format!("명령 실행 실패({program}): {e}"))?;
+        .map_err(|e| format!("Failed to run command ({program}): {e}"))?;
     let stdout = child
         .stdout
         .take()
-        .ok_or_else(|| "stdout 파이프를 얻지 못했습니다".to_string())?;
+        .ok_or_else(|| "Failed to obtain stdout pipe".to_string())?;
     let stderr = child
         .stderr
         .take()
-        .ok_or_else(|| "stderr 파이프를 얻지 못했습니다".to_string())?;
+        .ok_or_else(|| "Failed to obtain stderr pipe".to_string())?;
     let stdout_task = tokio::spawn(read_capped(stdout));
     let stderr_task = tokio::spawn(read_capped(stderr));
 
     let waited = tokio::time::timeout(timeout, child.wait()).await;
     let (code, timed_out) = match waited {
         Ok(Ok(status)) => (status_label(status), false),
-        Ok(Err(e)) => return Err(format!("명령 대기 실패({program}): {e}")),
+        Ok(Err(e)) => return Err(format!("Failed to wait for command ({program}): {e}")),
         Err(_) => {
             let _ = child.start_kill();
             let _ = child.wait().await;
@@ -343,10 +343,10 @@ async fn run_process(
 
     let (stdout, stdout_truncated) = stdout_task
         .await
-        .map_err(|e| format!("stdout 수집 실패: {e}"))?;
+        .map_err(|e| format!("Failed to collect stdout: {e}"))?;
     let (stderr, stderr_truncated) = stderr_task
         .await
-        .map_err(|e| format!("stderr 수집 실패: {e}"))?;
+        .map_err(|e| format!("Failed to collect stderr: {e}"))?;
     let text = format_result(
         &code,
         &stdout,
@@ -422,7 +422,7 @@ fn format_result(
     let mut result = String::new();
     if timed_out {
         result.push_str(&format!(
-            "타임아웃({}초)으로 프로세스를 종료했습니다.\n",
+            "Timed out after {}s; the process was terminated.\n",
             timeout.as_secs_f64()
         ));
     }
@@ -434,7 +434,7 @@ fn format_result(
         }
     }
     if truncated {
-        result.push_str("...(출력이 10,000자에서 잘렸습니다)\n");
+        result.push_str("...(output truncated at 10,000 characters)\n");
     }
     result
 }
@@ -442,20 +442,20 @@ fn format_result(
 fn arg_str<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
     args.get(key)
         .and_then(Value::as_str)
-        .ok_or_else(|| format!("'{key}' 인자가 문자열로 필요합니다"))
+        .ok_or_else(|| format!("'{key}' argument must be a string"))
 }
 
 fn arg_str_array(args: &Value, key: &str) -> Result<Vec<String>, String> {
     let array = args
         .get(key)
         .and_then(Value::as_array)
-        .ok_or_else(|| format!("'{key}' 인자가 문자열 배열로 필요합니다"))?;
+        .ok_or_else(|| format!("'{key}' argument must be an array of strings"))?;
     array
         .iter()
         .map(|item| {
             item.as_str()
                 .map(|value| value.to_string())
-                .ok_or_else(|| format!("'{key}' 배열의 모든 원소는 문자열이어야 합니다"))
+                .ok_or_else(|| format!("Every element in the '{key}' array must be a string"))
         })
         .collect()
 }
@@ -542,7 +542,7 @@ mod tests {
             let result = tools.execute("run_command", &args).await;
             assert!(result.is_err(), "{program} should be rejected");
             assert!(
-                result.unwrap_err().contains("허용되지 않는"),
+                result.unwrap_err().contains("not allowed"),
                 "{program} rejection should name the allowlist"
             );
         }
@@ -587,8 +587,13 @@ mod tests {
         .await
         .unwrap();
 
-        assert!(outcome.text.contains("10,000자에서 잘렸습니다"));
-        let a_count = outcome.text.chars().filter(|c| *c == 'a').count();
+        assert!(
+            outcome
+                .text
+                .contains("output truncated at 10,000 characters")
+        );
+        let body = outcome.text.split("\n...(").next().unwrap_or(&outcome.text);
+        let a_count = body.chars().filter(|c| *c == 'a').count();
         assert_eq!(a_count, OUTPUT_LIMIT_CHARS);
 
         fs::remove_dir_all(&root).unwrap();
@@ -610,7 +615,7 @@ mod tests {
         .unwrap();
 
         assert!(started.elapsed() < Duration::from_secs(3));
-        assert!(outcome.text.contains("타임아웃"));
+        assert!(outcome.text.contains("Timed out"));
         assert_eq!(outcome.code, "timeout");
 
         fs::remove_dir_all(&root).unwrap();

@@ -8,7 +8,7 @@ use crate::memory;
 
 pub const STICKIES_FILE: &str = "stickies.md";
 pub const BOARD_STATE_FILE: &str = "board_state.json";
-pub const BOARD_TITLE: &str = "스티키 보드";
+pub const BOARD_TITLE: &str = "Sticky board";
 const MAX_TEXT_CHARS: usize = 1_000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -45,7 +45,7 @@ pub fn is_empty_board(text: &str) -> bool {
 }
 
 fn empty_board_text() -> String {
-    format!("{BOARD_TITLE}가 비어 있습니다.")
+    format!("{BOARD_TITLE} is empty.")
 }
 
 pub fn load_board_state() -> Result<Option<BoardState>, String> {
@@ -57,12 +57,12 @@ fn load_board_state_from(dir: &Path) -> Result<Option<BoardState>, String> {
     match fs::read(&path) {
         Ok(bytes) => {
             let text = String::from_utf8(bytes)
-                .map_err(|_| format!("{}: UTF-8로 읽을 수 없습니다", path.display()))?;
+                .map_err(|_| format!("{}: cannot read as UTF-8", path.display()))?;
             serde_json::from_str::<Option<BoardState>>(&text)
-                .map_err(|e| format!("보드 상태 파싱 실패: {e}"))
+                .map_err(|e| format!("Failed to parse board state: {e}"))
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("보드 상태 읽기 실패: {e}")),
+        Err(e) => Err(format!("Failed to read board state: {e}")),
     }
 }
 
@@ -75,9 +75,9 @@ pub fn clear_board_state() -> Result<(), String> {
 }
 
 fn save_board_state_to(dir: &Path, state: Option<&BoardState>) -> Result<(), String> {
-    fs::create_dir_all(dir).map_err(|e| format!("보드 상태 폴더 생성 실패: {e}"))?;
-    let content =
-        serde_json::to_string(&state).map_err(|e| format!("보드 상태 직렬화 실패: {e}"))?;
+    fs::create_dir_all(dir).map_err(|e| format!("Failed to create board state directory: {e}"))?;
+    let content = serde_json::to_string(&state)
+        .map_err(|e| format!("Failed to serialize board state: {e}"))?;
     memory::atomic_write(
         &dir.join(BOARD_STATE_FILE),
         format!("{content}\n").as_bytes(),
@@ -89,7 +89,7 @@ fn add_to(dir: &Path, text: &str) -> Result<String, String> {
     let (_, redactions) = memory::redact_credentials(&text);
     if redactions > 0 {
         return Err(
-            "자격증명처럼 보이는 내용은 스티키에 저장할 수 없습니다. 비밀값을 지우고 다시 시도해 주세요"
+            "Content that looks like a credential cannot be saved in a sticky. Remove the secret and try again"
                 .to_string(),
         );
     }
@@ -108,7 +108,7 @@ fn add_to(dir: &Path, text: &str) -> Result<String, String> {
     });
     save_to(dir, &stickies)?;
     Ok(format!(
-        "스티키 #{number}을 추가했습니다.\n\n{}",
+        "Sticky #{number} added.\n\n{}",
         format_board(&stickies)
     ))
 }
@@ -120,12 +120,12 @@ fn board_from(dir: &Path) -> Result<String, String> {
 fn remove_from(dir: &Path, number: u64) -> Result<String, String> {
     let mut stickies = load_from(dir)?;
     let Some(index) = stickies.iter().position(|sticky| sticky.number == number) else {
-        return Err(format!("스티키 #{number}이 없습니다"));
+        return Err(format!("Sticky #{number} does not exist"));
     };
     stickies.remove(index);
     save_to(dir, &stickies)?;
     Ok(format!(
-        "스티키 #{number}을 삭제했습니다.\n\n{}",
+        "Sticky #{number} removed.\n\n{}",
         format_board(&stickies)
     ))
 }
@@ -133,11 +133,11 @@ fn remove_from(dir: &Path, number: u64) -> Result<String, String> {
 fn normalize_text(text: &str) -> Result<String, String> {
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if text.is_empty() {
-        return Err("스티키 내용이 비어 있습니다".to_string());
+        return Err("Sticky content is empty".to_string());
     }
     if text.chars().count() > MAX_TEXT_CHARS {
         return Err(format!(
-            "스티키 한 개는 최대 {MAX_TEXT_CHARS}자까지 저장할 수 있습니다"
+            "Each sticky can contain at most {MAX_TEXT_CHARS} characters"
         ));
     }
     Ok(text)
@@ -148,16 +148,19 @@ fn load_from(dir: &Path) -> Result<Vec<Sticky>, String> {
     match fs::read(&path) {
         Ok(bytes) => {
             let content = String::from_utf8(bytes)
-                .map_err(|_| format!("{}: UTF-8로 읽을 수 없습니다", path.display()))?;
+                .map_err(|_| format!("{}: cannot read as UTF-8", path.display()))?;
             Ok(content.lines().filter_map(parse_line).collect())
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
-        Err(e) => Err(format!("스티키 파일 읽기 실패({}): {e}", path.display())),
+        Err(e) => Err(format!(
+            "Failed to read stickies file ({}): {e}",
+            path.display()
+        )),
     }
 }
 
 fn save_to(dir: &Path, stickies: &[Sticky]) -> Result<(), String> {
-    fs::create_dir_all(dir).map_err(|e| format!("스티키 폴더 생성 실패: {e}"))?;
+    fs::create_dir_all(dir).map_err(|e| format!("Failed to create stickies directory: {e}"))?;
     let mut content = String::from("# Stickies\n\n");
     for sticky in stickies {
         content.push_str(&format!(
@@ -195,7 +198,7 @@ fn format_board(stickies: &[Sticky]) -> String {
             sticky.number, sticky.created, sticky.text
         ));
     }
-    text.push_str("\n\n삭제: /stickies remove N");
+    text.push_str("\n\nDelete: /stickies remove N");
     text
 }
 
@@ -225,7 +228,7 @@ mod tests {
         let dir = temp_dir("board");
 
         let board = add_to(&dir, "first note").unwrap();
-        assert!(board.contains("스티키 #1"));
+        assert!(board.contains("Sticky #1"));
         assert!(board.contains("\n1. "));
         assert!(board.contains("first note"));
         assert!(board.contains("/stickies remove N"));
@@ -271,14 +274,16 @@ mod tests {
         add_to(&dir, "safe note").unwrap();
         let before = fs::read_to_string(dir.join(STICKIES_FILE)).unwrap();
 
-        for text in [
-            "키는 sk-test1234567890",
-            "password=hunter2",
-            "-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----",
-            "토큰 123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw",
-        ] {
+        let telegram_token = format!("{}{}", "123456789", ":AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw");
+        let texts = [
+            "key is sk-test1234567890".to_string(),
+            "password=hunter2".to_string(),
+            "-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----".to_string(),
+            format!("token {telegram_token}"),
+        ];
+        for text in &texts {
             let error = add_to(&dir, text).unwrap_err();
-            assert!(error.contains("자격증명"), "{error}");
+            assert!(error.contains("credential"), "{error}");
         }
 
         let after = fs::read_to_string(dir.join(STICKIES_FILE)).unwrap();
@@ -294,7 +299,7 @@ mod tests {
         let dir = temp_dir("empty");
         let board = board_from(&dir).unwrap();
         assert!(is_board_text(&board));
-        assert!(board.contains("비어"));
+        assert!(board.contains("empty"));
         fs::remove_dir_all(&dir).unwrap();
     }
 

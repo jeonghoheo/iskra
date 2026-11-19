@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Ok(config) => config,
         Err(e) => {
             logging::append(&format!("config_error {e}"));
-            eprintln!("설정 오류: {e}");
+            eprintln!("Configuration error: {e}");
             std::process::exit(1);
         }
     };
@@ -32,17 +32,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let memory = memory::load();
     for warning in memory.warnings.iter().chain(identity.warnings.iter()) {
         logging::append(&format!("context_warning {warning}"));
-        println!("알림: {warning}");
+        println!("Notice: {warning}");
     }
     let system_prompt = prompt::assemble(&identity, &memory);
     let memory_status = {
         let mut status = if memory.truncated {
-            "일부만 로드됨".to_string()
+            "partially loaded".to_string()
         } else {
-            "정상".to_string()
+            "ok".to_string()
         };
         if !memory.warnings.is_empty() {
-            status.push_str(&format!(", 경고 {}건", memory.warnings.len()));
+            status.push_str(&format!(", {} warning(s)", memory.warnings.len()));
         }
         status
     };
@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let brain = brain::Brain::new(config);
 
     if std::env::args().any(|arg| arg == "--cli") {
-        println!("iskra — 파일 도구 대화 루프. 종료하려면 exit 입력.");
+        println!("iskra — file-tool conversation loop. Type exit to quit.");
         run_cli(&brain, &tools, &system_prompt).await?;
     } else {
         channel::run(brain, tools, system_prompt, memory_status).await?;
@@ -83,7 +83,7 @@ async fn run_cli(
 
         match loop_::run_turn(brain, tools, system_prompt, input).await {
             Ok(answer) => println!("{answer}"),
-            Err(e) => eprintln!("중단: {e}"),
+            Err(e) => eprintln!("Stopped: {e}"),
         }
     }
 

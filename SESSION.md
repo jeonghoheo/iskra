@@ -307,3 +307,32 @@ Background: Block 6.3 shipped the sticky board as "send a fresh board message an
 2. Live: add two stickies, then remove them one by one — throughout, exactly one pinned board message exists and its content updates in place; when the last sticky is removed, the board message is unpinned and gone.
 3. Live: restart the bot and add a sticky — the same board message is reused (no second board appears).
 4. SESSION-LOG.md gains a Block 6.3.1 entry written in English.
+
+---
+
+## Block 6.5 (patch) — English unification of in-code strings
+
+Gate (fixed): ① No quick fixes — check the cause and current state first ② Write states and transitions before implementing ③ Read the verification method and acceptance criteria below before writing code ④ Mark any temporary workaround in the log and leave a formal-fix task ⑤ If the same approach fails twice, switch approaches and record the cause in the log.
+
+Background: §0.10 set the repo to a single English source; its transition rule assumed Korean lived in comments. Measurement (2026-11-19) found no Korean comments at all — the Korean is in strings: 187 lines across src/ (model-facing tool descriptions and default prompts, user-facing command descriptions, board texts and errors, test fixtures). The user directed a single unification patch instead of gradual conversion. This patch also folds in the secret-scanning false-positive cleanup (GitHub alert #1: the Telegram documentation sample token used as a scanner test fixture in src/memory.rs). Design refs: §0.10 (language policy), §0.8 (public claims match verified state).
+
+### Scope
+1. Translate every Korean string literal in `src/*.rs` to English, including:
+   - `tools.rs`: tool descriptions and parameter descriptions (model-facing).
+   - `prompt.rs`: `DEFAULT_SOUL`, `DEFAULT_USER`, and error strings.
+   - `channel.rs`: command descriptions, `/help` and `/start` text, board-related messages.
+   - `stickies.rs`: board title and board messages.
+   - All remaining runtime error/log strings in `brain.rs`, `loop_.rs`, `main.rs`, `memory.rs`, `usage.rs`, `logging.rs`.
+2. Test fixtures: translate Korean fixture text to English. Exception — the Telegram sample token in `memory.rs` tests (`redacts_telegram_tokens`): assemble it at runtime from two string halves so the literal no longer matches secret-scanning patterns, keeping the test's behavior identical (the scanner must still catch the assembled token).
+3. Behavior must not change: same control flow, same message meanings, same tests' assertions (updated only where they assert on the translated text itself).
+
+### Out of scope
+- User data and its language: local `SOUL.md`/`USER.md`, memory files, sticky contents — data, not code (§0.10).
+- The `SOUL.example.md` / `USER.example.md` templates (product templates ship per user language; separate decision).
+- README/docs (already English-first).
+
+### Acceptance criteria
+1. A Hangul scan over `src/` returns zero matches.
+2. `cargo test` all passing; the assembled-token scanner test still passes.
+3. Live: command menu and `/help` show English descriptions; the sticky board title is English; the bot still converses in the user's language (model behavior comes from SOUL/USER data, unchanged).
+4. SESSION-LOG.md gains a Block 6.5 entry written in English.
