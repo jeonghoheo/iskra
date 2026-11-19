@@ -278,3 +278,32 @@ Background: 종합설계 §2.5 records the post-it metaphor as the procedure-aut
 2. Live: asking in natural language to stick a note adds it; `/stickies` shows the board; asking to remove one removes it.
 3. Live: the board message is pinned, or the log records why pinning was not possible.
 4. SESSION-LOG.md gains a Block 6.3 entry written in English.
+
+---
+
+## Block 6.3.1 (patch) — One board message, edited in place
+
+Gate (fixed): ① No quick fixes — check the cause and current state first ② Write states and transitions before implementing ③ Read the verification method and acceptance criteria below before writing code ④ Mark any temporary workaround in the log and leave a formal-fix task ⑤ If the same approach fails twice, switch approaches and record the cause in the log.
+
+Background: Block 6.3 shipped the sticky board as "send a fresh board message and pin it" on every change. The SESSION-LOG noted the consequence (old boards may remain); real use confirmed it reads as a bug to the user — a post-it is one sheet whose content changes, not a stack of copies. Design refs: §0.11 transparency ("palm") principle, §2.5 post-it metaphor.
+
+### State transitions (write before coding)
+- Board message states: `none` → (first sticky added, or `/stickies` with a non-empty board) → `live(id)` → (content changes) → `live(id)` edited in place → (board becomes empty) → message unpinned + deleted → `none`.
+- The board message id is persisted in a small state file in the data folder (same safety rules as other data files), so a bot restart resumes the same board instead of posting a new one.
+- If editing the tracked message fails (user deleted it, Telegram refuses): fall back to sending a new board message, pin it, and replace the stored id. Log the fallback (`telegram_board_refreshed_fallback`).
+- If unpin/delete fails when the board empties: log it and clear the stored id anyway — never resurrect a stale board on the next change; the next non-empty board starts fresh.
+
+### Scope
+1. `send_board` is replaced by a `sync_board` that follows the transitions above (edit in place via `editMessageText`, unpin + delete on empty).
+2. All Block 6.3 entry points (`/stickies`, tool-driven add/remove, reply-to-board remove) go through `sync_board`. `/stickies` on an empty board with no live board message answers with a plain "board is empty" message and pins nothing.
+3. Reply-to-board removal keeps working against the single live board message.
+
+### Out of scope
+- Deleting pre-patch stray board messages already sitting in the chat history (the bot never tracked their ids; the user deletes those by hand once).
+- Any change to sticky storage, numbering, or the credential refusal.
+
+### Acceptance criteria
+1. `cargo test` all passing (existing 45 + new: board state transitions, edit-failure fallback, empty-board teardown).
+2. Live: add two stickies, then remove them one by one — throughout, exactly one pinned board message exists and its content updates in place; when the last sticky is removed, the board message is unpinned and gone.
+3. Live: restart the bot and add a sticky — the same board message is reused (no second board appears).
+4. SESSION-LOG.md gains a Block 6.3.1 entry written in English.

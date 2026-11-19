@@ -2,9 +2,12 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
+
 use crate::memory;
 
 pub const STICKIES_FILE: &str = "stickies.md";
+pub const BOARD_STATE_FILE: &str = "board_state.json";
 pub const BOARD_TITLE: &str = "스티키 보드";
 const MAX_TEXT_CHARS: usize = 1_000;
 
@@ -13,6 +16,12 @@ pub struct Sticky {
     pub number: u64,
     pub created: String,
     pub text: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BoardState {
+    pub chat_id: i64,
+    pub message_id: i32,
 }
 
 pub fn add(text: &str) -> Result<String, String> {
@@ -29,6 +38,50 @@ pub fn remove(number: u64) -> Result<String, String> {
 
 pub fn is_board_text(text: &str) -> bool {
     text.trim_start().starts_with(BOARD_TITLE)
+}
+
+pub fn is_empty_board(text: &str) -> bool {
+    text == empty_board_text()
+}
+
+fn empty_board_text() -> String {
+    format!("{BOARD_TITLE}가 비어 있습니다.")
+}
+
+pub fn load_board_state() -> Result<Option<BoardState>, String> {
+    load_board_state_from(Path::new(memory::MEMORY_DIR))
+}
+
+fn load_board_state_from(dir: &Path) -> Result<Option<BoardState>, String> {
+    let path = dir.join(BOARD_STATE_FILE);
+    match fs::read(&path) {
+        Ok(bytes) => {
+            let text = String::from_utf8(bytes)
+                .map_err(|_| format!("{}: UTF-8로 읽을 수 없습니다", path.display()))?;
+            serde_json::from_str::<Option<BoardState>>(&text)
+                .map_err(|e| format!("보드 상태 파싱 실패: {e}"))
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("보드 상태 읽기 실패: {e}")),
+    }
+}
+
+pub fn save_board_state(state: &BoardState) -> Result<(), String> {
+    save_board_state_to(Path::new(memory::MEMORY_DIR), Some(state))
+}
+
+pub fn clear_board_state() -> Result<(), String> {
+    save_board_state_to(Path::new(memory::MEMORY_DIR), None)
+}
+
+fn save_board_state_to(dir: &Path, state: Option<&BoardState>) -> Result<(), String> {
+    fs::create_dir_all(dir).map_err(|e| format!("보드 상태 폴더 생성 실패: {e}"))?;
+    let content =
+        serde_json::to_string(&state).map_err(|e| format!("보드 상태 직렬화 실패: {e}"))?;
+    memory::atomic_write(
+        &dir.join(BOARD_STATE_FILE),
+        format!("{content}\n").as_bytes(),
+    )
 }
 
 fn add_to(dir: &Path, text: &str) -> Result<String, String> {
@@ -133,7 +186,7 @@ fn parse_line(line: &str) -> Option<Sticky> {
 
 fn format_board(stickies: &[Sticky]) -> String {
     if stickies.is_empty() {
-        return format!("{BOARD_TITLE}가 비어 있습니다.");
+        return empty_board_text();
     }
     let mut text = format!("{BOARD_TITLE}:");
     for sticky in stickies {
@@ -142,6 +195,7 @@ fn format_board(stickies: &[Sticky]) -> String {
             sticky.number, sticky.created, sticky.text
         ));
     }
+    text.push_str("\n\n삭제: /stickies remove N");
     text
 }
 
@@ -174,6 +228,7 @@ mod tests {
         assert!(board.contains("스티키 #1"));
         assert!(board.contains("\n1. "));
         assert!(board.contains("first note"));
+        assert!(board.contains("/stickies remove N"));
 
         let board = add_to(&dir, "second note").unwrap();
         assert!(board.contains("\n2. "));
@@ -254,5 +309,56 @@ mod tests {
         assert!(content.contains("line one line two"));
 
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn board_state_roundtrips_and_clears() {
+        let dir = temp_dir("board-state");
+        assert_eq!(load_board_state_from(&dir).unwrap(), None);
+
+        let state = BoardState {
+            chat_id: 42,
+            message_id: 7,
+        };
+        save_board_state_to(&dir, Some(&state)).unwrap();
+        assert_eq!(load_board_state_from(&dir).unwrap(), Some(state));
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(dir.join(BOARD_STATE_FILE))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+
+        save_board_state_to(&dir, None).unwrap();
+        assert_eq!(load_board_state_from(&dir).unwrap(), None);
+        assert_eq!(
+            fs::read_to_string(dir.join(BOARD_STATE_FILE)).unwrap(),
+            "null\n"
+        );
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn corrupt_board_state_is_an_error() {
+        let dir = temp_dir("board-state-corrupt");
+        fs::write(dir.join(BOARD_STATE_FILE), "not json").unwrap();
+        assert!(load_board_state_from(&dir).is_err());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn empty_board_text_is_detected() {
+        assert!(is_empty_board(&empty_board_text()));
+        assert!(!is_empty_board(&format_board(&[Sticky {
+            number: 1,
+            created: "2026-11-19".to_string(),
+            text: "note".to_string(),
+        }])));
     }
 }

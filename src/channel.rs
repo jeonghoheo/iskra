@@ -10,7 +10,8 @@ use std::time::Duration;
 
 use teloxide::dptree;
 use teloxide::prelude::*;
-use teloxide::types::{BotCommand, ChatAction, MessageReactionUpdated, ParseMode};
+use teloxide::types::{BotCommand, ChatAction, MessageId, MessageReactionUpdated, ParseMode};
+use teloxide::{ApiError, RequestError};
 use tokio::task::JoinHandle;
 
 const MAX_MESSAGE_CHARS: usize = 4096;
@@ -143,10 +144,33 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
         if is_board_reply(reply) {
             if let Ok(number) = user_message.trim().parse::<u64>() {
                 match stickies::remove(number) {
-                    Ok(board) => {
+                    Ok(_) => {
                         logging::append(&format!("telegram_sticky_remove number={number}"));
-                        if let Err(e) = send_board(&bot, chat_id, &board).await {
-                            logging::append(&format!("telegram_board_send_error {e}"));
+                        let board = match stickies::board() {
+                            Ok(board) => board,
+                            Err(e) => {
+                                logging::append(&format!("sticky_board_error {e}"));
+                                bot.send_message(
+                                    chat_id,
+                                    format!(
+                                        "스티키 #{}은 삭제했지만 보드를 읽지 못했습니다.",
+                                        number
+                                    ),
+                                )
+                                .await?;
+                                return Ok(());
+                            }
+                        };
+                        match sync_board(&bot, chat_id, &board, BoardMode::Update).await {
+                            Ok(BoardOutcome::EmptyNoBoard) => {
+                                bot.send_message(chat_id, board).await?;
+                            }
+                            Ok(_) => {}
+                            Err(e) => {
+                                logging::append(&format!("telegram_board_sync_error {e}"));
+                                bot.send_message(chat_id, "스티키 보드를 동기화하지 못했습니다.")
+                                    .await?;
+                            }
                         }
                     }
                     Err(e) => {
@@ -169,7 +193,7 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
         Some("/help") => {
             bot.send_message(chat_id, help_text()).await?;
         }
-        Some("/stickies") => send_stickies(&state, chat_id).await?,
+        Some("/stickies") => handle_stickies_command(&state, chat_id, &user_message).await?,
         Some("/stop") => stop_turn(&state, chat_id).await?,
         Some("/status") => send_status(&state, chat_id).await?,
         _ => start_turn(&state, chat_id, &user_message),
@@ -195,6 +219,7 @@ fn help_text() -> String {
     for (command, description) in COMMANDS {
         text.push_str(&format!("\n/{command} — {description}"));
     }
+    text.push_str("\n\n스티키 삭제: /stickies remove N");
     text
 }
 
@@ -256,6 +281,109 @@ fn command_name(text: &str) -> Option<String> {
     Some(name.to_string())
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StickiesCommand {
+    Show,
+    Remove(u64),
+    Usage,
+}
+
+fn parse_stickies_command(text: &str) -> StickiesCommand {
+    let mut parts = text.split_whitespace();
+    let Some(command) = parts.next() else {
+        return StickiesCommand::Usage;
+    };
+    if command.split('@').next().unwrap_or(command) != "/stickies" {
+        return StickiesCommand::Usage;
+    }
+    match parts.collect::<Vec<_>>().as_slice() {
+        [] => StickiesCommand::Show,
+        [number] => number
+            .parse()
+            .map(StickiesCommand::Remove)
+            .unwrap_or(StickiesCommand::Usage),
+        [subcommand, number] if matches!(*subcommand, "remove" | "delete" | "del") => number
+            .parse()
+            .map(StickiesCommand::Remove)
+            .unwrap_or(StickiesCommand::Usage),
+        _ => StickiesCommand::Usage,
+    }
+}
+
+async fn handle_stickies_command(
+    state: &Arc<ChannelState>,
+    chat_id: ChatId,
+    text: &str,
+) -> HandlerResult {
+    match parse_stickies_command(text) {
+        StickiesCommand::Show => send_stickies(state, chat_id).await,
+        StickiesCommand::Remove(number) => {
+            match stickies::remove(number) {
+                Ok(_) => {
+                    logging::append(&format!("telegram_sticky_remove number={number}"));
+                    let board = match stickies::board() {
+                        Ok(board) => board,
+                        Err(e) => {
+                            logging::append(&format!("sticky_board_error {e}"));
+                            state
+                                .bot
+                                .send_message(
+                                    chat_id,
+                                    format!(
+                                        "스티키 #{}은 삭제했지만 보드를 읽지 못했습니다.",
+                                        number
+                                    ),
+                                )
+                                .await?;
+                            return Ok(());
+                        }
+                    };
+                    match sync_board(&state.bot, chat_id, &board, BoardMode::Update).await {
+                        Ok(_) => {
+                            state
+                                .bot
+                                .send_message(chat_id, format!("스티키 #{number}을 삭제했습니다."))
+                                .await?;
+                        }
+                        Err(e) => {
+                            logging::append(&format!("telegram_board_sync_error {e}"));
+                            state
+                                .bot
+                                .send_message(
+                                    chat_id,
+                                    format!(
+                                        "스티키 #{number}을 삭제했지만 보드를 갱신하지 못했습니다."
+                                    ),
+                                )
+                                .await?;
+                        }
+                    }
+                }
+                Err(e) => {
+                    logging::append(&format!(
+                        "telegram_sticky_remove_error number={number} err={e}"
+                    ));
+                    state
+                        .bot
+                        .send_message(chat_id, format!("스티키를 삭제하지 못했습니다: {e}"))
+                        .await?;
+                }
+            }
+            Ok(())
+        }
+        StickiesCommand::Usage => {
+            state
+                .bot
+                .send_message(
+                    chat_id,
+                    "사용법: /stickies (보드 보기), /stickies remove N (N번 삭제)",
+                )
+                .await?;
+            Ok(())
+        }
+    }
+}
+
 fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str) {
     let busy = {
         let slot = state.current_turn.lock().unwrap();
@@ -306,8 +434,10 @@ fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str) {
         if sticky_changed {
             match stickies::board() {
                 Ok(board) => {
-                    if let Err(e) = send_board(&task_state.bot, chat_id, &board).await {
-                        logging::append(&format!("telegram_board_send_error {e}"));
+                    if let Err(e) =
+                        sync_board(&task_state.bot, chat_id, &board, BoardMode::Update).await
+                    {
+                        logging::append(&format!("telegram_board_sync_error {e}"));
                     }
                 }
                 Err(e) => logging::append(&format!("sticky_board_error {e}")),
@@ -377,14 +507,58 @@ async fn send_status(state: &Arc<ChannelState>, chat_id: ChatId) -> HandlerResul
     Ok(())
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BoardPlan {
+    Send,
+    Edit(MessageId),
+    Teardown(MessageId),
+    EmptyNoBoard,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BoardOutcome {
+    Updated,
+    Unchanged,
+    TornDown,
+    EmptyNoBoard,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BoardMode {
+    Update,
+    Show,
+}
+
+fn plan_board(empty: bool, state: Option<stickies::BoardState>, chat_id: i64) -> BoardPlan {
+    let live = state.filter(|state| state.chat_id == chat_id);
+    if empty {
+        match live {
+            Some(state) => BoardPlan::Teardown(MessageId(state.message_id)),
+            None => BoardPlan::EmptyNoBoard,
+        }
+    } else {
+        match live {
+            Some(state) => BoardPlan::Edit(MessageId(state.message_id)),
+            None => BoardPlan::Send,
+        }
+    }
+}
+
+fn fallback_after_edit_failure(plan: BoardPlan) -> BoardPlan {
+    match plan {
+        BoardPlan::Edit(_) => BoardPlan::Send,
+        other => other,
+    }
+}
+
 async fn send_stickies(state: &Arc<ChannelState>, chat_id: ChatId) -> HandlerResult {
     match stickies::board() {
         Ok(board) => {
-            if let Err(e) = send_board(&state.bot, chat_id, &board).await {
-                logging::append(&format!("telegram_board_send_error {e}"));
+            if let Err(e) = sync_board(&state.bot, chat_id, &board, BoardMode::Show).await {
+                logging::append(&format!("telegram_board_sync_error {e}"));
                 state
                     .bot
-                    .send_message(chat_id, "스티키 보드를 전송하지 못했습니다.")
+                    .send_message(chat_id, "스티키 보드를 표시하지 못했습니다.")
                     .await?;
             }
         }
@@ -399,18 +573,138 @@ async fn send_stickies(state: &Arc<ChannelState>, chat_id: ChatId) -> HandlerRes
     Ok(())
 }
 
-async fn send_board(bot: &Bot, chat_id: ChatId, board: &str) -> Result<(), String> {
+async fn remove_old_board(bot: &Bot, chat_id: ChatId, message_id: MessageId) {
+    if let Err(e) = bot.unpin_chat_message(chat_id).message_id(message_id).await {
+        logging::append(&format!("telegram_unpin_error {e}"));
+    }
+    if let Err(e) = bot.delete_message(chat_id, message_id).await {
+        logging::append(&format!("telegram_delete_error {e}"));
+    }
+}
+
+async fn show_board(bot: &Bot, chat_id: ChatId, board: &str) -> Result<BoardOutcome, String> {
+    let state = match stickies::load_board_state() {
+        Ok(state) => state,
+        Err(e) => {
+            logging::append(&format!("sticky_board_state_error {e}"));
+            None
+        }
+    };
+    let live = state.filter(|state| state.chat_id == chat_id.0);
+
+    if stickies::is_empty_board(board) {
+        if let Some(state) = live {
+            remove_old_board(bot, chat_id, MessageId(state.message_id)).await;
+            if let Err(e) = stickies::clear_board_state() {
+                logging::append(&format!("sticky_board_state_clear_error {e}"));
+            }
+        }
+        bot.send_message(chat_id, board)
+            .await
+            .map_err(|e| e.to_string())?;
+        logging::append("telegram_board_shown_empty");
+        return Ok(BoardOutcome::EmptyNoBoard);
+    }
+
+    if live.is_none() {
+        let sent = bot
+            .send_message(chat_id, board)
+            .await
+            .map_err(|e| e.to_string())?;
+        logging::append("telegram_board_sent");
+        match bot.pin_chat_message(chat_id, sent.id).await {
+            Ok(_) => logging::append("telegram_board_pinned"),
+            Err(e) => logging::append(&format!("telegram_pin_error {e}")),
+        }
+        let state = stickies::BoardState {
+            chat_id: chat_id.0,
+            message_id: sent.id.0,
+        };
+        if let Err(e) = stickies::save_board_state(&state) {
+            logging::append(&format!("sticky_board_state_save_error {e}"));
+        }
+        return Ok(BoardOutcome::Updated);
+    }
+
+    bot.send_message(chat_id, board)
+        .await
+        .map_err(|e| e.to_string())?;
+    logging::append("telegram_board_view_sent");
+    Ok(BoardOutcome::Updated)
+}
+
+async fn sync_board(
+    bot: &Bot,
+    chat_id: ChatId,
+    board: &str,
+    mode: BoardMode,
+) -> Result<BoardOutcome, String> {
+    if mode == BoardMode::Show {
+        return show_board(bot, chat_id, board).await;
+    }
+
+    let empty = stickies::is_empty_board(board);
+    let state = match stickies::load_board_state() {
+        Ok(state) => state,
+        Err(e) => {
+            logging::append(&format!("sticky_board_state_error {e}"));
+            None
+        }
+    };
+    let mut plan = plan_board(empty, state, chat_id.0);
+
+    match plan {
+        BoardPlan::Teardown(message_id) => {
+            remove_old_board(bot, chat_id, message_id).await;
+            if let Err(e) = stickies::clear_board_state() {
+                logging::append(&format!("sticky_board_state_clear_error {e}"));
+            }
+            logging::append("telegram_board_torn_down");
+            return Ok(BoardOutcome::TornDown);
+        }
+        BoardPlan::EmptyNoBoard => return Ok(BoardOutcome::EmptyNoBoard),
+        BoardPlan::Edit(_) | BoardPlan::Send => {}
+    }
+
+    let mut refreshed_fallback = false;
+    if let BoardPlan::Edit(message_id) = plan {
+        match bot.edit_message_text(chat_id, message_id, board).await {
+            Ok(_) => {
+                logging::append("telegram_board_edited");
+                return Ok(BoardOutcome::Updated);
+            }
+            Err(RequestError::Api(ApiError::MessageNotModified)) => {
+                logging::append("telegram_board_unchanged");
+                return Ok(BoardOutcome::Unchanged);
+            }
+            Err(e) => {
+                logging::append(&format!("telegram_board_edit_error {e}"));
+                plan = fallback_after_edit_failure(plan);
+                refreshed_fallback = matches!(plan, BoardPlan::Send);
+            }
+        }
+    }
+
     let sent = bot
         .send_message(chat_id, board)
         .await
         .map_err(|e| e.to_string())?;
     logging::append("telegram_board_sent");
-
     match bot.pin_chat_message(chat_id, sent.id).await {
         Ok(_) => logging::append("telegram_board_pinned"),
         Err(e) => logging::append(&format!("telegram_pin_error {e}")),
     }
-    Ok(())
+    let state = stickies::BoardState {
+        chat_id: chat_id.0,
+        message_id: sent.id.0,
+    };
+    if let Err(e) = stickies::save_board_state(&state) {
+        logging::append(&format!("sticky_board_state_save_error {e}"));
+    }
+    if refreshed_fallback {
+        logging::append("telegram_board_refreshed_fallback");
+    }
+    Ok(BoardOutcome::Updated)
 }
 
 async fn send_reply(bot: &Bot, chat_id: ChatId, text: &str) -> Result<(), String> {
@@ -536,6 +830,78 @@ mod tests {
         for name in &names {
             assert!(help.contains(&format!("/{name}")));
         }
+        assert!(help.contains("/stickies remove N"));
         assert!(start_text().ends_with(&help));
+    }
+
+    #[test]
+    fn parses_stickies_commands() {
+        assert_eq!(parse_stickies_command("/stickies"), StickiesCommand::Show);
+        assert_eq!(
+            parse_stickies_command("/stickies@iskra_bot"),
+            StickiesCommand::Show
+        );
+        assert_eq!(
+            parse_stickies_command("/stickies remove 3"),
+            StickiesCommand::Remove(3)
+        );
+        assert_eq!(
+            parse_stickies_command("/stickies delete 4"),
+            StickiesCommand::Remove(4)
+        );
+        assert_eq!(
+            parse_stickies_command("/stickies 5"),
+            StickiesCommand::Remove(5)
+        );
+        assert_eq!(
+            parse_stickies_command("/stickies remove"),
+            StickiesCommand::Usage
+        );
+        assert_eq!(
+            parse_stickies_command("/stickies remove x"),
+            StickiesCommand::Usage
+        );
+        assert_eq!(
+            parse_stickies_command("/stickies remove 1 extra"),
+            StickiesCommand::Usage
+        );
+    }
+
+    #[test]
+    fn plans_board_state_transitions() {
+        let state = stickies::BoardState {
+            chat_id: 10,
+            message_id: 5,
+        };
+
+        assert_eq!(plan_board(false, None, 10), BoardPlan::Send);
+        assert_eq!(
+            plan_board(false, Some(state), 10),
+            BoardPlan::Edit(MessageId(5))
+        );
+        assert_eq!(
+            plan_board(true, Some(state), 10),
+            BoardPlan::Teardown(MessageId(5))
+        );
+        assert_eq!(plan_board(true, None, 10), BoardPlan::EmptyNoBoard);
+
+        assert_eq!(plan_board(false, Some(state), 11), BoardPlan::Send);
+        assert_eq!(plan_board(true, Some(state), 11), BoardPlan::EmptyNoBoard);
+    }
+
+    #[test]
+    fn falls_back_to_send_after_edit_failure() {
+        assert_eq!(
+            fallback_after_edit_failure(BoardPlan::Edit(MessageId(5))),
+            BoardPlan::Send
+        );
+        assert_eq!(
+            fallback_after_edit_failure(BoardPlan::Send),
+            BoardPlan::Send
+        );
+        assert_eq!(
+            fallback_after_edit_failure(BoardPlan::EmptyNoBoard),
+            BoardPlan::EmptyNoBoard
+        );
     }
 }

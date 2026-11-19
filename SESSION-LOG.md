@@ -281,3 +281,38 @@ Scope item 2 says balance is fetched for `/status` only, while acceptance criter
 - The board is re-sent rather than edited in place. An old pinned board may remain until the new board is pinned, depending on Telegram's pin behavior.
 - The board file is not loaded into the memory prompt; it is a separate user-readable data file.
 - Timed reminders, procedure linkage, in-place editing, and non-text stickies remain out of scope.
+
+## Block 6.3.1 — One board message, edited in place (2026-11-19)
+
+### What changed
+- Added persisted board state in `memory/board_state.json` (same data-folder safety as other files: `0600`, atomic replace via `memory::atomic_write`).
+  - The file stores `chat_id` + `message_id`, or `null` when no live board exists.
+  - The state is loaded on every sync, so a restart resumes the same tracked board.
+- `src/channel.rs` now has a board state machine:
+  - `Update` mode: `none → send + pin → live(id)`; content changes → `editMessageText` on `live(id)`; empty → unpin + delete + clear state → `none`.
+  - `MessageNotModified` is treated as unchanged, not as an edit failure.
+  - If editing the tracked message fails, the bot logs the error, falls back to sending/pinning a new board, replaces the stored id, and logs `telegram_board_refreshed_fallback`.
+  - If unpin/delete fails during teardown, the failure is logged and the stored id is cleared anyway.
+- `/stickies` explicit views use `Show` mode:
+  - If no live board exists and the board is non-empty, the tracked board is created and pinned.
+  - If a live board already exists, the bot sends a plain view copy at the bottom of the chat and leaves the tracked/pinned board untouched. This avoids the confusing "Iskra pinned a deleted message" service notice caused by replacing the tracked board. The view copy is a snapshot, not a second tracked board.
+  - An empty board tears down any stale live board and shows the empty-board text.
+- Added `/stickies remove N` (also accepts `/stickies N`, `/stickies delete N`, `/stickies del N`) for deletion without finding the board. The board footer and `/help` both mention the syntax.
+- Fixed the removal path to sync the pure board (`stickies::board()`) rather than the tool/command confirmation string. This makes the final removal tear down the live board immediately.
+- Reply-to-board numeric removal still works; it now also syncs the pure board.
+
+### Verification
+1. `cargo test`: **51 passed, 0 failed**. Existing 45 tests still pass. New tests cover board-state persistence/clearing, corrupt state handling, empty-board detection, board plan transitions (create/edit/teardown/empty), edit-failure fallback planning, and `/stickies` command parsing.
+2. Live add two / remove one by one: the first add sent and pinned the board, the second add edited it in place, the first removal edited it in place, and the last removal logged `telegram_board_torn_down` immediately. The user confirmed one pinned board and its disappearance.
+3. Live restart: after restarting the bot with a persisted board id, adding another sticky logged `telegram_board_edited` instead of sending a second board. The same tracked message was reused.
+4. Live `/stickies`: the board content appeared as a new view message at the bottom, and no new pin service notice was created (`telegram_board_view_sent`). The tracked board remained pinned and unchanged.
+5. Live `/stickies remove N`: both stickies were removed via the command, the last removal tore down the board, and the state file ended as `null` with an empty stickies file.
+6. `cargo build` / `cargo build --release`: zero warnings for `iskra` itself. The transitive `proc-macro-error2 v2.0.1` future-incompatibility note is unchanged.
+
+### Temporary workarounds
+- None. The view-copy behavior and `/stickies remove N` are product changes made from live user feedback, not quick fixes.
+
+### Notes
+- The tracked board remains the single pinned post-it. Explicit `/stickies` views are untracked snapshots so users can read the content without scrolling; repeated views add normal chat messages, never a second pinned board.
+- Pre-patch stray board messages already in chat history are still out of scope; the bot never tracked their ids.
+- Sticky storage, numbering, and credential refusal were not changed.
