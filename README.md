@@ -1,5 +1,9 @@
 # Iskra (Искра)
 
+**English** | [Русский](README.ru.md) | [한국어](README.ko.md)
+
+![Iskra mascot](assets/iskra-mascot.gif)
+
 **A lightweight personal AI agent, built from scratch in Rust.**
 *Iskra* (Искра) is Russian for "spark" — the small flame everything starts from.
 
