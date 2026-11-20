@@ -311,7 +311,7 @@
     <div class="wrap"><div class="stack"><div class="stack-in">
       <span class="lbl">BUILT WITH</span>
       <span class="pill">Rust 1.100</span><span class="pill">Tokio</span><span class="pill">Reqwest · rustls</span>
-      <span class="pill">Any LLM API · BYO-key</span><span class="pill">serde_json</span><span class="pill">dotenvy</span>
+      <span class="pill">Any LLM API · BYO-key</span><span class="pill">serde_json</span><span class="pill">dotenvy</span><span class="pill">teloxide</span>
     </div></div></div>
   </div>
 
@@ -367,9 +367,9 @@
         </article>
         <article class="feat teal">
           <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-5-6-5M12 19h8"/></svg></div>
-          <h3><span data-i18n="f5t">Shell + a coding task</span> <span class="status done" data-i18n="stDoneVer">Done · verified</span></h3>
+          <h3><span data-i18n="f5t">Sandboxed shell + a coding task</span> <span class="status done" data-i18n="stDoneVer">Done · verified</span></h3>
           <p data-i18n="f5p">The final block of v1: a shell tool, verified by passing one real coding task through the whole circuit — v1 closed.</p>
-          <div class="spec" data-i18n="f5spec">shell tool · verified on a real task</div>
+          <div class="spec" data-i18n="f5spec">ls · cat · git · cargo · subcommand allowlist · macOS sandbox, no network</div>
         </article>
         <article class="feat amber">
           <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg></div>
@@ -482,13 +482,18 @@ cargo run</pre></div>
           <div class="code-card"><pre data-i18n="codeTree">iskra/
 ├─ Cargo.toml
 ├─ src/
-│  ├─ main.rs    <span class="cm">— entry point</span>
-│  ├─ brain.rs   <span class="cm">— LLM API calls (any provider)</span>
-│  ├─ loop_.rs   <span class="cm">— agent loop + guardrails</span>
-│  └─ tools.rs   <span class="cm">— sandboxed file tools</span>
-├─ workspace/    <span class="cm">— the only folder tools may touch (not in git)</span>
-├─ logs/         <span class="cm">— agent.log · usage records (not in git)</span>
-└─ .env          <span class="cm">— API key (not in git, never share)</span></pre></div>
+│  ├─ main.rs          <span class="cm">— entry point</span>
+│  ├─ brain.rs         <span class="cm">— LLM API calls (any provider)</span>
+│  ├─ loop_.rs         <span class="cm">— agent loop + guardrails</span>
+│  ├─ channel.rs       <span class="cm">— Telegram channel</span>
+│  ├─ memory.rs        <span class="cm">— Markdown memory</span>
+│  ├─ prompt.rs        <span class="cm">— prompt assembled on every message</span>
+│  ├─ tools.rs         <span class="cm">— file · shell · memory · sticky-note tools</span>
+│  ├─ tools/sandbox.rs <span class="cm">— shell policy + macOS sandbox</span>
+│  └─ …                <span class="cm">— locale · logging · stickies · usage</span>
+├─ workspace/          <span class="cm">— the only folder tools may touch (not in git)</span>
+├─ logs/               <span class="cm">— agent.log · usage records (not in git)</span>
+└─ .env                <span class="cm">— API key (not in git, never share)</span></pre></div>
           <div class="copy-row"><span class="copy-hint" data-i18n="hint3">Design decisions and per-block verification records live in the repository's <span class="mono">SESSION-LOG.md</span>.</span></div>
         </div>
       </div>
@@ -511,9 +516,9 @@ cargo run</pre></div>
         <div class="block done"><div class="bn">01</div><div><h3><span data-i18n="b1t">Skeleton</span> <span class="status done" data-i18n="stDone">Done</span></h3><p data-i18n="b1p">From installing Rust to <span class="mono">cargo new iskra</span> — a minimal project that compiles and runs.</p></div></div>
         <div class="block done"><div class="bn">02</div><div><h3><span data-i18n="b2t">First call</span> <span class="status done" data-i18n="stDone">Done</span></h3><p data-i18n="b2p">The minimal circuit that asks the model one sentence and prints the answer. Your own key, isolated in .env.</p></div></div>
         <div class="block done"><div class="bn">03</div><div><h3><span data-i18n="b3t">Loop + file tools</span> <span class="status done" data-i18n="stDoneVer">Done · verified</span></h3><p data-i18n="b3p">The agent loop and sandboxed read/write — verified down to the <span class="mono">../secret.txt</span> refusal.</p></div></div>
-        <div class="block done"><div class="bn">04</div><div><h3><span data-i18n="b4t">Memory</span> <span class="status done" data-i18n="stDoneVer">Done · verified</span></h3><p data-i18n="b4p">MEMORY.md loading + the memory_save tool. The acceptance test: does it still remember your favourite colour after a restart?</p></div></div>
+        <div class="block done"><div class="bn">04</div><div><h3><span data-i18n="b4t">Memory</span> <span class="status done" data-i18n="stDoneVer">Done · verified</span></h3><p data-i18n="b4p">MEMORY.md loading + the memory_save tool. The acceptance test: does it remember your favourite colour on the very next message — and after a restart?</p></div></div>
         <div class="block done"><div class="bn">05</div><div><h3><span data-i18n="b5t">Telegram</span> <span class="status done" data-i18n="stDoneVer">Done · verified</span></h3><p data-i18n="b5p">An agent you can call from a messenger — the step where it enters daily life.</p></div></div>
-        <div class="block done"><div class="bn">06</div><div><h3><span data-i18n="b6t">Shell + coding task</span> <span class="status done" data-i18n="stDoneVer">Done · verified</span></h3><p data-i18n="b6p">Attach the shell tool and verify all of v1 on one real coding task.</p></div></div>
+        <div class="block done"><div class="bn">06</div><div><h3><span data-i18n="b6t">Sandboxed shell + coding task</span> <span class="status done" data-i18n="stDoneVer">Done · verified</span></h3><p data-i18n="b6p">Attach the shell tool and verify all of v1 on one real coding task.</p></div></div>
       </div>
 
       <div class="principles">
@@ -596,9 +601,9 @@ cargo run</pre></div>
     f4t: "Telegram connection",
     f4p: "Leave the terminal behind and call your agent from the messenger you already use every day — it has to live where your hands already are.",
     f4spec: "Telegram Bot API · long polling · sender allowlist",
-    f5t: "Shell + a coding task",
+    f5t: "Sandboxed shell + a coding task",
     f5p: "The final block of v1: a shell tool, verified by passing one real coding task through the whole circuit — v1 closed.",
-    f5spec: "shell tool · verified on a real task",
+    f5spec: "ls · cat · git · cargo · subcommand allowlist · macOS sandbox, no network",
     f6t: "Personality as files",
     f6p: "The agent's character (SOUL) and the user profile (USER) live outside the code, as files. Changing its personality needs no recompilation.",
     f6spec: "SOUL.md · USER.md — edit a file, not the code",
@@ -656,13 +661,18 @@ cargo run`,
     codeTree: `iskra/
 ├─ Cargo.toml
 ├─ src/
-│  ├─ main.rs    <span class="cm">— entry point</span>
-│  ├─ brain.rs   <span class="cm">— LLM API calls (any provider)</span>
-│  ├─ loop_.rs   <span class="cm">— agent loop + guardrails</span>
-│  └─ tools.rs   <span class="cm">— sandboxed file tools</span>
-├─ workspace/    <span class="cm">— the only folder tools may touch (not in git)</span>
-├─ logs/         <span class="cm">— agent.log · usage records (not in git)</span>
-└─ .env          <span class="cm">— API key (not in git, never share)</span>`,
+│  ├─ main.rs          <span class="cm">— entry point</span>
+│  ├─ brain.rs         <span class="cm">— LLM API calls (any provider)</span>
+│  ├─ loop_.rs         <span class="cm">— agent loop + guardrails</span>
+│  ├─ channel.rs       <span class="cm">— Telegram channel</span>
+│  ├─ memory.rs        <span class="cm">— Markdown memory</span>
+│  ├─ prompt.rs        <span class="cm">— prompt assembled on every message</span>
+│  ├─ tools.rs         <span class="cm">— file · shell · memory · sticky-note tools</span>
+│  ├─ tools/sandbox.rs <span class="cm">— shell policy + macOS sandbox</span>
+│  └─ …                <span class="cm">— locale · logging · stickies · usage</span>
+├─ workspace/          <span class="cm">— the only folder tools may touch (not in git)</span>
+├─ logs/               <span class="cm">— agent.log · usage records (not in git)</span>
+└─ .env                <span class="cm">— API key (not in git, never share)</span>`,
     copyBtn: "⌘ Copy command",
     hint1: `No Rust yet? Install it with <span class="mono">rustup</span> first.`,
     hint2: `From Block 3 on, this circuit grows into <span class="mono">brain.rs · loop_.rs · tools.rs</span>.`,
@@ -674,9 +684,9 @@ cargo run`,
     b1t: "Skeleton", b1p: `From installing Rust to <span class="mono">cargo new iskra</span> — a minimal project that compiles and runs.`,
     b2t: "First call", b2p: "The minimal circuit that asks the model one sentence and prints the answer. Your own key, isolated in .env.",
     b3t: "Loop + file tools", b3p: `The agent loop and sandboxed read/write — verified down to the <span class="mono">../secret.txt</span> refusal.`,
-    b4t: "Memory", b4p: "MEMORY.md loading + the memory_save tool. The acceptance test: does it still remember your favourite colour after a restart?",
+    b4t: "Memory", b4p: "MEMORY.md loading + the memory_save tool. The acceptance test: does it remember your favourite colour on the very next message — and after a restart?",
     b5t: "Telegram", b5p: "An agent you can call from a messenger — the step where it enters daily life.",
-    b6t: "Shell + coding task", b6p: "Attach the shell tool and verify all of v1 on one real coding task.",
+    b6t: "Sandboxed shell + coding task", b6p: "Attach the shell tool and verify all of v1 on one real coding task.",
     pr1t: "Lightweight", pr1p: "No swallowing a whole framework. Only as much code as one person can actually read stays in.",
     pr2t: "Yours to modify", pr2p: "Personality, memory and tools are split by file, so you change only the part you want to change.",
     pr3t: "Verify, then move on", pr3p: "Acceptance criteria → run → compare against the source. Progress is left as records, not as “trust me, it works”.",
@@ -726,9 +736,9 @@ cargo run`,
     f4t: "Подключение Telegram",
     f4p: "Уйти из терминала и звать агента из мессенджера, которым пользуешься каждый день, — агент должен жить там, где уже находятся руки.",
     f4spec: "Telegram Bot API · long polling · белый список отправителей",
-    f5t: "Shell + задача по коду",
+    f5t: "Shell в песочнице + задача по коду",
     f5p: "Последний блок v1: shell-инструмент, проверенный одной настоящей задачей по коду через весь контур, — v1 закрыта.",
-    f5spec: "shell-инструмент · проверка на реальной задаче",
+    f5spec: "ls · cat · git · cargo · белый список подкоманд · песочница macOS без сети",
     f6t: "Характер — файлами",
     f6p: "Характер агента (SOUL) и профиль пользователя (USER) вынесены из кода в файлы. Чтобы изменить характер, перекомпиляция не нужна.",
     f6spec: "SOUL.md · USER.md — правится файл, а не код",
@@ -786,13 +796,18 @@ cargo run`,
     codeTree: `iskra/
 ├─ Cargo.toml
 ├─ src/
-│  ├─ main.rs    <span class="cm">— точка входа</span>
-│  ├─ brain.rs   <span class="cm">— вызовы API модели</span>
-│  ├─ loop_.rs   <span class="cm">— петля агента + ограничители</span>
-│  └─ tools.rs   <span class="cm">— файловые инструменты в песочнице</span>
-├─ workspace/    <span class="cm">— единственная папка, доступная инструментам (не в git)</span>
-├─ logs/         <span class="cm">— agent.log · записи usage (не в git)</span>
-└─ .env          <span class="cm">— API-ключ (не в git, никому не показывать)</span>`,
+│  ├─ main.rs          <span class="cm">— точка входа</span>
+│  ├─ brain.rs         <span class="cm">— вызовы API модели</span>
+│  ├─ loop_.rs         <span class="cm">— петля агента + ограничители</span>
+│  ├─ channel.rs       <span class="cm">— канал Telegram</span>
+│  ├─ memory.rs        <span class="cm">— память в Markdown</span>
+│  ├─ prompt.rs        <span class="cm">— промпт, собираемый на каждом сообщении</span>
+│  ├─ tools.rs         <span class="cm">— инструменты: файлы · shell · память · стикеры</span>
+│  ├─ tools/sandbox.rs <span class="cm">— политика shell + песочница macOS</span>
+│  └─ …                <span class="cm">— locale · logging · stickies · usage</span>
+├─ workspace/          <span class="cm">— единственная папка, доступная инструментам (не в git)</span>
+├─ logs/               <span class="cm">— agent.log · записи usage (не в git)</span>
+└─ .env                <span class="cm">— API-ключ (не в git, никому не показывать)</span>`,
     copyBtn: "⌘ Скопировать команду",
     hint1: `Rust ещё нет? Сначала установите его через <span class="mono">rustup</span>.`,
     hint2: `Начиная с Блока 3 этот контур вырастает в <span class="mono">brain.rs · loop_.rs · tools.rs</span>.`,
@@ -804,9 +819,9 @@ cargo run`,
     b1t: "Каркас", b1p: `От установки Rust до <span class="mono">cargo new iskra</span> — минимальный проект, который компилируется и запускается.`,
     b2t: "Первый вызов", b2p: "Минимальный контур, который задаёт модели одно предложение и печатает ответ. Ваш собственный ключ, изолированный в .env.",
     b3t: "Петля + файловые инструменты", b3p: `Агентная петля и чтение/запись в песочнице — проверено вплоть до отказа на <span class="mono">../secret.txt</span>.`,
-    b4t: "Память", b4p: "Загрузка MEMORY.md + инструмент memory_save. Критерий приёмки: помнит ли агент ваш любимый цвет после перезапуска?",
+    b4t: "Память", b4p: "Загрузка MEMORY.md + инструмент memory_save. Критерий приёмки: помнит ли агент ваш любимый цвет уже в следующем сообщении — и после перезапуска?",
     b5t: "Telegram", b5p: "Агент, которого можно позвать из мессенджера, — шаг, на котором он входит в повседневную жизнь.",
-    b6t: "Shell + задача по коду", b6p: "Подключаем shell-инструмент и проверяем всю v1 на одной настоящей задаче по коду.",
+    b6t: "Shell в песочнице + задача по коду", b6p: "Подключаем shell-инструмент и проверяем всю v1 на одной настоящей задаче по коду.",
     pr1t: "Лёгкость", pr1p: "Не проглатывать фреймворк целиком. Остаётся только столько кода, сколько один человек способен прочитать.",
     pr2t: "Править самому", pr2p: "Характер, память и инструменты разделены по файлам — меняешь только ту часть, которую хочешь изменить.",
     pr3t: "Проверить — и дальше", pr3p: "Критерии приёмки → запуск → сверка с оригиналом. Прогресс остаётся записями, а не словами «поверь, работает».",
@@ -856,9 +871,9 @@ cargo run`,
     f4t: "텔레그램 연결",
     f4p: "터미널을 벗어나, 매일 쓰는 메신저에서 에이전트를 부를 수 있게 합니다. 손이 닿는 곳에 있어야 매일 쓰니까요.",
     f4spec: "Telegram Bot API · 롱폴링 · 발신자 허용 목록",
-    f5t: "셸 + 코딩 과제",
+    f5t: "샌드박스 셸 + 코딩 과제",
     f5p: "v1의 마지막 블록. 셸 도구를 붙이고, 실제 코딩 과제 하나로 전체 회로를 통과시켜 v1을 닫았습니다.",
-    f5spec: "shell 도구 · 실전 과제 검증",
+    f5spec: "ls · cat · git · cargo · 하위 명령 허용 목록 · macOS 샌드박스, 네트워크 차단",
     f6t: "성격은 파일로",
     f6p: "에이전트의 성격(SOUL)과 사용자 정보(USER)는 코드 밖 파일로 분리됩니다. 성격을 바꾸는 데 재컴파일이 필요 없습니다.",
     f6spec: "SOUL.md · USER.md — 파일 편집만으로 변경",
@@ -916,13 +931,18 @@ cargo run`,
     codeTree: `iskra/
 ├─ Cargo.toml
 ├─ src/
-│  ├─ main.rs    <span class="cm">— 진입점</span>
-│  ├─ brain.rs   <span class="cm">— 모델 API 호출</span>
-│  ├─ loop_.rs   <span class="cm">— 에이전트 루프 + 가드레일</span>
-│  └─ tools.rs   <span class="cm">— 샌드박스 파일 도구</span>
-├─ workspace/    <span class="cm">— 도구가 닿을 수 있는 유일한 폴더 (git 제외)</span>
-├─ logs/         <span class="cm">— agent.log · usage 기록 (git 제외)</span>
-└─ .env          <span class="cm">— API 키 (git 제외, 절대 공유 금지)</span>`,
+│  ├─ main.rs          <span class="cm">— 진입점</span>
+│  ├─ brain.rs         <span class="cm">— 모델 API 호출</span>
+│  ├─ loop_.rs         <span class="cm">— 에이전트 루프 + 가드레일</span>
+│  ├─ channel.rs       <span class="cm">— 텔레그램 창구</span>
+│  ├─ memory.rs        <span class="cm">— 마크다운 기억</span>
+│  ├─ prompt.rs        <span class="cm">— 메시지마다 조립하는 프롬프트</span>
+│  ├─ tools.rs         <span class="cm">— 파일 · 셸 · 기억 · 스티키 도구</span>
+│  ├─ tools/sandbox.rs <span class="cm">— 셸 정책 + macOS 샌드박스</span>
+│  └─ …                <span class="cm">— locale · logging · stickies · usage</span>
+├─ workspace/          <span class="cm">— 도구가 닿을 수 있는 유일한 폴더 (git 제외)</span>
+├─ logs/               <span class="cm">— agent.log · usage 기록 (git 제외)</span>
+└─ .env                <span class="cm">— API 키 (git 제외, 절대 공유 금지)</span>`,
     copyBtn: "⌘ 명령어 복사",
     hint1: `Rust가 없다면 먼저 <span class="mono">rustup</span>으로 설치하세요.`,
     hint2: `Block 3부터는 이 회로가 <span class="mono">brain.rs · loop_.rs · tools.rs</span>로 나뉘어 자랍니다.`,
@@ -934,9 +954,9 @@ cargo run`,
     b1t: "뼈대", b1p: `Rust 설치부터 <span class="mono">cargo new iskra</span>까지 — 컴파일·실행되는 최소 프로젝트.`,
     b2t: "첫 호출", b2p: "본인이 연결한 모델에 한 문장을 묻고 답을 받는 최소 회로. 키는 .env로 격리.",
     b3t: "루프 + 파일 도구", b3p: `에이전트 루프와 샌드박스 read/write. <span class="mono">../secret.txt</span> 거부까지 검증.`,
-    b4t: "기억", b4p: "MEMORY.md 로드 + memory_save 도구. 합격 기준은 “재시작 후에도 좋아하는 색을 기억하는가”.",
+    b4t: "기억", b4p: "MEMORY.md 로드 + memory_save 도구. 합격 기준은 “바로 다음 메시지에서, 그리고 재시작 후에도 좋아하는 색을 기억하는가”.",
     b5t: "텔레그램", b5p: "메신저에서 부르는 에이전트. 일상 동선 안으로 들어오는 단계.",
-    b6t: "셸 + 코딩 과제", b6p: "셸 도구를 붙이고 실제 코딩 과제 하나로 v1 전체를 통과 검증.",
+    b6t: "샌드박스 셸 + 코딩 과제", b6p: "셸 도구를 붙이고 실제 코딩 과제 하나로 v1 전체를 통과 검증.",
     pr1t: "가볍게", pr1p: "프레임워크를 통째로 삼키지 않습니다. 내가 읽을 수 있는 크기의 코드만 남깁니다.",
     pr2t: "직접 고칠 수 있게", pr2p: "성격·기억·도구가 파일 단위로 나뉘어, 바꾸고 싶은 곳만 바꿉니다.",
     pr3t: "검증하고 넘어가기", pr3p: "블록마다 합격 기준 → 실행 → 원본 대조 검수. “됐다”는 말이 아니라 기록으로 남깁니다.",
