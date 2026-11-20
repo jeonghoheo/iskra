@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 pub const DEFAULT_BASE_URL: &str = "https://api.deepseek.com/chat/completions";
-pub const DEFAULT_MODEL: &str = "deepseek-chat";
+pub const DEFAULT_MODEL: &str = "deepseek-flash";
 pub const MODEL_TIMEOUT_SECS: u64 = 60;
 const BALANCE_TIMEOUT_SECS: u64 = 3;
 const BALANCE_CACHE_TTL: Duration = Duration::from_secs(60);
@@ -102,6 +102,8 @@ pub struct Message {
     pub tool_calls: Option<Vec<ToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
 }
 
 impl Message {
@@ -111,6 +113,7 @@ impl Message {
             content: Some(content.to_string()),
             tool_calls: None,
             tool_call_id: None,
+            reasoning_content: None,
         }
     }
 
@@ -120,6 +123,7 @@ impl Message {
             content: Some(content.to_string()),
             tool_calls: None,
             tool_call_id: None,
+            reasoning_content: None,
         }
     }
 
@@ -129,6 +133,7 @@ impl Message {
             content: Some(content.to_string()),
             tool_calls: None,
             tool_call_id: Some(tool_call_id.to_string()),
+            reasoning_content: None,
         }
     }
 }
@@ -147,11 +152,40 @@ pub struct FunctionCall {
     pub arguments: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+#[derive(Serialize, Clone, Copy, Debug, Default)]
 pub struct Usage {
     pub prompt_tokens: u64,
     pub completion_tokens: u64,
     pub total_tokens: u64,
+}
+
+impl<'de> Deserialize<'de> for Usage {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Raw {
+            #[serde(default)]
+            prompt_tokens: u64,
+            #[serde(default)]
+            completion_tokens: u64,
+            #[serde(default)]
+            total_tokens: u64,
+        }
+
+        let raw = Raw::deserialize(deserializer)?;
+        let total_tokens = if raw.total_tokens == 0 {
+            raw.prompt_tokens + raw.completion_tokens
+        } else {
+            raw.total_tokens
+        };
+        Ok(Self {
+            prompt_tokens: raw.prompt_tokens,
+            completion_tokens: raw.completion_tokens,
+            total_tokens,
+        })
+    }
 }
 
 pub struct ChatReply {
@@ -342,6 +376,94 @@ mod tests {
         assert_eq!(config.api_key, "ds-key");
         assert_eq!(config.base_url, DEFAULT_BASE_URL);
         assert_eq!(config.model, DEFAULT_MODEL);
+        assert_eq!(DEFAULT_MODEL, "deepseek-flash");
+    }
+
+    #[test]
+    fn keeps_reasoning_content_in_followup_request() {
+        let reply_json = r#"{
+            "role": "assistant",
+            "content": "Let me read it.",
+            "reasoning_content": "I should call read_file.",
+            "tool_calls": [{
+                "id": "call_1",
+                "type": "function",
+                "function": { "name": "read_file", "arguments": "{\"path\":\"a.txt\"}" }
+            }]
+        }"#;
+        let reply: Message = serde_json::from_str(reply_json).unwrap();
+        assert_eq!(
+            reply.reasoning_content.as_deref(),
+            Some("I should call read_file.")
+        );
+
+        let mut following = vec![Message::system("sys"), Message::user("read a.txt")];
+        following.push(reply);
+        following.push(Message::tool("call_1", "hello"));
+        let body = serde_json::to_string(&following).unwrap();
+        assert!(body.contains(r#""reasoning_content":"I should call read_file.""#));
+        assert!(!body.contains(r#""reasoning_content":"""#));
+    }
+
+    #[test]
+    fn omits_reasoning_content_when_absent() {
+        let reply: Message =
+            serde_json::from_str(r#"{"role":"assistant","content":"done"}"#).unwrap();
+        assert!(reply.reasoning_content.is_none());
+        let body = serde_json::to_string(&reply).unwrap();
+        assert!(!body.contains("reasoning_content"));
+        assert!(!body.contains("null"));
+
+        let system = Message::system("sys");
+        let user = Message::user("hi");
+        let tool = Message::tool("call_1", "out");
+        for message in [system, user, tool] {
+            assert!(message.reasoning_content.is_none());
+            let body = serde_json::to_string(&message).unwrap();
+            assert!(!body.contains("reasoning_content"));
+        }
+    }
+
+    #[test]
+    fn usage_defaults_and_falls_back_to_prompt_plus_completion() {
+        let missing_total: Usage =
+            serde_json::from_str(r#"{"prompt_tokens":10,"completion_tokens":5}"#).unwrap();
+        assert_eq!(missing_total.total_tokens, 15);
+
+        let zero_total: Usage =
+            serde_json::from_str(r#"{"prompt_tokens":7,"completion_tokens":2,"total_tokens":0}"#)
+                .unwrap();
+        assert_eq!(zero_total.total_tokens, 9);
+
+        let explicit_total: Usage =
+            serde_json::from_str(r#"{"prompt_tokens":7,"completion_tokens":2,"total_tokens":30}"#)
+                .unwrap();
+        assert_eq!(explicit_total.total_tokens, 30);
+
+        let empty: Usage = serde_json::from_str("{}").unwrap();
+        assert_eq!(
+            (
+                empty.prompt_tokens,
+                empty.completion_tokens,
+                empty.total_tokens
+            ),
+            (0, 0, 0)
+        );
+    }
+
+    #[test]
+    fn chat_response_parses_without_usage() {
+        let parsed: ChatResponse = serde_json::from_str(
+            r#"{"choices":[{"message":{"role":"assistant","content":"ok"}}]}"#,
+        )
+        .unwrap();
+        assert!(parsed.usage.is_none());
+
+        let parsed: ChatResponse = serde_json::from_str(
+            r#"{"choices":[{"message":{"role":"assistant","content":"ok"}}],"usage":{"prompt_tokens":3,"completion_tokens":4}}"#,
+        )
+        .unwrap();
+        assert_eq!(parsed.usage.unwrap().total_tokens, 7);
     }
 
     #[test]
