@@ -11,6 +11,7 @@ mod usage;
 
 use std::fs;
 use std::io::Write;
+use std::path::Path;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 #[tokio::main]
@@ -35,20 +36,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         logging::append(&format!("context_warning {warning}"));
         println!("Notice: {warning}");
     }
-    let system_prompt = prompt::assemble(&identity, &memory);
-    let memory_status = channel::MemoryStatus {
-        truncated: memory.truncated,
-        warnings: memory.warnings.len(),
-    };
 
     let tools = tools::Tools::new()?;
     let brain = brain::Brain::new(config);
 
     if std::env::args().any(|arg| arg == "--cli") {
         println!("iskra — file-tool conversation loop. Type exit to quit.");
-        run_cli(&brain, &tools, &system_prompt).await?;
+        run_cli(&brain, &tools, &identity).await?;
     } else {
-        channel::run(brain, tools, system_prompt, memory_status).await?;
+        channel::run(brain, tools, identity).await?;
     }
 
     Ok(())
@@ -57,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 async fn run_cli(
     brain: &brain::Brain,
     tools: &tools::Tools,
-    system_prompt: &str,
+    identity: &prompt::Identity,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     loop {
@@ -75,7 +71,8 @@ async fn run_cli(
             break;
         }
 
-        match loop_::run_turn(brain, tools, system_prompt, input).await {
+        let (system_prompt, _) = prompt::turn_prompt(identity, Path::new(memory::MEMORY_DIR));
+        match loop_::run_turn(brain, tools, &system_prompt, input).await {
             Ok(answer) => println!("{answer}"),
             Err(e) => eprintln!("Stopped: {e}"),
         }

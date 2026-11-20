@@ -522,3 +522,31 @@ Time window: **2026-11-20 14:26:29 → 14:33:31 +0300**. Release binary started 
   - Second attempt, after `touch build.rs`: `run_command program=cargo dir="slow_build" args=["build"]` at `ts=1795174381`, then `telegram_stop aborted` at `ts=…382`.
   - `ps` afterwards: no `cargo`/`rustc`/`build-script` process remained, and there was no `run_command_exit` line (the task was dropped and the group killed). ✓
   - Caveat: the abort came about 1 s after the start, so the build may still have been compiling build.rs (rustc) rather than running it. The build-script stage itself is covered by `abort_kills_whole_process_group`.
+
+## v1.1-B — Memory reflection: saved memory visible without restart (2026-11-20)
+
+Status: implemented on branch `v1.1-b-memory-reflection`; owner to review and commit.
+
+### Root cause
+The system prompt (SOUL + USER + MEMORY) was assembled once at startup and reused for every turn: `src/main.rs` built `memory::load()`/`prompt::assemble` and passed the result to `channel::run`/`run_cli`, and `ChannelState` stored `system_prompt` plus a startup `memory_status`. `memory::load_from` was private, so the daily-note date was also fixed at startup. `memory_save` appended to the end of `MEMORY.md` while `apply_budget` keeps only the first 200 lines / 24 KB, so an entry past the budget stayed invisible until restart.
+
+### What changed
+- `src/memory.rs`: `load_from` and `save_to` are now `pub(crate)`. `MemoryStatus` moved here from `channel.rs`. `save_to` re-checks the new full content with `apply_budget`; when truncated, the success message says the entry is beyond the load budget and will not be visible until older entries are archived. File/entry format, redaction, and atomic write are unchanged.
+- `src/prompt.rs`: new `turn_prompt(identity, memory_dir)` reloads memory via `memory::load_from` and reassembles the prompt on every call. Memory warnings go to `logs/agent.log` as `context_warning …`; there is no per-turn `println!`.
+- `src/main.rs`: identity still loads once, and the startup warning print remains for the first load only. `channel::run` and `run_cli` now receive `identity`, not a prebuilt prompt. The CLI builds `turn_prompt` for each input line.
+- `src/channel.rs`: `ChannelState` stores `identity` instead of `system_prompt`/`memory_status`. `start_turn` builds the prompt inside the spawned task immediately before `run_turn`; `send_status` reloads the current memory file for `truncated`/`warnings`.
+- Tests added: `saved_memory_visible_next_turn_without_restart`, `daily_note_date_follows_clock`, `save_reports_when_entry_is_beyond_load_budget`.
+
+### Verification
+1. `cargo test`: **59 passed, 0 failed** (56 baseline + 3 new).
+2. `cargo build --release`: 0 warnings from `iskra`; direct dependencies unchanged at 7. The transitive `proc-macro-error2 v2.0.1` future-incompatibility note is unchanged.
+3. P3 CLI live test (`./target/release/iskra --cli`, worktree memory): 2026-11-20 14:43:34–14:43:40. Sent "Remember: my test word is ember-42." then "What is my test word?" without restart. The second answer contained `ember-42`; `memory/MEMORY.md` held `- User's test word: ember-42`.
+4. P2 Telegram live test (worktree, one instance): bot run 2026-11-20 14:44:39–14:48:14. The owner sent the same two messages. `logs/agent.log` shows the first turn calling `memory_save`, then the next turn with no tool call and no restart, and the owner confirmed the answer contained `ember-42`. `memory/MEMORY.md` held the saved test word.
+
+### Temporary workarounds
+- None added. W-1 (`RUN_COMMAND_DISABLED` and the temporary run_command rule line in `assemble()`) was left untouched.
+
+### Notes
+- Identity hot reload remains out of scope; only memory is reloaded per turn.
+- Live tests used the worktree's own `memory/`; `.env` was never opened or printed, and the owner's real `iskra/memory/` was not read.
+- No commit, push, or merge was performed.

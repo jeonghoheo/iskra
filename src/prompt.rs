@@ -3,7 +3,7 @@ use std::io;
 use std::path::Path;
 
 use crate::logging;
-use crate::memory::LoadedMemory;
+use crate::memory::{self, LoadedMemory, MemoryStatus};
 
 pub const DEFAULT_SOUL: &str = "You are Iskra, a personal AI agent that helps the user with file work and memory. Answer concisely and honestly; when unsure, say that it is a guess.\n";
 pub const DEFAULT_USER: &str = "No user information is available yet.\n";
@@ -180,6 +180,18 @@ pub fn assemble(identity: &Identity, memory: &LoadedMemory) -> String {
     prompt
 }
 
+pub fn turn_prompt(identity: &Identity, memory_dir: &Path) -> (String, MemoryStatus) {
+    let memory = memory::load_from(memory_dir);
+    for warning in &memory.warnings {
+        logging::append(&format!("context_warning {warning}"));
+    }
+    let status = MemoryStatus {
+        truncated: memory.truncated,
+        warnings: memory.warnings.len(),
+    };
+    (assemble(identity, &memory), status)
+}
+
 fn fallback<'a>(text: &'a str, message: &'a str) -> &'a str {
     if text.trim().is_empty() {
         message
@@ -294,5 +306,47 @@ mod tests {
         assert_eq!(fs::read(dir.join("SOUL.md")).unwrap(), vec![0xff, 0xfe]);
 
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn saved_memory_visible_next_turn_without_restart() {
+        let identity_dir = temp_dir("p1-identity");
+        let memory_dir = temp_dir("p1-memory");
+        let identity = load_identity_from(&identity_dir);
+
+        let (first, _) = turn_prompt(&identity, &memory_dir);
+        assert!(!first.contains("ISKRA-TEST-FACT-7f3a"));
+
+        crate::memory::save_to(&memory_dir, "ISKRA-TEST-FACT-7f3a").unwrap();
+
+        let (second, status) = turn_prompt(&identity, &memory_dir);
+        assert!(second.contains("ISKRA-TEST-FACT-7f3a"));
+        assert!(!status.truncated);
+
+        let _ = fs::remove_dir_all(&identity_dir);
+        let _ = fs::remove_dir_all(&memory_dir);
+    }
+
+    #[test]
+    fn daily_note_date_follows_clock() {
+        let identity_dir = temp_dir("s1-identity");
+        let memory_dir = temp_dir("s1-memory");
+        let identity = load_identity_from(&identity_dir);
+
+        let (first, _) = turn_prompt(&identity, &memory_dir);
+        assert!(!first.contains("daily-note-after-start"));
+
+        let today = crate::memory::local_date();
+        fs::write(
+            memory_dir.join(format!("{today}.md")),
+            "daily-note-after-start\n",
+        )
+        .unwrap();
+
+        let (second, _) = turn_prompt(&identity, &memory_dir);
+        assert!(second.contains("daily-note-after-start"));
+
+        let _ = fs::remove_dir_all(&identity_dir);
+        let _ = fs::remove_dir_all(&memory_dir);
     }
 }

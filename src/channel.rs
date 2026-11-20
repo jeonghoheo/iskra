@@ -2,10 +2,13 @@ use crate::brain::{BalanceResponse, Brain};
 use crate::locale::{self, Key, Locale};
 use crate::logging;
 use crate::loop_;
+use crate::memory;
+use crate::prompt;
 use crate::stickies;
 use crate::tools::Tools;
 use crate::usage;
 
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -24,12 +27,6 @@ const COMMAND_KEYS: [(&str, Key); 5] = [
     ("stop", Key::StopDescription),
     ("help", Key::HelpDescription),
 ];
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MemoryStatus {
-    pub truncated: bool,
-    pub warnings: usize,
-}
 
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
@@ -64,8 +61,7 @@ struct ChannelState {
     bot: Bot,
     brain: Brain,
     tools: Tools,
-    system_prompt: String,
-    memory_status: MemoryStatus,
+    identity: prompt::Identity,
     allowed_user_id: u64,
     current_turn: Mutex<Option<JoinHandle<()>>>,
 }
@@ -73,8 +69,7 @@ struct ChannelState {
 pub async fn run(
     brain: Brain,
     tools: Tools,
-    system_prompt: String,
-    memory_status: MemoryStatus,
+    identity: prompt::Identity,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = match TelegramConfig::from_env() {
         Ok(config) => config,
@@ -95,8 +90,7 @@ pub async fn run(
         bot: bot.clone(),
         brain,
         tools,
-        system_prompt,
-        memory_status,
+        identity,
         allowed_user_id,
         current_turn: Mutex::new(None),
     });
@@ -446,13 +440,10 @@ fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str, lang: Loca
         let typing_guard = TypingGuard(typing_stop);
         tokio::spawn(typing_loop(task_state.bot.clone(), chat_id, typing_rx));
 
-        let reply = loop_::run_turn(
-            &task_state.brain,
-            &task_state.tools,
-            &task_state.system_prompt,
-            &input,
-        )
-        .await;
+        let (system_prompt, _) =
+            prompt::turn_prompt(&task_state.identity, Path::new(memory::MEMORY_DIR));
+        let reply =
+            loop_::run_turn(&task_state.brain, &task_state.tools, &system_prompt, &input).await;
         drop(typing_guard);
         let sticky_changed = task_state.tools.take_sticky_changed();
 
@@ -532,11 +523,8 @@ async fn send_status(state: &Arc<ChannelState>, chat_id: ChatId, lang: Locale) -
         Ok(balance) => balance_display(lang, &balance),
         Err(_) => locale::text(lang, Key::Unavailable).to_string(),
     };
-    let memory = locale::memory_status(
-        lang,
-        state.memory_status.truncated,
-        state.memory_status.warnings,
-    );
+    let loaded = memory::load_from(Path::new(memory::MEMORY_DIR));
+    let memory = locale::memory_status(lang, loaded.truncated, loaded.warnings.len());
     let text = format!(
         "{}\n{}\n{}\n{}",
         locale::with(lang, Key::StatusModel, state.brain.model()),
