@@ -9,11 +9,11 @@ pub struct DailyUsage {
     pub total: u64,
 }
 
-const PEAK_PRICES: [(&str, f64, f64); 5] = [
-    ("deepseek-chat", 0.30, 1.20),
+// Peak list prices in USD per 1M tokens: (model, input cache-miss, output).
+// Source: https://api-docs.deepseek.com/quick_start/pricing (checked 2026-11-20).
+// Off-peak rates are half of these; retired model names are intentionally absent.
+const PEAK_PRICES: [(&str, f64, f64); 2] = [
     ("deepseek-flash", 0.30, 1.20),
-    ("deepseek-v4-flash", 0.30, 1.20),
-    ("deepseek-reasoner", 1.32, 3.96),
     ("deepseek-v4-pro", 1.32, 3.96),
 ];
 
@@ -64,7 +64,7 @@ pub fn self_state_block(model: &str, base_url: &str, usage: &DailyUsage, balance
     ));
     match estimate_cost(model, usage) {
         Some(cost) => block.push_str(&format!(
-            "- Estimated cost today: ~${cost:.6} (estimate; DeepSeek public list peak prices)\n"
+            "- Estimated cost today: ~${cost:.6} (estimate; DeepSeek public peak prices, checked 2026-11-20)\n"
         )),
         None => block.push_str("- Estimated cost today: unknown (model not in price table)\n"),
     }
@@ -161,13 +161,13 @@ ts=400 model_error err=timeout
             total: 2_000_000,
         };
         let block = self_state_block(
-            "deepseek-chat",
+            "deepseek-flash",
             "https://api.deepseek.com/chat/completions",
             &usage,
             "110.00 CNY",
         );
         assert!(block.contains("Provider: DeepSeek"));
-        assert!(block.contains("Model: deepseek-chat"));
+        assert!(block.contains("Model: deepseek-flash"));
         assert!(block.contains("2000000"));
         assert!(block.contains("1.500000"));
         assert!(block.contains("110.00 CNY"));
@@ -199,8 +199,9 @@ ts=400 model_error err=timeout
             completion: 1_000_000,
             total: 2_000_000,
         };
-        assert_eq!(estimate_cost("deepseek-chat", &usage), Some(1.5));
+        assert_eq!(estimate_cost("deepseek-flash", &usage), Some(1.5));
         assert_eq!(estimate_cost("deepseek-v4-pro", &usage), Some(5.28));
+        assert_eq!(estimate_cost("retired-model", &usage), None);
         assert_eq!(estimate_cost("unknown-model", &usage), None);
     }
 

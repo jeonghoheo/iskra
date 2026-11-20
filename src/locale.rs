@@ -79,6 +79,7 @@ define_keys!(
     StatusModel,
     StatusMemory,
     StatusTokens,
+    StatusCost,
     StatusBalance,
     BoardTitle,
     BoardEmpty,
@@ -145,6 +146,11 @@ pub fn text(locale: Locale, key: Key) -> &'static str {
         Key::StatusModel => ("Model: {}", "모델: {}", "Модель: {}"),
         Key::StatusMemory => ("Memory: {}", "기억: {}", "Память: {}"),
         Key::StatusTokens => ("Tokens today: {}", "오늘 토큰: {}", "Токены сегодня: {}"),
+        Key::StatusCost => (
+            "Estimated cost today: {}",
+            "오늘 예상 비용: {}",
+            "Расчётная стоимость за сегодня: {}",
+        ),
         Key::StatusBalance => ("Balance: {}", "잔액: {}", "Баланс: {}"),
         Key::BoardTitle => ("Sticky board", "스티키 보드", "Доска стикеров"),
         Key::BoardEmpty => (

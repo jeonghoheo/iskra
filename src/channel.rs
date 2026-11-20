@@ -525,11 +525,17 @@ async fn send_status(state: &Arc<ChannelState>, chat_id: ChatId, lang: Locale) -
     };
     let loaded = memory::load_from(Path::new(memory::MEMORY_DIR));
     let memory = locale::memory_status(lang, loaded.truncated, loaded.warnings.len());
+    let usage = usage::today();
+    let cost = match usage::estimate_cost(state.brain.model(), &usage) {
+        Some(cost) => format!("~${cost:.6}"),
+        None => "unknown".to_string(),
+    };
     let text = format!(
-        "{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}",
         locale::with(lang, Key::StatusModel, state.brain.model()),
         locale::with(lang, Key::StatusMemory, memory),
-        locale::with(lang, Key::StatusTokens, usage::today().total),
+        locale::with(lang, Key::StatusTokens, usage.total),
+        locale::with(lang, Key::StatusCost, cost),
         locale::with(lang, Key::StatusBalance, balance)
     );
     state.bot.send_message(chat_id, text).await?;

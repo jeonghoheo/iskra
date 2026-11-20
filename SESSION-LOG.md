@@ -576,3 +576,49 @@ v1.1 is closed.
 - Owner decision on 2026-11-20: the gate ends today instead of 2026-11-22. Verdict: **v1 passes the gate**; v2 implementation may start.
 - Discomforts found during the gate and where they went: model did not know its own usage / commands were invisible → Block 6.2; post-it board → Block 6.3, duplicated board messages → 6.3.1; shell sandbox bypass → v1.1-A; memory visible only after restart → v1.1-B; no acknowledgement during long turns → Block 6 (typing signal); stickers and reactions not understood → Block 6.1; strings not in the user's language → Blocks 6.5–6.6; no conversation context between messages → v2 `session/v1` (design §2.9, open); unclear data location → design §0.6 (open).
 - Long-horizon items (memory growth, resuming after days off, cost accumulation) stay under observation.
+
+## v1.2 — Model name replacement + reasoning echo (2026-11-20, branch `v1.2-model-reasoning`)
+
+Status: **code and automated tests complete; live Telegram verification pending the owner.** Worked only in the `../iskra-v1.2` worktree. Nothing committed, pushed or merged. `.env` was never opened or printed, and the real `memory/` was not read.
+
+### Root cause
+`DEFAULT_MODEL` and `.env.example` still named `deepseek-chat`, a model name DeepSeek announced for retirement on 2026-07-24. The current (2026-11-20) official docs list `deepseek-flash` as the name to use; the legacy `deepseek-v4-flash` name is still accepted but is routed to V4.1 Flash. Separately, `deepseek-flash` has thinking mode enabled by default, and requests that carry `tools` must echo every assistant `reasoning_content` or the API returns 400. `Message` had no `reasoning_content` field, so the echo was impossible.
+
+### Official checks (2026-11-20)
+- https://api-docs.deepseek.com/quick_start/pricing — current model names `deepseek-flash` and `deepseek-v4-pro`; footnote: use `deepseek-flash`; legacy `deepseek-v4-flash`/`deepseek-v4-flash-vision-exp` are retired but still accepted.
+- https://api-docs.deepseek.com/updates — 2026-11-13 entry confirms `deepseek-flash`; 2026-09-10 entry confirms it is the current V4.1 Flash name.
+- https://api-docs.deepseek.com/guides/thinking_mode — thinking is enabled by default (default effort `high`); with `tools`, previous `reasoning_content` must be passed back in full or the API returns 400.
+- Prices (peak, USD per 1M tokens, input cache-miss / output): `deepseek-flash` 0.30 / 1.20; `deepseek-v4-pro` 1.32 / 3.96. Off-peak is half of peak. The same date and URL are in the `PEAK_PRICES` comment in `src/usage.rs`.
+
+### States and transitions (written before implementing, gate ②)
+- `Message.reasoning_content: Option<String>`: parsed from an assistant reply when present, otherwise `None`.
+- Serialization: `Some` is emitted verbatim; `None` omits the field entirely (no empty string, no `null`).
+- `Message::system` / `user` / `tool` always set `None`. `run_turn` pushes the assistant reply by clone, so the same turn's next tool-carrying request carries the reasoning. Tool results carry `None`. Each turn starts fresh at `[system, user]`, so the echo scope is one turn's tool round-trips only.
+- `Usage`: `prompt_tokens`, `completion_tokens`, `total_tokens` each default to 0; when `total_tokens` is 0 it is recomputed as prompt + completion. A missing `usage` remains `None`.
+
+### What changed
+- `src/brain.rs`: `DEFAULT_MODEL = "deepseek-flash"`; `Message` gains `reasoning_content: Option<String>` with `skip_serializing_if`; constructors set `None`; `Usage` uses a small `Raw` struct inside a manual `Deserialize` so all three fields default and `total_tokens` falls back to the sum.
+- `.env.example`: default model comment now says `deepseek-flash`.
+- `src/usage.rs`: `PEAK_PRICES` is now exactly `deepseek-flash` (0.30, 1.20) and `deepseek-v4-pro` (1.32, 3.96); retired names removed. Header records the check date and URL. The self-state estimate wording is “DeepSeek public peak prices, checked 2026-11-20”.
+- `src/channel.rs` + `src/locale.rs`: `/status` now includes an “Estimated cost today” line (`~$…` or “unavailable”) in en/ko/ru, using the same price table and today's usage.
+- No change to `src/loop_.rs`: it already pushes the assistant message verbatim; the new field proves it by test.
+
+### Verification (automated)
+1. `cargo test`: **88 passed, 0 failed, 0 ignored** (84 baseline + 4 new).
+   - `keeps_reasoning_content_in_followup_request`: reply `reasoning_content` survives parsing and appears in the serialized follow-up request next to the tool result.
+   - `omits_reasoning_content_when_absent`: missing field serializes without `reasoning_content` and without `null`; system/user/tool constructors do the same.
+   - `usage_defaults_and_falls_back_to_prompt_plus_completion`: missing or zero total becomes prompt + completion; `{}` parses to zeros.
+   - `chat_response_parses_without_usage`: a response with no `usage`, and one with usage lacking `total_tokens`, both parse.
+2. Acceptance grep in `src/` and `.env.example` for `deepseek-chat` and `deepseek-reasoner`: **0 matches** (historical mentions remain only in SESSION.md / SESSION-LOG.md).
+3. `cargo build --release`: 0 warnings from `iskra`; the transitive `proc-macro-error2 v2.0.1` future-incompatibility note is unchanged.
+4. Budget: release binary 8,433,072 bytes; stripped **6,295,088 bytes = 6.00 MiB** (previous 6,295,072). Direct dependencies **7** (unchanged; no crate added). CLI idle RSS **4,032 KB = 3.94 MiB**, measured from a temp directory with a dummy key and no network; this is not comparable to the v1.1 Telegram long-poll idle figure.
+5. `MODEL_TIMEOUT_SECS` stays 60: there is no live timing yet, so the “>45 s → 120” rule is not triggered.
+
+### Verification (live, Telegram) — passed (2026-11-20, owner-run, one instance from this worktree)
+- Run started 18:01 +0300 with `run_command_sandbox available=true`; identity files came from the templates (fresh worktree).
+- Turn: "create workspace/test.txt with '불꽃', read it back, report". Log: `model_call model=deepseek-flash tools=[write_file]` (prompt 1895 / completion 88) → `tool_ok write_file` → `model_call tools=[read_file]` (2002 / 39) → `tool_ok read_file` → `model_call tools=[none]` (2057 / 28) → `turn_end answer`. Two tool round-trips in thinking mode, **no 400**, no `model_error`. Wall time from `turn_start` to `turn_end`: **7 s** (slowest single call ≈ 4 s) — the >45 s rule is not triggered; `MODEL_TIMEOUT_SECS` stays 60.
+- `/status`: model `deepseek-flash`, memory ok, tokens today 6109, estimated cost ~$0.001972, balance 5.73 USD.
+- Because the default model already runs thinking mode, this one turn covers both live items of the directive.
+
+### Owner decision
+- `deepseek-flash` defaults to thinking mode. Measured live: 3 calls, 6,109 tokens, ~$0.002, 7 s for a two-tool turn — completion tokens stayed small (28–88 per call). Accepted for now; a thinking on/off setting belongs to the v2.0 model-profile work.

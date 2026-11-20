@@ -363,3 +363,44 @@ Background: Block 6.5 unified in-code strings to English, which also made the bo
 2. Live: with the Telegram app language set to Korean, the command menu shows Korean descriptions and `/help` answers in Korean; the sticky board title is Korean.
 3. Live: `/status` labels follow the same language; the bot's conversational replies are unaffected (they come from the model).
 4. SESSION-LOG.md gains a Block 6.6 entry written in English, including the full string table for review.
+
+---
+
+## v1.2 — 모델 이름 교체 + 사고 내용 되돌림
+
+지시서: `.directives/v1.2-model-name-reasoning-directive.md` (2026-11-20 주인 승인). 브랜치 `v1.2-model-reasoning`, worktree `../iskra-v1.2`. 커밋·푸시·병합하지 않았다.
+
+### 배경
+- 2026-04-24 공지로 `deepseek-chat`·`deepseek-reasoner`는 2026-07-24 폐지 예정이었고, 2026-11-20 로그에서도 `deepseek-chat`이 62/63회 쓰이고 있었다.
+- 2026-11-20 당일 공식 문서(`quick_start/pricing`, `updates`, `guides/thinking_mode`) 확인: 현행 이름은 **`deepseek-flash`**. 레거시 `deepseek-v4-flash`는 계속 수용되지만 V4.1 Flash로 라우팅된다. `deepseek-flash`는 사고 모드가 기본(`thinking` 기본 활성, 기본 effort `high`)이다.
+- 사고 모드 + `tools` 요청에서는 이전 assistant의 `reasoning_content`를 그대로 되돌려야 하며, 빠지면 400이 난다.
+
+### 상태·전이 (구현 전 기록)
+- `Message.reasoning_content: Option<String>`. 응답 파싱 시 있으면 `Some`, 없으면 `None`.
+- 직렬화: `Some`이면 그대로 포함, `None`이면 필드 자체를 생략(빈 문자열·null 금지).
+- `Message::system`·`user`·`tool` 생성자는 `None`. `run_turn`은 assistant 응답을 `clone()`해 그대로 push하고, 도구 결과는 `None`으로 붙인다.
+- 메시지 목록은 턴마다 `[system, user]`로 새로 시작하므로 `reasoning_content` 되돌림 범위는 한 턴 안의 도구 왕복이다.
+- `Usage`의 `prompt_tokens`·`completion_tokens`·`total_tokens`는 파싱 시 각각 기본 0. `total_tokens`가 0이면 `prompt + completion`으로 채운다.
+
+### 범위
+1. `src/brain.rs`: `DEFAULT_MODEL = "deepseek-flash"`, `Message.reasoning_content` 추가, `Usage` 커스텀 역직렬화(누락 필드 기본 0, total 0이면 합산).
+2. `.env.example`: 기본 모델 주석 갱신.
+3. `src/usage.rs`: `PEAK_PRICES`를 현행 `deepseek-flash`·`deepseek-v4-pro`만 남기고 폐지 이름 제거. 헤더 주석에 확인 날짜(2026-11-20)와 URL 기록. 자기 상태 비용 문구를 "DeepSeek public peak prices, checked 2026-11-20"으로 정정.
+4. `src/channel.rs`·`src/locale.rs`: `/status`에 오늘 예상 비용 줄 추가(en/ko/ru).
+5. `.env.example`·`src/`에서 `deepseek-chat`·`deepseek-reasoner` 검색 0건 유지.
+6. `MODEL_TIMEOUT_SECS`는 라이브 측정 전이므로 60 유지.
+
+### 가격 (2026-11-20 확인)
+- 출처: https://api-docs.deepseek.com/quick_start/pricing
+- Peak, USD / 1M tokens (input cache-miss, output): `deepseek-flash` = (0.30, 1.20), `deepseek-v4-pro` = (1.32, 3.96). Off-peak는 peak의 절반.
+
+### 검증
+- `cargo test`: **88 passed, 0 failed** (기존 84 + 신규 4).
+  - 사고 내용이 `Message`에 보존되고 다음 요청 직렬화에 그대로 포함.
+  - 없는 경우 필드 생략(null·빈 문자열 없음), 생성자 3종도 생략.
+  - `usage` 누락·`total_tokens` 누락/0 → prompt+completion, `usage` 자체 누락도 파싱.
+- 예산: release 바이너리 8,433,072 bytes, strip 후 **6,295,088 bytes = 6.00 MiB** (직전 6,295,072). 직접 의존성 **7개 유지**. CLI 유휴 RSS **4,032 KB = 3.94 MiB** (네트워크 없는 CLI 대기 상태; v1.1의 텔레그램 long-poll 수치와는 측정 조건이 다름).
+- 라이브(텔레그램) 검증은 **보류**: 이 worktree에 `.env`가 없고, 금지 규칙상 `.env`를 열거나 복사할 수 없으며, 셸 환경에도 자격증명이 없다. 주인이 `.env`를 연결하고 메시지를 보내야 한다. 따라서 45초 초과 호출 여부와 사고 모드 비용·시간 비교도 아직 미측정.
+
+### 남은 결정
+- `deepseek-flash`는 사고 모드가 기본이므로 기존 `deepseek-chat`(비사고) 대비 토큰·시간이 늘 수 있다. 라이브 측정 후 주인이 기본값을 확정한다.
