@@ -415,7 +415,7 @@ Scope item 2 says balance is fetched for `/status` only, while acceptance criter
 
 ## Temporary workaround W-1 — run_command disabled (2026-11-20)
 
-Status: **in effect, verification pending** (`cargo test` and a live check are run by the owner).
+Status: **removed** by the v1.1-A merge (2026-11-20, `5bbe10d`). Kept below as history.
 Decision: owner (command room), 2026-11-20. Work gate ④ — this is a marked temporary workaround, not a fix.
 
 ### Why
@@ -550,3 +550,23 @@ The system prompt (SOUL + USER + MEMORY) was assembled once at startup and reuse
 - Identity hot reload remains out of scope; only memory is reloaded per turn.
 - Live tests used the worktree's own `memory/`; `.env` was never opened or printed, and the owner's real `iskra/memory/` was not read.
 - No commit, push, or merge was performed.
+
+## v1.1 merge — master re-verification (2026-11-20)
+
+Merges: `5bbe10d` (v1.1-A shell hardening) then `c8746ee` (v1.1-B per-turn memory reload). The v1.1-B merge conflicted in `SESSION-LOG.md` and `src/tools.rs`; `src/tools.rs` was resolved to the v1.1-A version (no W-1 code remains), and the run_command line in `src/prompt.rs` is the v1.1-A version.
+
+### Verification on master
+1. `cargo test`: **84 passed, 0 failed, 0 ignored** (81 from v1.1-A + 3 from v1.1-B).
+2. W-1 grep (`v1.1-A pending`, `RUN_COMMAND_DISABLED`, `TEMPORARY WORKAROUND`) in `src/`: no matches.
+3. Live re-check on master (one instance, Telegram): **passed** (owner-confirmed; log evidence below).
+   - Shell: at 15:29:19 +0300 the log shows `run_command_rejected program=cat reason=Parent-directory (..) paths are refused: ../.env`, followed by `tool_error`. Nothing was spawned. Git works inside the workspace: at 15:25:36, `git add`, `git commit` and `git log` ran in `dir="probe_ok"` in an earlier run of the same binary.
+   - Memory: at 15:29:52 the log shows `tool_ok name=memory_save`. The next turns (15:29:56, 15:30:06) made no tool call and there was no restart in between; the owner confirmed the recall.
+   - Run started at 15:28:59 with `run_command_sandbox available=true`.
+
+v1.1 is closed.
+
+### Known limitations carried forward
+- An abrupt Iskra exit (Ctrl-C, kill) during a command leaves the child running until it finishes (no signal handler yet).
+- Without an OS sandbox (non-macOS), cargo is disabled; ls/cat/git run with argument policy and isolation only.
+- Inside the sandbox, system locations outside the denied set (e.g. `/etc`, `/Library`) remain readable.
+- Options refused fail-closed pending an owner decision are listed in the v1.1-A entry.
