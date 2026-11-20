@@ -14,7 +14,10 @@ use std::time::Duration;
 
 use teloxide::dptree;
 use teloxide::prelude::*;
-use teloxide::types::{BotCommand, ChatAction, MessageId, MessageReactionUpdated, ParseMode};
+use teloxide::types::{
+    BotCommand, Chat, ChatAction, MediaKind, MessageId, MessageKind, MessageReactionUpdated,
+    ParseMode,
+};
 use teloxide::{ApiError, RequestError};
 use tokio::task::JoinHandle;
 
@@ -123,6 +126,12 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
     locale::set_latest(lang);
 
     let chat_id = msg.chat.id;
+    if !msg.chat.is_private() {
+        leave_non_private(&bot, &msg.chat, lang).await;
+        return Ok(());
+    }
+
+    let forwarded = msg.forward_origin().is_some();
     let user_message = if let Some(text) = msg.text() {
         let text = text.trim();
         if text.is_empty() {
@@ -137,9 +146,22 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
         ));
         normalize_sticker(emoji, sticker.set_name.as_deref())
     } else {
-        logging::append("telegram_ignore non_text");
+        if matches!(&msg.kind, MessageKind::Common(_)) {
+            let kind = non_text_kind(&msg);
+            logging::append(&format!("telegram_non_text_notice kind={kind}"));
+            bot.send_message(chat_id, locale::text(lang, Key::NonTextNotice))
+                .await?;
+        } else {
+            logging::append("telegram_ignore non_text");
+        }
         return Ok(());
     };
+
+    if forwarded {
+        let wrapped = prompt::wrap_forwarded(&user_message);
+        start_turn(&state, chat_id, &wrapped, lang);
+        return Ok(());
+    }
 
     if let Some(reply) = msg.reply_to_message() {
         if is_board_reply(reply) {
@@ -212,6 +234,64 @@ fn is_board_reply(reply: &Message) -> bool {
         && reply.text().is_some_and(stickies::is_board_text)
 }
 
+fn chat_type(chat: &Chat) -> &'static str {
+    if chat.is_group() {
+        "group"
+    } else if chat.is_supergroup() {
+        "supergroup"
+    } else if chat.is_channel() {
+        "channel"
+    } else {
+        "private"
+    }
+}
+
+async fn leave_non_private(bot: &Bot, chat: &Chat, lang: Locale) {
+    let kind = chat_type(chat);
+    if let Err(e) = bot
+        .send_message(chat.id, locale::text(lang, Key::PrivateOnly))
+        .await
+    {
+        logging::append(&format!("telegram_send_failed {e}"));
+    }
+    let left = match bot.leave_chat(chat.id).await {
+        Ok(_) => true,
+        Err(e) => {
+            logging::append(&format!("telegram_leave_error {e}"));
+            false
+        }
+    };
+    logging::append(&format!(
+        "telegram_non_private chat_type={kind} left={left}"
+    ));
+}
+
+fn non_text_kind(msg: &Message) -> &'static str {
+    let MessageKind::Common(common) = &msg.kind else {
+        return "other";
+    };
+    match &common.media_kind {
+        MediaKind::Animation(_) => "animation",
+        MediaKind::Audio(_) => "audio",
+        MediaKind::Contact(_) => "contact",
+        MediaKind::Document(_) => "document",
+        MediaKind::Game(_) => "game",
+        MediaKind::Location(_) => "location",
+        MediaKind::PaidMedia(_) => "paid_media",
+        MediaKind::Photo(_) => "photo",
+        MediaKind::Poll(_) => "poll",
+        MediaKind::Checklist(_) => "checklist",
+        MediaKind::Sticker(_) => "sticker",
+        MediaKind::Story(_) => "story",
+        MediaKind::Text(_) => "text",
+        MediaKind::Venue(_) => "venue",
+        MediaKind::Video(_) => "video",
+        MediaKind::VideoNote(_) => "video_note",
+        MediaKind::Voice(_) => "voice",
+        MediaKind::Migration(_) => "migration",
+    }
+}
+
 async fn register_commands(bot: &Bot) {
     for lang in Locale::ALL {
         let request = bot.set_my_commands(commands(lang));
@@ -250,11 +330,7 @@ fn help_text(lang: Locale) -> String {
 }
 
 fn start_text(lang: Locale) -> String {
-    format!(
-        "{}\n\n{}",
-        locale::text(lang, Key::StartGreeting),
-        help_text(lang)
-    )
+    locale::text(lang, Key::StartGreeting).to_string()
 }
 
 fn normalize_sticker(emoji: Option<&str>, set_name: Option<&str>) -> String {
@@ -280,7 +356,13 @@ async fn handle_reaction(
         return Ok(());
     }
 
-    locale::set_latest(Locale::from_language_code(user.language_code.as_deref()));
+    let lang = Locale::from_language_code(user.language_code.as_deref());
+    locale::set_latest(lang);
+
+    if !reaction.chat.is_private() {
+        leave_non_private(&state.bot, &reaction.chat, lang).await;
+        return Ok(());
+    }
 
     let emoji = reaction
         .new_reaction
@@ -417,6 +499,49 @@ async fn handle_stickies_command(
     }
 }
 
+fn turn_error_text(lang: Locale, error: &loop_::TurnError) -> String {
+    match error {
+        loop_::TurnError::Timeout(_) | loop_::TurnError::Connection(_) => {
+            locale::text(lang, Key::ErrorTimeout).to_string()
+        }
+        loop_::TurnError::Auth(_) => locale::text(lang, Key::ErrorAuth).to_string(),
+        loop_::TurnError::Payment(_) => locale::text(lang, Key::ErrorPayment).to_string(),
+        loop_::TurnError::Busy(_) => locale::text(lang, Key::ErrorBusy).to_string(),
+        loop_::TurnError::RepeatedToolError(detail) => locale::with(
+            lang,
+            Key::ErrorRepeatedTool,
+            locale::text(lang, repeated_reason_key(detail)),
+        ),
+        loop_::TurnError::MaxRoundtrips(_) => {
+            locale::text(lang, Key::ErrorMaxRoundtrips).to_string()
+        }
+        loop_::TurnError::EmptyResponse(_) => locale::text(lang, Key::ErrorEmpty).to_string(),
+        loop_::TurnError::Other(_) => locale::text(lang, Key::ErrorOther).to_string(),
+    }
+}
+
+fn repeated_reason_key(detail: &str) -> Key {
+    let lower = detail.to_ascii_lowercase();
+    if lower.contains("not found")
+        || lower.contains("no such file")
+        || lower.contains("does not exist")
+    {
+        Key::ReasonNotFound
+    } else if lower.contains("refus")
+        || lower.contains("denied")
+        || lower.contains("not allowed")
+        || lower.contains("outside workspace")
+    {
+        Key::ReasonAccessRefused
+    } else if lower.contains("timed out") || lower.contains("timeout") {
+        Key::ReasonTooLong
+    } else if lower.contains("parse") || lower.contains("json") || lower.contains("invalid") {
+        Key::ReasonInvalid
+    } else {
+        Key::ReasonGeneric
+    }
+}
+
 fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str, lang: Locale) {
     let busy = {
         let slot = state.current_turn.lock().unwrap();
@@ -427,7 +552,7 @@ fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str, lang: Loca
         let bot = state.bot.clone();
         tokio::spawn(async move {
             let _ = bot
-                .send_message(chat_id, locale::text(lang, Key::TurnBusy))
+                .send_message(chat_id, locale::text(lang, Key::BusyNotice))
                 .await;
         });
         return;
@@ -451,7 +576,7 @@ fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str, lang: Loca
             Ok(answer) => answer,
             Err(e) => {
                 logging::append(&format!("telegram_turn_error {e}"));
-                locale::with(lang, Key::TurnStopped, e)
+                turn_error_text(lang, &e)
             }
         };
         if let Err(e) = send_reply(&task_state.bot, chat_id, &answer).await {
@@ -527,19 +652,37 @@ async fn send_status(state: &Arc<ChannelState>, chat_id: ChatId, lang: Locale) -
     let memory = locale::memory_status(lang, loaded.truncated, loaded.warnings.len());
     let usage = usage::today();
     let cost = match usage::estimate_cost(state.brain.model(), &usage) {
-        Some(cost) => format!("~${cost:.6}"),
-        None => "unknown".to_string(),
+        Some(cost) => locale::with(lang, Key::CostEstimate, format!("${cost:.6}")),
+        None => locale::text(lang, Key::CostUnknown).to_string(),
     };
-    let text = format!(
-        "{}\n{}\n{}\n{}\n{}",
-        locale::with(lang, Key::StatusModel, state.brain.model()),
-        locale::with(lang, Key::StatusMemory, memory),
-        locale::with(lang, Key::StatusTokens, usage.total),
-        locale::with(lang, Key::StatusCost, cost),
-        locale::with(lang, Key::StatusBalance, balance)
+    let text = status_text(
+        lang,
+        state.brain.model(),
+        &memory,
+        usage.total,
+        &cost,
+        &balance,
     );
     state.bot.send_message(chat_id, text).await?;
     Ok(())
+}
+
+fn status_text(
+    lang: Locale,
+    model: &str,
+    memory: &str,
+    tokens: u64,
+    cost: &str,
+    balance: &str,
+) -> String {
+    format!(
+        "{}\n{}\n{}\n{}\n{}",
+        locale::with(lang, Key::StatusCost, cost),
+        locale::with(lang, Key::StatusBalance, balance),
+        locale::with(lang, Key::StatusModel, model),
+        locale::with(lang, Key::StatusMemory, memory),
+        locale::with(lang, Key::StatusTokens, tokens)
+    )
 }
 
 fn balance_display(lang: Locale, balance: &BalanceResponse) -> String {
@@ -883,8 +1026,110 @@ mod tests {
                 assert!(help.contains(&format!("/{name}")));
             }
             assert!(help.contains("/stickies remove N"));
-            assert!(start_text(lang).ends_with(&help));
+            assert_eq!(start_text(lang), locale::text(lang, Key::StartGreeting));
+            assert!(start_text(lang).contains("/status"));
+            assert!(start_text(lang).contains("/stickies"));
+            assert!(start_text(lang).contains("/stop"));
+            assert!(start_text(lang).contains("/help"));
         }
+    }
+
+    #[test]
+    fn status_lines_follow_the_approved_order() {
+        let text = status_text(Locale::En, "model-x", "ok", 12345, "~$0.040000", "4.20 USD");
+        let cost = text.find("Spent today:").unwrap();
+        let balance = text.find("Balance:").unwrap();
+        let model = text.find("Model:").unwrap();
+        let memory = text.find("Memory:").unwrap();
+        let tokens = text.find("Tokens today:").unwrap();
+        assert!(cost < balance && balance < model && model < memory && memory < tokens);
+    }
+
+    #[test]
+    fn maps_every_error_category_to_plain_user_text() {
+        for lang in Locale::ALL {
+            assert_eq!(
+                turn_error_text(lang, &loop_::TurnError::Timeout("raw timeout".into())),
+                locale::text(lang, Key::ErrorTimeout)
+            );
+            assert_eq!(
+                turn_error_text(lang, &loop_::TurnError::Connection("raw conn".into())),
+                locale::text(lang, Key::ErrorTimeout)
+            );
+            assert_eq!(
+                turn_error_text(lang, &loop_::TurnError::Auth("raw 401".into())),
+                locale::text(lang, Key::ErrorAuth)
+            );
+            assert_eq!(
+                turn_error_text(lang, &loop_::TurnError::Payment("raw 402".into())),
+                locale::text(lang, Key::ErrorPayment)
+            );
+            assert_eq!(
+                turn_error_text(lang, &loop_::TurnError::Busy("raw 429".into())),
+                locale::text(lang, Key::ErrorBusy)
+            );
+            assert_eq!(
+                turn_error_text(lang, &loop_::TurnError::MaxRoundtrips("raw".into())),
+                locale::text(lang, Key::ErrorMaxRoundtrips)
+            );
+            assert_eq!(
+                turn_error_text(lang, &loop_::TurnError::EmptyResponse("raw".into())),
+                locale::text(lang, Key::ErrorEmpty)
+            );
+            assert_eq!(
+                turn_error_text(lang, &loop_::TurnError::Other("raw secret".into())),
+                locale::text(lang, Key::ErrorOther)
+            );
+            assert!(
+                !turn_error_text(lang, &loop_::TurnError::Other("raw secret".into()))
+                    .contains("raw secret")
+            );
+
+            let repeated = turn_error_text(
+                lang,
+                &loop_::TurnError::RepeatedToolError("read_file: No such file or directory".into()),
+            );
+            assert_eq!(
+                repeated,
+                locale::with(
+                    lang,
+                    Key::ErrorRepeatedTool,
+                    locale::text(lang, Key::ReasonNotFound)
+                )
+            );
+            assert!(!repeated.contains("read_file"));
+        }
+    }
+
+    #[test]
+    fn labels_non_text_media_kinds() {
+        let photo: Message = serde_json::from_str(
+            r#"{"message_id":1,"date":0,"chat":{"id":1,"type":"private","first_name":"A"},"photo":[{"file_id":"f","file_unique_id":"u","width":1,"height":1}]}"#,
+        )
+        .unwrap();
+        assert!(matches!(&photo.kind, MessageKind::Common(_)));
+        assert_eq!(non_text_kind(&photo), "photo");
+
+        let voice: Message = serde_json::from_str(
+            r#"{"message_id":1,"date":0,"chat":{"id":1,"type":"private","first_name":"A"},"voice":{"file_id":"f","file_unique_id":"u","duration":3,"mime_type":"audio/ogg"}}"#,
+        )
+        .unwrap();
+        assert_eq!(non_text_kind(&voice), "voice");
+    }
+
+    #[test]
+    fn labels_chat_types_for_logging() {
+        let group: Chat = serde_json::from_str(r#"{"id":1,"type":"group","title":"G"}"#).unwrap();
+        let supergroup: Chat =
+            serde_json::from_str(r#"{"id":2,"type":"supergroup","title":"S"}"#).unwrap();
+        let channel: Chat =
+            serde_json::from_str(r#"{"id":3,"type":"channel","title":"C"}"#).unwrap();
+        let private: Chat =
+            serde_json::from_str(r#"{"id":4,"type":"private","first_name":"A"}"#).unwrap();
+        assert_eq!(chat_type(&group), "group");
+        assert_eq!(chat_type(&supergroup), "supergroup");
+        assert_eq!(chat_type(&channel), "channel");
+        assert_eq!(chat_type(&private), "private");
     }
 
     #[test]

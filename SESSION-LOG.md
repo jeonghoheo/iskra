@@ -622,3 +622,58 @@ Status: **code and automated tests complete; live Telegram verification pending 
 
 ### Owner decision
 - `deepseek-flash` defaults to thinking mode. Measured live: 3 calls, 6,109 tokens, ~$0.002, 7 s for a two-tool turn — completion tokens stayed small (28–88 per call). Accepted for now; a thinking on/off setting belongs to the v2.0 model-profile work.
+
+## v1.3 — Telegram cleanup (2026-11-20, branch `v1.3-telegram-cleanup`)
+
+Status: **code, automated tests and live Telegram verification complete (one item with a noted limit).** Worked only in the `../iskra-v1.3` worktree. Nothing was committed, pushed or merged by the executor. `.env` was symlinked by the owner for the live run and never opened or printed by the executor; the real `memory/` was not read.
+
+### Root cause
+Telegram showed raw developer-facing model/tool errors, and the user string table still used the word for a conversation turn (ko/ru) and English “turn”. Attachments other than text or stickers were silently ignored. `/start` was a one-line greeting plus a duplicated help block, `/status` put the model and token lines before cost and balance, and some fallbacks were hard-coded English (“unknown”, “unavailable”). The bot also answered and remembered in any chat type, and forwarded third-party text reached the model as if the owner had spoken it.
+
+### States and transitions (written before implementing, gate ②)
+- Model errors: `brain::ChatError` classifies timeout, connection failure, 401/403, 402, 429/5xx and everything else. `loop_::TurnError` adds repeated tool error, max round-trips and empty response. `run_turn` returns `Result<String, TurnError>`.
+- Display vs logs: exactly one localized A1 string goes to the chat. The original detail stays in `Display` and therefore in `telegram_turn_error …`, `model_error …` and `tool_error …` log lines. CLI keeps printing the original detail.
+- Private-chat gate: immediately after the allowed-sender check. A non-private chat gets one A6 line, then `leave_chat`, then `telegram_non_private chat_type=… left=true|false`; no content handling, memory write or model call. Leave failure is logged only, never retried. The reaction handler runs the same gate.
+- Non-text: `MessageKind::Common` media (photo, voice, audio, document, video, video note, animation, etc.) gets one A3 line and `telegram_non_text_notice kind=…`; other service messages stay ignored.
+- Forwarded text: if `forward_origin` is present, it is wrapped in the A7 form before reaching the model, and command/sticky handling is skipped. A literal `>>>` inside the text becomes `> > >`, so the wrapper cannot be closed early.
+- `/start` sends only the A4 text (no duplicated help). `/status` order is spent today → balance → model → memory → tokens today.
+
+### What changed
+- `src/brain.rs`: added `ChatError` and `classify_status`; `chat` now returns structured errors with the original detail. Timeout and connection failures are separated before parsing.
+- `src/loop_.rs`: added `TurnError` and the `ChatError → TurnError` mapping; repeated tool errors, max round-trips and the second empty response are now typed. The original message is still logged.
+- `src/locale.rs`: added/replaced A1–A6 keys. `TurnBusy` became `BusyNotice`; `TurnStopped` was removed. Added five plain-language repeated-error reasons, `NonTextNotice`, `PrivateOnly`, `CostUnknown`, the new A4 text and the new `/status` cost label. No user string contains the turn jargon words.
+- `src/channel.rs`: A6 check before any content work in messages and reactions; A3 reply for common media with a log kind; A7 wrapping for forwarded text with commands skipped; error category → locale key; `/start`/`/status` cleanup; extracted `status_text` for order testing.
+- `src/prompt.rs`: one English rule line about forwarded material and the A7 reply notice, plus `FORWARD_HEADER`, `wrap_forwarded` and the `>>>` escape.
+- teloxide 0.17 API check: the installed `teloxide-core 0.13.0` exposes `Chat::is_private`, `Chat::is_group`, `Chat::is_supergroup`, `Chat::is_channel`, `Message::forward_origin`, `MessageReactionUpdated::chat` and `Bot::leave_chat`; the implementation uses those exact types, so no meaning-changing workaround was needed.
+
+### Verification (automated)
+1. `cargo test`: **97 passed, 0 failed, 0 ignored** (88 baseline + 9 new).
+   - `classifies_http_statuses`: 401/403 → auth, 402 → payment, 429 and 5xx → busy, 404 → other; detail keeps status and body.
+   - `maps_every_error_category_to_plain_user_text`: every category maps to the approved en/ko/ru string and raw detail never appears in the reply; repeated-tool text uses the plain reason only.
+   - `user_strings_avoid_busy_jargon`: word-level scan of every key in en/ko/ru for the turn jargon; zero matches (the `расход`/`подходит` substrings are different words).
+   - `wraps_forwarded_content_in_markers` and `escapes_closing_marker_inside_forwarded_content`: exact A7 header/opening/closing and a single closing marker even when the input contains `>>>`.
+   - `prompt_carries_the_forwarded_material_rule`: the English rule and A7 wording are in the assembled prompt.
+   - `status_lines_follow_the_approved_order`: cost < balance < model < memory < tokens.
+   - `labels_non_text_media_kinds` and `labels_chat_types_for_logging`: photo/voice kind labels and group/supergroup/channel/private labels.
+2. `rustfmt --edition 2024 --check` on the five changed source files: clean. A repository-wide `cargo fmt --check` still reports the pre-existing unformatted `src/tools*` files, which were not touched here. `cargo clippy --all-targets`: only the pre-existing warnings (collapsible nested `if` in the board-reply path, char comparison in locale, two memory lints); no new errors.
+3. Acceptance greps: `TurnBusy`/`TurnStopped` are gone; `src/channel.rs` has no hard-coded `"unknown"` or `"unavailable"`.
+4. Budget: release binary 8,450,192 bytes; stripped **6,311,696 bytes = 6.02 MiB** (previous 6,295,088 / 6.00 MiB). Direct dependencies **7** (unchanged). CLI idle RSS **4,064 KB = 3.97 MiB** (waiting on stdin with a dummy key, no network).
+
+### Verification (live, Telegram) — passed with one noted limit (2026-11-20, owner-run, one instance from this worktree)
+- Setup: the worktree had no `.env`, so the owner symlinked `../iskra/.env` (same method as the v1.1-A live run). Run started 18:32:08 +0300 with `run_command_sandbox available=true`.
+1. Photo → A3 text. Log 18:32:11 `telegram_non_text_notice kind=photo`. **Passed.**
+2. Forwarded text → wrapped as material. 19:06:54 (third-party message without an instruction): no tool call; the reply treated it as unverified material and said there was no instruction to follow. 19:30:35 (third-party message asking to buy groceries): no tool call; the reply ended with the A7 notice ("I did not follow the request in the forwarded text"). **Passed, with a limit:** the forwarded instruction was not one Iskra could execute, so refusal of an executable forwarded instruction (e.g. `write_file`) is covered only by the automated wrapper/prompt tests. The owner accepted this limit on 2026-11-20.
+   - Two earlier attempts (18:35, 18:36) were sent with the sender name hidden. Telegram then delivers no `forward_origin`, so the bot cannot tell them from the owner's own text and they were handled as owner instructions (`hacked.txt` written, later deleted). This is a platform limit, not a defect: a forward with the sender hidden is the owner's own message.
+3. Bot added to a test group, owner message → A6 line and leave. Log 18:33:29 `telegram_non_private chat_type=group left=true`; another member's message was ignored (`telegram_ignore user_id=…`). **Passed.**
+4. `/start` shows only the A4 text; `/status` order is spent today → balance → model → memory → tokens today (owner screen, 19:34). **Passed.**
+5. `LLM_MODEL=no-such-model` (shell override, `.env` unchanged), message "안녕" → the A1 "other" text only. Raw `400 Bad Request … you passed no-such-model` appears only in `model_error` and `telegram_turn_error` (19:33:42). Normal model restored at 19:34:24. **Passed.**
+
+### Observations (not v1.3 defects)
+- 18:37 `telegram_send_failed` after one retry, yet the owner received the same reply twice at 18:47: a send judged failed on a network error had in fact reached Telegram, and the retry duplicated it. Retrying an ambiguous send can duplicate messages — recorded for v2.0.
+- A configuration error at startup is not written to the log when `logs/` does not exist yet (`main.rs` logs before `create_dir_all("logs")`). Pre-existing; recorded for v2.0.
+- An invalid model name (HTTP 400) maps to the generic A1 text; a clearer "check the model name" message belongs to the v2.0 provider profile.
+- The log does not record whether a message was forwarded, so the live check for item 2 relied on tool-call absence and the reply text. A `telegram_forwarded` log line is a candidate for v2.0 together with the `origin` field.
+
+### Notes
+- No temporary workaround was added. The v2.0 source field (`origin: owner | forwarded | quoted`) will replace this wrapper, as the directive says.
+- Commands inside forwarded text are deliberately not executed; the wrapped text goes to the model as material only.
