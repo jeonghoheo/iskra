@@ -435,3 +435,9 @@ The 2026-11-20 code review found that `run_command` bypasses the workspace sandb
 
 ### Removal (formal-fix task)
 Directive **v1.1-A (shell hardening)** must, when merged: delete `RUN_COMMAND_DISABLED` and both workaround branches, delete `run_command_disabled_until_v1_1_a`, restore the run_command line in `src/prompt.rs` (rewritten to match the hardened behaviour), and record "W-1 removed" in its SESSION-LOG entry.
+
+## v1 real-use gate — dates (recorded 2026-11-20)
+
+- Gate period: **3 days, 2026-11-19 → 2026-11-22** (shortened from 2 weeks by owner decision on 2026-11-19; design §3 v1). v2 design runs in parallel; v2 implementation starts only after the gate verdict.
+- During the gate, shell features are unavailable (workaround W-1, above) until directive v1.1-A is merged.
+- Long-horizon items that 3 days cannot cover (memory growth, resuming after days off, cost accumulation) stay under observation after the gate.
