@@ -193,6 +193,30 @@ pub struct ChatReply {
     pub usage: Option<Usage>,
 }
 
+#[derive(Debug)]
+pub enum ChatError {
+    Timeout(String),
+    Connection(String),
+    Auth(String),
+    Payment(String),
+    Busy(String),
+    Other(String),
+}
+
+impl std::fmt::Display for ChatError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let detail = match self {
+            Self::Timeout(detail)
+            | Self::Connection(detail)
+            | Self::Auth(detail)
+            | Self::Payment(detail)
+            | Self::Busy(detail)
+            | Self::Other(detail) => detail,
+        };
+        f.write_str(detail)
+    }
+}
+
 #[derive(Serialize)]
 struct ChatRequest<'a> {
     model: &'a str,
@@ -240,7 +264,7 @@ impl Brain {
         &self.config.base_url
     }
 
-    pub async fn chat(&self, messages: &[Message]) -> Result<ChatReply, String> {
+    pub async fn chat(&self, messages: &[Message]) -> Result<ChatReply, ChatError> {
         let request = ChatRequest {
             model: &self.config.model,
             messages,
@@ -262,25 +286,29 @@ impl Brain {
         };
 
         let (status, body) =
-            tokio::time::timeout(Duration::from_secs(MODEL_TIMEOUT_SECS), exchange)
-                .await
-                .map_err(|_| format!("Model call timed out after {MODEL_TIMEOUT_SECS}s"))?
-                .map_err(|e| format!("Model call failed: {e}"))?;
+            match tokio::time::timeout(Duration::from_secs(MODEL_TIMEOUT_SECS), exchange).await {
+                Err(_) => {
+                    return Err(ChatError::Timeout(format!(
+                        "Model call timed out after {MODEL_TIMEOUT_SECS}s"
+                    )));
+                }
+                Ok(Err(e)) => {
+                    return Err(ChatError::Connection(format!("Model call failed: {e}")));
+                }
+                Ok(Ok(exchange)) => exchange,
+            };
 
         if !status.is_success() {
-            return Err(format!(
-                "Model API error {status}: {}",
-                truncate_chars(&body, 300)
-            ));
+            return Err(classify_status(status, &body));
         }
 
         let parsed: ChatResponse = serde_json::from_str(&body)
-            .map_err(|e| format!("Failed to parse response JSON: {e}"))?;
+            .map_err(|e| ChatError::Other(format!("Failed to parse response JSON: {e}")))?;
         let choice = parsed
             .choices
             .into_iter()
             .next()
-            .ok_or_else(|| "Model response has no choices".to_string())?;
+            .ok_or_else(|| ChatError::Other("Model response has no choices".to_string()))?;
 
         Ok(ChatReply {
             message: choice.message,
@@ -344,6 +372,17 @@ impl Brain {
             .as_ref()
             .filter(|entry| entry.fetched.elapsed() < BALANCE_CACHE_TTL)
             .map(|entry| entry.value.clone())
+    }
+}
+
+fn classify_status(status: reqwest::StatusCode, body: &str) -> ChatError {
+    let detail = format!("Model API error {status}: {}", truncate_chars(body, 300));
+    match status.as_u16() {
+        401 | 403 => ChatError::Auth(detail),
+        402 => ChatError::Payment(detail),
+        429 => ChatError::Busy(detail),
+        500..=599 => ChatError::Busy(detail),
+        _ => ChatError::Other(detail),
     }
 }
 
@@ -531,6 +570,44 @@ mod tests {
         assert_eq!(response.balance_infos[0].currency, "CNY");
         assert_eq!(response.balance_infos[0].total_balance, "110.00");
         assert_eq!(response.display(), "110.00 CNY");
+    }
+
+    #[test]
+    fn classifies_http_statuses() {
+        use reqwest::StatusCode;
+
+        assert!(matches!(
+            classify_status(StatusCode::UNAUTHORIZED, "nope"),
+            ChatError::Auth(_)
+        ));
+        assert!(matches!(
+            classify_status(StatusCode::FORBIDDEN, "nope"),
+            ChatError::Auth(_)
+        ));
+        assert!(matches!(
+            classify_status(StatusCode::PAYMENT_REQUIRED, "nope"),
+            ChatError::Payment(_)
+        ));
+        assert!(matches!(
+            classify_status(StatusCode::TOO_MANY_REQUESTS, "nope"),
+            ChatError::Busy(_)
+        ));
+        assert!(matches!(
+            classify_status(StatusCode::INTERNAL_SERVER_ERROR, "nope"),
+            ChatError::Busy(_)
+        ));
+        assert!(matches!(
+            classify_status(StatusCode::BAD_GATEWAY, "nope"),
+            ChatError::Busy(_)
+        ));
+        assert!(matches!(
+            classify_status(StatusCode::NOT_FOUND, "nope"),
+            ChatError::Other(_)
+        ));
+
+        let detail = classify_status(StatusCode::UNAUTHORIZED, "raw body").to_string();
+        assert!(detail.contains("401"));
+        assert!(detail.contains("raw body"));
     }
 
     #[test]

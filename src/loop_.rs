@@ -1,16 +1,57 @@
-use crate::brain::{Brain, Message};
+use crate::brain::{Brain, ChatError, Message};
 use crate::logging;
 use crate::tools::Tools;
 
 pub const MAX_TOOL_ROUNDTRIPS: usize = 10;
 pub const MAX_CONSECUTIVE_SAME_ERROR: usize = 2;
 
+#[derive(Debug)]
+pub enum TurnError {
+    Timeout(String),
+    Connection(String),
+    Auth(String),
+    Payment(String),
+    Busy(String),
+    RepeatedToolError(String),
+    MaxRoundtrips(String),
+    EmptyResponse(String),
+    Other(String),
+}
+
+impl std::fmt::Display for TurnError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let detail = match self {
+            Self::Timeout(detail)
+            | Self::Connection(detail)
+            | Self::Auth(detail)
+            | Self::Payment(detail)
+            | Self::Busy(detail)
+            | Self::RepeatedToolError(detail)
+            | Self::MaxRoundtrips(detail)
+            | Self::EmptyResponse(detail)
+            | Self::Other(detail) => detail,
+        };
+        f.write_str(detail)
+    }
+}
+
+fn from_chat_error(error: ChatError) -> TurnError {
+    match error {
+        ChatError::Timeout(detail) => TurnError::Timeout(detail),
+        ChatError::Connection(detail) => TurnError::Connection(detail),
+        ChatError::Auth(detail) => TurnError::Auth(detail),
+        ChatError::Payment(detail) => TurnError::Payment(detail),
+        ChatError::Busy(detail) => TurnError::Busy(detail),
+        ChatError::Other(detail) => TurnError::Other(detail),
+    }
+}
+
 pub async fn run_turn(
     brain: &Brain,
     tools: &Tools,
     system_prompt: &str,
     user_input: &str,
-) -> Result<String, String> {
+) -> Result<String, TurnError> {
     logging::append("turn_start");
 
     let daily_usage = crate::usage::today();
@@ -30,7 +71,7 @@ pub async fn run_turn(
     loop {
         let reply = brain.chat(&messages).await.map_err(|e| {
             logging::append(&format!("model_error err={e}"));
-            e
+            from_chat_error(e)
         })?;
 
         let usage = match reply.usage.as_ref() {
@@ -64,7 +105,9 @@ pub async fn run_turn(
             if content.trim().is_empty() {
                 if empty_retried {
                     logging::append("stop empty_response");
-                    return Err("The model returned an empty response twice".to_string());
+                    return Err(TurnError::EmptyResponse(
+                        "The model returned an empty response twice".to_string(),
+                    ));
                 }
                 empty_retried = true;
                 logging::append("empty_response_retry");
@@ -78,9 +121,9 @@ pub async fn run_turn(
         roundtrips += 1;
         if roundtrips > MAX_TOOL_ROUNDTRIPS {
             logging::append("stop max_roundtrips");
-            return Err(format!(
+            return Err(TurnError::MaxRoundtrips(format!(
                 "Stopped after exceeding the maximum of {MAX_TOOL_ROUNDTRIPS} tool round-trips"
-            ));
+            )));
         }
 
         messages.push(reply.message.clone());
@@ -106,9 +149,9 @@ pub async fn run_turn(
                     let stop = register_error(&mut last_error, &mut same_error_count, &name, &err);
                     if stop {
                         logging::append("stop repeated_tool_error");
-                        return Err(format!(
+                        return Err(TurnError::RepeatedToolError(format!(
                             "Stopped after the same tool error occurred {MAX_CONSECUTIVE_SAME_ERROR} times consecutively: {name} ({err})"
-                        ));
+                        )));
                     }
                     messages.push(Message::tool(&call.id, &format!("Tool error: {err}")));
                 }

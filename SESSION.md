@@ -404,3 +404,36 @@ Background: Block 6.5 unified in-code strings to English, which also made the bo
 
 ### 남은 결정
 - `deepseek-flash`는 사고 모드가 기본이므로 기존 `deepseek-chat`(비사고) 대비 토큰·시간이 늘 수 있다. 라이브 측정 후 주인이 기본값을 확정한다.
+
+---
+
+## v1.3 — 텔레그램 정리 (2026-11-20)
+
+지시서: `.directives/v1.3-telegram-cleanup-directive.md` (2026-11-20 주인 승인). 문구 원본: `.directives/v1.3-telegram-strings.md` — 그대로 사용했다. 브랜치 `v1.3-telegram-cleanup`, worktree `../iskra-v1.3`. 커밋·푸시·병합하지 않았다. 라이브는 이스크라 1개만.
+
+### 상태·전이 (구현 전 기록)
+- 오류: `brain::ChatError`(Timeout·Connection·Auth·Payment·Busy·Other)가 HTTP 상태·시간 초과·연결 실패를 구분하고, `loop_::TurnError`가 여기에 RepeatedToolError·MaxRoundtrips·EmptyResponse를 더한다. `run_turn` 반환은 `Result<String, TurnError>`.
+- 표시: 분류별 locale 키 하나만 보낸다. 원문 상세는 `Display`에 남겨 `telegram_turn_error …`/`model_error …`/`tool_error …` 로그에만 쓴다. CLI는 원문을 그대로 출력한다.
+- 개인 채팅 검사: 발신자 검사 직후. 개인 채팅이 아니면 내용 처리·기억·모델 사용 전에 A6 한 줄을 보내고 `leave_chat`한 뒤 `telegram_non_private chat_type=… left=true|false`를 남긴다. 나가기 실패는 로그만 남기고 재시도하지 않는다. 리액션 처리기도 같은 검사를 한다.
+- 비텍스트: `MessageKind::Common`의 사진·음성·파일·동영상 등은 A3 한 줄로 답하고 `telegram_non_text_notice kind=…`를 남긴다. 그 밖의 서비스 메시지는 기존처럼 무시한다.
+- 전달: `forward_origin`이 있으면 명령·스티키 처리 없이 A7 형식으로 감싸 모델에 넘긴다. 원문 안의 `>>>`는 `> > >`로 바꿔 감싸기가 깨지지 않게 한다.
+- `/start`: A4 문구만 보낸다(도움말 중복 없음). `/status`: 오늘 쓴 금액 → 잔액 → 모델 → 기억 → 오늘 토큰 순서.
+
+### 범위
+1. `src/brain.rs`: `ChatError` 추가. `chat`이 시간 초과·연결 실패·401/403·402·429/5xx·그 밖을 구조화하고 원문 상세를 유지한다.
+2. `src/loop_.rs`: `TurnError` 추가·매핑, `run_turn` 반환 변경, 반복 도구 오류·왕복 상한·빈 응답 분류.
+3. `src/locale.rs`: A1~A6 키 추가·교체. `TurnBusy`→`BusyNotice`, `TurnStopped` 제거, 반복 오류 이유 키 5종, `/status` 비용·순서 문구, A4 전체 문구.
+4. `src/channel.rs`: A6 검사, A3 알림, A7 감싸기, 오류 분류→locale, `/start`·`/status` 정리, 리액션 검사.
+5. `src/prompt.rs`: A7 규칙 1줄, `wrap_forwarded`/`FORWARD_HEADER`, `>>>` 이스케이프.
+6. SESSION.md·SESSION-LOG 기록.
+
+### 검증 (자동)
+- `cargo test`: **97 passed, 0 failed** (기존 88 + 신규 9).
+- 변경한 5개 파일에 `rustfmt --check` 통과. 전체 `cargo fmt --check`는 v1.3 이전부터 정리되지 않은 `src/tools*` 파일 때문에 원래부터 실패하므로, 이번에 그 파일들은 건드리지 않았다. `cargo clippy --all-targets`는 기존 경고만 있고 신규 오류는 없다.
+- A2 검사: en·ko·ru 사용자 문구에 `턴`·`turn`·`ход` **단어** 0건. (러시아어 `расход`·`подходит`의 부분 문자열은 다른 단어다.)
+- A1 분류 테스트: 시간 초과/연결, 401·403, 402, 429·5xx, 반복 도구 오류, 왕복 상한, 빈 응답, 그 밖을 en·ko·ru 문구로 선택하고 원문이 화면 문구에 새지 않는지 확인.
+- A7: 헤더·`<<<`/`>>>` 형식과 내부 `>>>` 이스케이프 테스트.
+- 예산: release 바이너리 8,450,192 bytes, strip 후 **6,311,696 bytes = 6.02 MiB** (직전 6.00 MiB). 직접 의존성 **7개 유지**. CLI 유휴 RSS **4,064 KB = 3.97 MiB**.
+
+### 라이브 (주인 실행 필요)
+- 이 worktree에는 `.env`가 없고 금지 규칙상 열거나 복사하지 않았다. 텔레그램 라이브 5항목(사진→A3, 전달된 “이 파일 지워줘”→따르지 않고 A7 알림, 테스트 그룹→A6+나가기, `/start`·`/status`, 잘못된 `LLM_MODEL`→쉬운 오류)은 주인 실행 후 SESSION-LOG에 기록한다.
