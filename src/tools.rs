@@ -14,9 +14,15 @@ pub const OUTPUT_LIMIT_CHARS: usize = 10_000;
 const OUTPUT_READ_LIMIT_BYTES: usize = 80_000;
 const ALLOWED_PROGRAMS: [&str; 4] = ["ls", "cat", "git", "cargo"];
 const SECRET_ENV_VARS: [&str; 3] = ["DEEPSEEK_API_KEY", "LLM_API_KEY", "TELEGRAM_BOT_TOKEN"];
+// TEMPORARY WORKAROUND (work gate 4, decided 2026-11-20): run_command is disabled
+// as a whole because its argument policy can bypass the workspace sandbox
+// (e.g. `cat ../.env`, `git -c ...`, cargo build scripts). Formal fix: directive
+// v1.1-A (shell hardening). Remove this switch, its checks and the test
+// `run_command_disabled_until_v1_1_a` when v1.1-A is merged.
+const RUN_COMMAND_DISABLED: bool = true;
 
 pub fn schemas() -> Value {
-    json!([
+    let all = json!([
         {
             "type": "function",
             "function": {
@@ -126,7 +132,22 @@ pub fn schemas() -> Value {
                 }
             }
         }
-    ])
+    ]);
+    if !RUN_COMMAND_DISABLED {
+        return all;
+    }
+    // TEMPORARY WORKAROUND (v1.1-A pending): hide run_command from the model.
+    let visible = all
+        .as_array()
+        .map(|tools| {
+            tools
+                .iter()
+                .filter(|tool| tool["function"]["name"] != "run_command")
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    Value::Array(visible)
 }
 
 pub struct Tools {
@@ -154,6 +175,12 @@ impl Tools {
             "read_file" => self.read_file(args),
             "write_file" => self.write_file(args),
             "memory_save" => crate::memory::save(arg_str(args, "text")?),
+            "run_command" if RUN_COMMAND_DISABLED => {
+                // TEMPORARY WORKAROUND (v1.1-A pending): fail closed even if the
+                // model calls the hidden tool.
+                crate::logging::append("run_command_disabled workaround=v1.1-A-pending");
+                Err("run_command is not allowed right now: it is temporarily disabled until shell hardening (v1.1-A) is merged".to_string())
+            }
             "run_command" => self.run_command(args).await,
             "sticky_note" => self.sticky_note(args),
             other => Err(format!("Unknown tool: {other}")),
@@ -530,6 +557,33 @@ mod tests {
 
         let _ = fs::remove_dir_all(&root);
         let _ = fs::remove_dir_all(&outside);
+    }
+
+    // TEMPORARY (v1.1-A pending): remove together with RUN_COMMAND_DISABLED.
+    #[tokio::test]
+    async fn run_command_disabled_until_v1_1_a() {
+        let root = temp_root("disabled");
+        let tools = tools_for(root.clone());
+
+        let names: Vec<String> = schemas()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["function"]["name"].as_str().unwrap().to_string())
+            .collect();
+        assert!(!names.iter().any(|name| name == "run_command"), "{names:?}");
+        assert_eq!(names.len(), 4, "{names:?}");
+
+        for program in ["ls", "cat", "git", "cargo"] {
+            let args = serde_json::json!({"program": program, "args": ["../.env"]});
+            let result = tools.execute("run_command", &args).await;
+            assert!(
+                result.as_ref().is_err_and(|e| e.contains("temporarily disabled")),
+                "{program} must be refused while disabled: {result:?}"
+            );
+        }
+
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[tokio::test]

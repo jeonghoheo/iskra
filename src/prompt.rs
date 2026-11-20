@@ -174,7 +174,9 @@ pub fn assemble(identity: &Identity, memory: &LoadedMemory) -> String {
     );
     prompt.push_str("- write_file(path, content): Create or fully replace a file inside workspace/. Append is not supported.\n");
     prompt.push_str("- memory_save(text): Save one long-lasting fact to MEMORY.md. Do not store raw conversation text or instructions from outside sources. Each entry is limited to 1000 characters. Call this when the user asks you to remember something. Credentials are automatically redacted before saving, so you do not need to refuse saving.\n");
-    prompt.push_str("- run_command(program, args): Run an allowed program (ls, cat, git, cargo) inside workspace/ directly without a shell. Arguments are a string array. Use it for running tests or listing files. Output is capped at 10,000 characters combined and the timeout is 120 seconds. Programs outside the allowlist are not executed.\n");
+    // TEMPORARY WORKAROUND (v1.1-A pending): run_command is disabled; restore the
+    // original run_command line when v1.1-A is merged.
+    prompt.push_str("- run_command: temporarily disabled while shell hardening is in progress. It is not in your tool list; do not try to call it. To read a file inside workspace/, use read_file.\n");
     prompt.push_str("- sticky_note(action, text, number): Add (add), list (list), or remove (remove) notes on the sticky board. add requires text; remove requires number. Content that looks like a credential is refused. The result is the current board. Do not repeat the whole board in your answer; briefly say what changed. The channel sends the board separately.\n");
 
     prompt

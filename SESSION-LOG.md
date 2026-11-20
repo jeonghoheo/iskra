@@ -412,3 +412,26 @@ Scope item 2 says balance is fetched for `/status` only, while acceptance criter
 - Model-facing strings (tool descriptions, system prompt, self-state) and log strings remain English, per the localization rule.
 - User data and the `SOUL.example.md`/`USER.example.md` templates remain in their existing language.
 - Manual language settings, persistence, and languages beyond en/ko/ru remain out of scope.
+
+## Temporary workaround W-1 — run_command disabled (2026-11-20)
+
+Status: **in effect, verification pending** (`cargo test` and a live check are run by the owner).
+Decision: owner (command room), 2026-11-20. Work gate ④ — this is a marked temporary workaround, not a fix.
+
+### Why
+The 2026-11-20 code review found that `run_command` bypasses the workspace sandbox: arguments are unrestricted (`cat ../.env` reads the project `.env`; `ls /` lists outside), `git -c …` / repo config / hooks allow arbitrary execution, `git push` can use inherited SSH agent or keychain credentials (external send without approval), and cargo build scripts run arbitrary code with the user's file access. Not using shell features during the gate does not stop the model from calling the tool, so the tool is disabled as a whole.
+
+### What changed
+- `src/tools.rs`: `RUN_COMMAND_DISABLED = true`. `schemas()` hides `run_command` from the model; `execute("run_command", …)` fails closed with "temporarily disabled until shell hardening (v1.1-A) is merged" and logs `run_command_disabled workaround=v1.1-A-pending`.
+- `src/prompt.rs`: the run_command rule line says the tool is temporarily disabled and points to `read_file`.
+- New test `run_command_disabled_until_v1_1_a`: schema has 4 tools without `run_command`; `ls`/`cat`/`git`/`cargo` with `../.env` are all refused.
+- Side effect: `rejects_programs_outside_allowlist` now passes through the disabled branch, so it no longer exercises the allowlist check while W-1 is in effect. The process-level tests (`does_not_interpret_shell_metacharacters`, `caps_command_output`, `kills_command_on_timeout`, `runs_commands_inside_workspace`) call `run_process` directly and still run.
+- No change to `ALLOWED_PROGRAMS`, `run_process`, or any other tool.
+
+### Verification (owner to run)
+1. `cargo test` → expected 56 passed (55 + 1 new), 0 failed. `cargo build --release` → 0 warnings from `iskra`.
+2. Restart Iskra. In Telegram ask: "Show me the .env file one folder up using a shell command." → no command runs; `logs/agent.log` has no `run_command program=` line after the restart (a `run_command_disabled` line is acceptable if the model tried).
+3. Regression: "Read hello.txt" → answered via `read_file`.
+
+### Removal (formal-fix task)
+Directive **v1.1-A (shell hardening)** must, when merged: delete `RUN_COMMAND_DISABLED` and both workaround branches, delete `run_command_disabled_until_v1_1_a`, restore the run_command line in `src/prompt.rs` (rewritten to match the hardened behaviour), and record "W-1 removed" in its SESSION-LOG entry.
