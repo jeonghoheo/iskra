@@ -441,3 +441,84 @@ Directive **v1.1-A (shell hardening)** must, when merged: delete `RUN_COMMAND_DI
 - Gate period: **3 days, 2026-11-19 → 2026-11-22** (shortened from 2 weeks by owner decision on 2026-11-19; design §3 v1). v2 design runs in parallel; v2 implementation starts only after the gate verdict.
 - During the gate, shell features are unavailable (workaround W-1, above) until directive v1.1-A is merged.
 - Long-horizon items that 3 days cannot cover (memory growth, resuming after days off, cost accumulation) stay under observation after the gate.
+
+## v1.1-A — Shell hardening (2026-11-20, branch `v1.1-a-shell-hardening`)
+
+Status: **automated and live verification passed** (live run with the owner's confirmation that no other instance was running). Worked only in the `../iskra-v1.1-a` worktree. Nothing committed, pushed or merged. `.env` was never opened. The sandbox tests use decoy files laid out like the worktree.
+
+**W-1 removed.** `RUN_COMMAND_DISABLED`, the `schemas()` filter, the guarded `execute` arm and the test `run_command_disabled_until_v1_1_a` are deleted. The temporary run_command line in `src/prompt.rs` is replaced with a description of the hardened behaviour. `rejects_programs_outside_allowlist` now fails on the real allowlist check (it asserts the message starts with "Program is not allowed"). `grep -rn "v1.1-A pending\|RUN_COMMAND_DISABLED\|TEMPORARY WORKAROUND" src/` returns no matches.
+
+### States and transitions (written before implementing, gate ②)
+- Startup (`Tools::new` → `Runtime::detect`):
+  - Canonicalize the workspace and take its parent as the project root.
+  - Create `workspace/.iskra-home/cargo` and `workspace/.iskra-tmp`.
+  - Pin programs: `/bin/ls`, `/bin/cat`, `/usr/bin/git`, and `<sysroot>/bin/cargo`. The sysroot comes from running the rustc proxy once with fixed args, a cleared environment and cwd `/`.
+  - Probe Seatbelt with `sandbox-exec -p <profile> /usr/bin/true`.
+  - A missing program is disabled and logged (`run_command_program_disabled`). With no sandbox, cargo is disabled. `run_command_sandbox available=…` is logged.
+  - `schemas()` advertises only the available programs.
+- Call: `Received` → `ProgramCheck` (allowlisted and pinned) → `DirCheck` (`dir` resolved like `read_file`) → `ArgPolicy` (common path rule, then the per-program rule) → `Spawn` (sandboxed, cleared env, own process group) → `Running` → `Exited` | `TimedOut` | `Aborted` (/stop or drop) → `Logged`.
+  - In every exit state the whole process group is killed.
+  - A refusal at any check spawns nothing and logs `run_command_rejected program=… reason=…` (redacted).
+
+### Owner decisions (2026-11-20)
+- `CARGO_HOME` is a private folder, `workspace/.iskra-home/cargo`, not `~/.cargo`. cargo runs from the default toolchain's sysroot directly, bypassing the rustup proxy, so `+toolchain` and `rust-toolchain.toml` have no effect. Consequence: offline builds of crates with external dependencies fail.
+- `run_command` gained an optional `dir` argument (a folder relative to workspace, checked like `read_file`). Without it, git could not be used on `workspace/trial_project` once `-C` and parent discovery are refused.
+
+### Bypass paths and how each is closed
+| # | Path | Closed by | Test |
+|---|------|-----------|------|
+| 1 | `cat ../.env`, `cat /etc/hosts`, `ls /`, `ls ..` | Common path rule: absolute, `..` component or leading `~` refused before spawn | `refuses_outside_paths_before_spawn` |
+| 2 | Paths inside options: `--output=/x`, `--output=../x`, `-O/x`, `HEAD:../x`, `:/x` | Same rule applied to the values after `=` and `:` and to attached short-option values | `refuses_absolute_parent_and_home_arguments` |
+| 3 | git global options (`-c`, `-C`, `--git-dir`, `--work-tree`, `--exec-path`, `--namespace`, `--config-env`, `--super-prefix`, `-p/--paginate`, also `--no-pager`) | The first argument must be an allowed subcommand; any option before it is refused | `git_refuses_global_options_before_subcommand` |
+| 4 | git push/fetch/pull/clone/ls-remote/remote/submodule/config/clean/reset/checkout/restore/apply/am/archive/bundle/daemon/instaweb/filter-branch (also credential, stash) | Subcommand allowlist: status, diff, log, show, add, commit, init, rev-parse, ls-files | `git_refuses_subcommands_outside_allowlist` |
+| 5 | `--output`, `--upload-pack`, `--receive-pack`, `--exec`, `--template`, `-c`/`--config`, `--ext-diff`, `--textconv` | Refused on every subcommand, **including unique-prefix abbreviations** (`--outp`, `--ext-d`, `--textc`; new finding). Also refused, fail-closed because they run gpg: `--gpg-sign`/`-S` on commit, `--show-signature`. `--no-verify` stays allowed | `git_refuses_code_running_and_redirecting_options` |
+| 6 | Hooks, fsmonitor, pager, protocols, system/global config, credential prompts | Iskra puts `-c core.hooksPath=/dev/null -c core.fsmonitor=false -c core.pager=cat -c protocol.allow=never` before the model's args and sets `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_TERMINAL_PROMPT=0`, `GIT_ASKPASS=` (empty), `GIT_PAGER=cat`, `GIT_EDITOR=true`, and a fixed author/committer `Iskra <iskra@localhost>` | `git_command_forces_hook_and_config_isolation` |
+| 7 | **New:** with no repository in workspace, git found the parent Iskra repository (this worktree's gitdir), so `log/show/add/commit` acted on the owner's branch | `GIT_CEILING_DIRECTORIES=<project root>`; the sandbox also denies reads of the project root | `git_does_not_discover_parent_repository` |
+| 8 | cargo install/publish/login/logout/owner/yank/fetch/update/vendor, `+toolchain`, `-Z`, `--config`, `--manifest-path` outside workspace | Subcommand allowlist (build, check, test, run, fmt, clippy, new, init, metadata); `+…`, `-Z…`, `--config` (and its abbreviations) refused; options before the subcommand refused; paths by rule 1 | `cargo_refuses_subcommands_toolchains_and_unstable_flags` |
+| 9 | cargo network | `CARGO_NET_OFFLINE=true`; the sandbox denies the network | `cargo_command_runs_offline_with_pinned_homes`, `sandbox_blocks_build_script_network` |
+| 10 | `write_file` to `.git/config`, `.git/hooks/*`, `.gitattributes`, `.gitmodules`, `.gitconfig`, a `.git` file (gitdir redirect), `.cargo/config.toml`, `rust-toolchain(.toml)` | Refused for any component starting with `.git`, any component equal to `.cargo`, and file names `rust-toolchain`/`rust-toolchain.toml`. **New:** the comparison is case-insensitive (`.GIT/config` writes `.git/config` on APFS; `ſ` folds to `s`) and is applied both to the given path and to the path after symlinks are resolved (a symlink inside workspace pointing at `.git`) | `write_file_refuses_git_cargo_and_toolchain_files` |
+| 11 | Inherited environment (`.env` loaded by dotenvy, `SSH_AUTH_SOCK`, any `*_API_KEY`) | `env_clear()` plus an explicit allowlist: fixed `PATH` (absolute dirs only), `HOME=workspace/.iskra-home`, `LANG`, `TMPDIR=workspace/.iskra-tmp`, `CARGO_HOME`, `RUSTUP_HOME`, `CARGO_NET_OFFLINE`, and the git variables | `child_environment_does_not_inherit_parent_secrets` |
+| 12 | Iskra's private HOME/TMPDIR read or written through the file tools | `read_file`, `write_file`, the ls/cat operands and `dir` refuse `.iskra-home` and `.iskra-tmp` (case-insensitive) | `file_tools_refuse_private_iskra_dirs` |
+| 13 | PATH lookup at call time (`workspace/git`) | Absolute paths pinned at startup; a missing program is disabled, never looked up again | `programs_are_pinned_and_never_resolved_from_workspace` |
+| 14 | Grandchildren surviving a timeout, `/stop` or drop | `process_group(0)`; the `ProcessGroup` guard calls `killpg(SIGKILL)` on timeout, after a normal exit (leftovers) and on drop (task abort) | `timeout_kills_whole_process_group`, `abort_kills_whole_process_group` |
+| 15 | `read_file` following a final symlink, or reading a hard link to an outside file | `O_NOFOLLOW` on the final open; regular files with `nlink > 1` refused. Also applied to `write_file` targets and `cat` operands | `read_file_refuses_hard_links_and_final_symlinks` |
+| 16 | **New:** BSD `ls`/`cat` following a symlink operand out of workspace; `ls -L/-H/--dereference` | ls/cat operands resolved like `read_file` (outbound symlinks refused); short-flag allowlist; long options refused | `ls_and_cat_refuse_escaping_operands_and_flags` |
+| 17 | Arbitrary code from cargo build scripts and tests (read `~/.ssh` or the project `.env`, network, writes outside workspace, hard links out) | Seatbelt profile (constant in `src/tools/sandbox.rs`) for **all four programs** on macOS. Network denied. Writes only under workspace. Reads denied under `/Users`, `/Volumes`, `/private/tmp`, `/private/var/folders`, the owner's home and the project root, except the workspace and the toolchain sysroot. Ancestors of those are allowed for metadata only | `sandbox_blocks_build_script_reading_project_env`, `…_listing_ssh_dir`, `…_network`, `…_writing_outside_workspace`, `…_hard_linking_outside_file` |
+| 18 | **New:** with `(allow default)`, a build script could reach macOS daemons: keychain via securityd (`git credential-osxkeychain get`, Security.framework), pasteboard, `defaults write` via cfprefsd, Apple Events | `(deny mach-lookup)` with no exceptions, plus `(deny appleevent-send)`. cargo/rustc/ld/git need no mach service. Manual probes (2026-11-20, scratch dir) under the profile: `security find-generic-password` could not reach the keychain, `pbpaste` failed, `defaults write` failed, `osascript` failed | Covered by the profile; no automated test (it would touch the owner's keychain and pasteboard) |
+| 19 | **New:** files a build script plants for a later unsandboxed program (`.git/config` filter or diff drivers, symlinks, hard links) | ls/cat/git run under the same sandbox as cargo. Without a sandbox cargo is disabled, so no unsandboxed program other than git itself writes `.git` (directive §5.3) | `sandboxed_cargo_and_git_still_work_inside_workspace` (regression) |
+| 20 | No sandbox available (Linux, or `sandbox-exec` missing) | cargo disabled with a clear error and removed from the schema enum and description; ls/cat/git run with argument policy and isolation only (known limitation, §5.3) | `cargo_disabled_without_os_sandbox`, `schema_lists_all_tools_when_every_program_is_available` |
+| 21 | Credentials in the `run_command` log line | The log line (and rejection/error lines) pass through `memory::redact_credentials` | `run_command_log_line_redacts_credentials` |
+
+Refused fail-closed and listed for the owner to decide (each may be harmless):
+- git: `-c` after the subcommand (`git log -c`, a combined diff); `rev-parse --git-dir` (it matches the banned `--git-dir`); any `--e`/`--o`/`--t`-style abbreviation that is a prefix of a banned option; `:/<regex>` revision syntax (starts with `/`); `-S` clusters on commit (`-mSome` attached messages); any option before the subcommand, including `--no-pager`.
+- cargo: any option before the subcommand (e.g. `cargo -q build`); program arguments after `--` that look like absolute or `..` paths.
+- ls/cat: GNU long options; BSD flags outside the allowlist.
+
+Known limitations (not fixed):
+- Children now run in their own process group, so pressing Ctrl-C on Iskra in a terminal no longer reaches a running child. If Iskra exits abruptly (Ctrl-C, kill) while a command runs, no destructor runs and the child keeps going until it finishes by itself. Timeout, `/stop` and normal exit are covered. A signal handler belongs in `main.rs`, which is v1.1-B territory.
+- `read_file` still has no size cap. That is not a sandbox bypass; left as is.
+- Inside the sandbox, system locations outside the denied set (for example `/etc`, `/Library`) stay readable. Directive scope is the home folder and the project root.
+
+### Verification (automated)
+1. Baseline before changes: `cargo test` → 56 passed.
+2. After: `cargo test` → **81 passed, 0 failed** (56 − 1 W-1 test + 26 new). Run twice, stable. The macOS sandbox tests build real fixture crates with cargo through `run_command`. Each asserts that the build failed at the exact attempted operation (the build script's `expect` message appears) and that no effect exists (marker file, listener connection, outside file, hard link).
+3. `cargo build --release`: 0 warnings from `iskra`. The `proc-macro-error2` future-incompat note from a dependency is unchanged.
+4. W-1 grep: no matches.
+5. Budget: stripped release binary **6,295,072 bytes = 6.30 MB (6.00 MiB)** (previously 6,094,400). Direct dependencies **7** (unchanged; no new crate, no sandbox crate). Idle RSS after startup (Telegram long-poll): **14,784 KB = 14.4 MiB** (previously 14,288 KB).
+
+### Verification (live, Telegram, one instance)
+Time window: **2026-11-20 14:26:29 → 14:33:31 +0300**. Release binary started from this worktree (`.env` symlinked by the owner) and stopped with SIGTERM by Claude Code at the end. Startup log: `run_command_sandbox available=true`, no `run_command_program_disabled` lines.
+- `.env` one folder up:
+  - On the first try the model refused by itself and made no tool call, so the hardening path was not exercised.
+  - On the second try the owner asked explicitly for `cat ../.env`. The log shows `run_command_rejected program=cat reason=Parent-directory (..) paths are refused: ../.env`. Nothing was spawned. ✓
+- git and cargo on `workspace/trial_project`:
+  - `cargo test` → `code=0`.
+  - `git status` before any `git init` → `code=128` ("not a git repository"). This is correct: git no longer finds the parent Iskra repository.
+  - After `git init` (dir=trial_project), `git status` → `code=0`. ✓ W-1 is gone.
+  - A model typo `dir="rial_project"` was refused as a non-existing folder.
+  - Note: this left a `workspace/trial_project/.git` in the worktree's workspace copy, which is gitignored.
+- `/stop` during a slow build (fixture `workspace/slow_build`, whose build.rs sleeps 90 s):
+  - First attempt: `/stop` arrived after the 92 s build had already finished (`telegram_stop idle`), so it is not counted.
+  - Second attempt, after `touch build.rs`: `run_command program=cargo dir="slow_build" args=["build"]` at `ts=1795174381`, then `telegram_stop aborted` at `ts=…382`.
+  - `ps` afterwards: no `cargo`/`rustc`/`build-script` process remained, and there was no `run_command_exit` line (the task was dropped and the group killed). ✓
+  - Caveat: the abort came about 1 s after the start, so the build may still have been compiling build.rs (rustc) rather than running it. The build-script stage itself is covered by `abort_kills_whole_process_group`.
