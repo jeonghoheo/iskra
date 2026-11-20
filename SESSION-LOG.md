@@ -570,3 +570,9 @@ v1.1 is closed.
 - Without an OS sandbox (non-macOS), cargo is disabled; ls/cat/git run with argument policy and isolation only.
 - Inside the sandbox, system locations outside the denied set (e.g. `/etc`, `/Library`) remain readable.
 - Options refused fail-closed pending an owner decision are listed in the v1.1-A entry.
+
+## v1 real-use gate — closed early (2026-11-20)
+
+- Owner decision on 2026-11-20: the gate ends today instead of 2026-11-22. Verdict: **v1 passes the gate**; v2 implementation may start.
+- Discomforts found during the gate and where they went: model did not know its own usage / commands were invisible → Block 6.2; post-it board → Block 6.3, duplicated board messages → 6.3.1; shell sandbox bypass → v1.1-A; memory visible only after restart → v1.1-B; no acknowledgement during long turns → Block 6 (typing signal); stickers and reactions not understood → Block 6.1; strings not in the user's language → Blocks 6.5–6.6; no conversation context between messages → v2 `session/v1` (design §2.9, open); unclear data location → design §0.6 (open).
+- Long-horizon items (memory growth, resuming after days off, cost accumulation) stay under observation.
