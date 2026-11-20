@@ -15,11 +15,17 @@ pub struct LoadedMemory {
     pub warnings: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MemoryStatus {
+    pub truncated: bool,
+    pub warnings: usize,
+}
+
 pub fn load() -> LoadedMemory {
     load_from(Path::new(MEMORY_DIR))
 }
 
-fn load_from(dir: &Path) -> LoadedMemory {
+pub(crate) fn load_from(dir: &Path) -> LoadedMemory {
     let mut warnings = Vec::new();
 
     if let Err(e) = fs::create_dir_all(dir) {
@@ -118,7 +124,7 @@ pub fn save(text: &str) -> Result<String, String> {
     save_to(Path::new(MEMORY_DIR), text)
 }
 
-fn save_to(dir: &Path, text: &str) -> Result<String, String> {
+pub(crate) fn save_to(dir: &Path, text: &str) -> Result<String, String> {
     let text = text.trim();
     if text.is_empty() {
         return Err("Nothing to save".to_string());
@@ -159,13 +165,20 @@ fn save_to(dir: &Path, text: &str) -> Result<String, String> {
 
     atomic_write(&path, content.as_bytes())?;
 
-    if redactions == 0 {
-        Ok(format!("Saved to {MEMORY_FILE}."))
-    } else {
-        Ok(format!(
-            "Saved to {MEMORY_FILE}. Redacted {redactions} credential(s) as «redacted …»."
-        ))
+    let (_, truncated) = apply_budget(&content);
+    let mut message = format!("Saved to {MEMORY_FILE}.");
+    if redactions > 0 {
+        message.push_str(&format!(
+            " Redacted {redactions} credential(s) as «redacted …»."
+        ));
     }
+    if truncated {
+        message.push_str(&format!(
+            " The new entry is beyond the load budget ({MAX_MEMORY_LINES} lines or {} KB) and will not be visible until older entries are archived.",
+            MAX_MEMORY_BYTES / 1024
+        ));
+    }
+    Ok(message)
 }
 
 pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
@@ -566,6 +579,24 @@ mod tests {
             let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
             assert_eq!(mode, 0o600);
         }
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn save_reports_when_entry_is_beyond_load_budget() {
+        let dir = temp_dir("budget-save");
+        let full = (0..MAX_MEMORY_LINES)
+            .map(|i| format!("line {i}\n"))
+            .collect::<String>();
+        fs::write(dir.join(MEMORY_FILE), full).unwrap();
+
+        let result = save_to(&dir, "new fact beyond the budget").unwrap();
+
+        assert!(result.contains("load budget"));
+        assert!(result.contains("will not be visible"));
+        let content = fs::read_to_string(dir.join(MEMORY_FILE)).unwrap();
+        assert!(content.contains("- new fact beyond the budget"));
 
         let _ = fs::remove_dir_all(&dir);
     }

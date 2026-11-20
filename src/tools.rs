@@ -578,7 +578,9 @@ mod tests {
             let args = serde_json::json!({"program": program, "args": ["../.env"]});
             let result = tools.execute("run_command", &args).await;
             assert!(
-                result.as_ref().is_err_and(|e| e.contains("temporarily disabled")),
+                result
+                    .as_ref()
+                    .is_err_and(|e| e.contains("temporarily disabled")),
                 "{program} must be refused while disabled: {result:?}"
             );
         }
