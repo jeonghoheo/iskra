@@ -3,7 +3,6 @@ use std::fs;
 use std::io::{self, Read};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Component, Path, PathBuf};
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -57,10 +56,6 @@ struct Advert {
     programs: Vec<Program>,
     sandboxed: bool,
 }
-
-/// What `Tools::schemas` advertises: only the programs actually available on
-/// this machine, decided once in `Tools::new`.
-static ADVERT: OnceLock<Advert> = OnceLock::new();
 
 fn schemas_for(programs: &[Program], sandboxed: bool) -> Value {
     let mut tools = vec![
@@ -214,31 +209,35 @@ fn run_command_schema(programs: &[Program], sandboxed: bool) -> Value {
 pub struct Tools {
     root: PathBuf,
     runtime: Runtime,
+    advert: Advert,
+    memory_dir: PathBuf,
     sticky_changed: AtomicBool,
 }
 
 impl Tools {
-    pub fn new() -> io::Result<Self> {
-        let root = PathBuf::from(WORKSPACE_DIR);
-        fs::create_dir_all(&root)?;
-        let root = fs::canonicalize(&root)?;
+    pub fn new_in(workspace: &Path, memory_dir: &Path) -> io::Result<Self> {
+        fs::create_dir_all(workspace)?;
+        let root = fs::canonicalize(workspace)?;
         let runtime = Runtime::detect(&root)?;
-        let _ = ADVERT.set(Advert {
+        Ok(Self::from_parts(root, runtime, memory_dir.to_path_buf()))
+    }
+
+    fn from_parts(root: PathBuf, runtime: Runtime, memory_dir: PathBuf) -> Self {
+        let advert = Advert {
             programs: runtime.available(),
             sandboxed: runtime.sandboxed(),
-        });
-        Ok(Self {
+        };
+        Self {
             root,
             runtime,
+            advert,
+            memory_dir,
             sticky_changed: AtomicBool::new(false),
-        })
+        }
     }
 
     pub fn schemas(&self) -> Value {
-        match ADVERT.get() {
-            Some(advert) => schemas_for(&advert.programs, advert.sandboxed),
-            None => schemas_for(&[], false),
-        }
+        schemas_for(&self.advert.programs, self.advert.sandboxed)
     }
 
     pub fn take_sticky_changed(&self) -> bool {
@@ -249,7 +248,7 @@ impl Tools {
         match name {
             "read_file" => self.read_file(args),
             "write_file" => self.write_file(args),
-            "memory_save" => crate::memory::save(arg_str(args, "text")?),
+            "memory_save" => crate::memory::save_to(&self.memory_dir, arg_str(args, "text")?),
             "run_command" => self.run_command(args).await,
             "sticky_note" => self.sticky_note(args),
             other => Err(format!("Unknown tool: {other}")),
@@ -260,17 +259,22 @@ impl Tools {
         let action = arg_str(args, "action")?;
         match action {
             "add" => {
-                let board = crate::stickies::add(arg_str(args, "text")?)?;
+                let board = crate::stickies::add_at(
+                    &self.memory_dir,
+                    arg_str(args, "text")?,
+                    crate::locale::latest(),
+                )?;
                 self.sticky_changed.store(true, Ordering::SeqCst);
                 Ok(board)
             }
-            "list" => crate::stickies::board(crate::locale::latest()),
+            "list" => crate::stickies::board_at(&self.memory_dir, crate::locale::latest()),
             "remove" => {
                 let number = args
                     .get("number")
                     .and_then(Value::as_u64)
                     .ok_or_else(|| "'number' argument must be an integer".to_string())?;
-                let board = crate::stickies::remove(number)?;
+                let board =
+                    crate::stickies::remove_at(&self.memory_dir, number, crate::locale::latest())?;
                 self.sticky_changed.store(true, Ordering::SeqCst);
                 Ok(board)
             }

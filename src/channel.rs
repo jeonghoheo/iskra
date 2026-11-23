@@ -1,4 +1,5 @@
 use crate::brain::{BalanceResponse, Brain};
+use crate::instance::InstancePaths;
 use crate::locale::{self, Key, Locale};
 use crate::logging;
 use crate::loop_;
@@ -67,6 +68,7 @@ struct ChannelState {
     tools: Tools,
     identity: prompt::Identity,
     session: Session,
+    paths: InstancePaths,
     allowed_user_id: u64,
     current_turn: Mutex<Option<JoinHandle<()>>>,
 }
@@ -76,6 +78,7 @@ pub async fn run(
     tools: Tools,
     identity: prompt::Identity,
     session: Session,
+    paths: InstancePaths,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = match TelegramConfig::from_env() {
         Ok(config) => config,
@@ -98,6 +101,7 @@ pub async fn run(
         tools,
         identity,
         session,
+        paths,
         allowed_user_id,
         current_turn: Mutex::new(None),
     });
@@ -170,10 +174,10 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
     if let Some(reply) = msg.reply_to_message() {
         if is_board_reply(reply) {
             if let Ok(number) = user_message.trim().parse::<u64>() {
-                match stickies::remove(number) {
+                match stickies::remove_at(&state.paths.memory, number, lang) {
                     Ok(_) => {
                         logging::append(&format!("telegram_sticky_remove number={number}"));
-                        let board = match stickies::board(lang) {
+                        let board = match stickies::board_at(&state.paths.memory, lang) {
                             Ok(board) => board,
                             Err(e) => {
                                 logging::append(&format!("sticky_board_error {e}"));
@@ -189,7 +193,15 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
                                 return Ok(());
                             }
                         };
-                        match sync_board(&bot, chat_id, &board, BoardMode::Update).await {
+                        match sync_board(
+                            &bot,
+                            chat_id,
+                            &board,
+                            BoardMode::Update,
+                            &state.paths.memory,
+                        )
+                        .await
+                        {
                             Ok(BoardOutcome::EmptyNoBoard) => {
                                 bot.send_message(chat_id, board).await?;
                             }
@@ -434,10 +446,10 @@ async fn handle_stickies_command(
     match parse_stickies_command(text) {
         StickiesCommand::Show => send_stickies(state, chat_id, lang).await,
         StickiesCommand::Remove(number) => {
-            match stickies::remove(number) {
+            match stickies::remove_at(&state.paths.memory, number, lang) {
                 Ok(_) => {
                     logging::append(&format!("telegram_sticky_remove number={number}"));
-                    let board = match stickies::board(lang) {
+                    let board = match stickies::board_at(&state.paths.memory, lang) {
                         Ok(board) => board,
                         Err(e) => {
                             logging::append(&format!("sticky_board_error {e}"));
@@ -455,7 +467,15 @@ async fn handle_stickies_command(
                             return Ok(());
                         }
                     };
-                    match sync_board(&state.bot, chat_id, &board, BoardMode::Update).await {
+                    match sync_board(
+                        &state.bot,
+                        chat_id,
+                        &board,
+                        BoardMode::Update,
+                        &state.paths.memory,
+                    )
+                    .await
+                    {
                         Ok(_) => {
                             state
                                 .bot
@@ -571,7 +591,7 @@ fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str, lang: Loca
         tokio::spawn(typing_loop(task_state.bot.clone(), chat_id, typing_rx));
 
         let (system_prompt, _) =
-            prompt::turn_prompt(&task_state.identity, Path::new(memory::MEMORY_DIR));
+            prompt::turn_prompt(&task_state.identity, &task_state.paths.memory);
         let reply = loop_::run_turn(
             &task_state.brain,
             &task_state.tools,
@@ -595,10 +615,16 @@ fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str, lang: Loca
         }
 
         if sticky_changed {
-            match stickies::board(lang) {
+            match stickies::board_at(&task_state.paths.memory, lang) {
                 Ok(board) => {
-                    if let Err(e) =
-                        sync_board(&task_state.bot, chat_id, &board, BoardMode::Update).await
+                    if let Err(e) = sync_board(
+                        &task_state.bot,
+                        chat_id,
+                        &board,
+                        BoardMode::Update,
+                        &task_state.paths.memory,
+                    )
+                    .await
                     {
                         logging::append(&format!("telegram_board_sync_error {e}"));
                     }
@@ -666,7 +692,7 @@ async fn send_status(state: &Arc<ChannelState>, chat_id: ChatId, lang: Locale) -
         Ok(balance) => balance_display(lang, &balance),
         Err(_) => locale::text(lang, Key::Unavailable).to_string(),
     };
-    let loaded = memory::load_from(Path::new(memory::MEMORY_DIR));
+    let loaded = memory::load_from(&state.paths.memory);
     let memory = locale::memory_status(lang, loaded.truncated, loaded.warnings.len());
     let usage = usage::today();
     let cost = match usage::estimate_cost(state.brain.model(), &usage) {
@@ -768,9 +794,17 @@ fn fallback_after_edit_failure(plan: BoardPlan) -> BoardPlan {
 }
 
 async fn send_stickies(state: &Arc<ChannelState>, chat_id: ChatId, lang: Locale) -> HandlerResult {
-    match stickies::board(lang) {
+    match stickies::board_at(&state.paths.memory, lang) {
         Ok(board) => {
-            if let Err(e) = sync_board(&state.bot, chat_id, &board, BoardMode::Show).await {
+            if let Err(e) = sync_board(
+                &state.bot,
+                chat_id,
+                &board,
+                BoardMode::Show,
+                &state.paths.memory,
+            )
+            .await
+            {
                 logging::append(&format!("telegram_board_sync_error {e}"));
                 state
                     .bot
@@ -798,8 +832,13 @@ async fn remove_old_board(bot: &Bot, chat_id: ChatId, message_id: MessageId) {
     }
 }
 
-async fn show_board(bot: &Bot, chat_id: ChatId, board: &str) -> Result<BoardOutcome, String> {
-    let state = match stickies::load_board_state() {
+async fn show_board(
+    bot: &Bot,
+    chat_id: ChatId,
+    board: &str,
+    memory_dir: &Path,
+) -> Result<BoardOutcome, String> {
+    let state = match stickies::load_board_state_at(memory_dir) {
         Ok(state) => state,
         Err(e) => {
             logging::append(&format!("sticky_board_state_error {e}"));
@@ -811,7 +850,7 @@ async fn show_board(bot: &Bot, chat_id: ChatId, board: &str) -> Result<BoardOutc
     if stickies::is_empty_board(board) {
         if let Some(state) = live {
             remove_old_board(bot, chat_id, MessageId(state.message_id)).await;
-            if let Err(e) = stickies::clear_board_state() {
+            if let Err(e) = stickies::clear_board_state_at(memory_dir) {
                 logging::append(&format!("sticky_board_state_clear_error {e}"));
             }
         }
@@ -836,7 +875,7 @@ async fn show_board(bot: &Bot, chat_id: ChatId, board: &str) -> Result<BoardOutc
             chat_id: chat_id.0,
             message_id: sent.id.0,
         };
-        if let Err(e) = stickies::save_board_state(&state) {
+        if let Err(e) = stickies::save_board_state_at(memory_dir, &state) {
             logging::append(&format!("sticky_board_state_save_error {e}"));
         }
         return Ok(BoardOutcome::Updated);
@@ -854,13 +893,14 @@ async fn sync_board(
     chat_id: ChatId,
     board: &str,
     mode: BoardMode,
+    memory_dir: &Path,
 ) -> Result<BoardOutcome, String> {
     if mode == BoardMode::Show {
-        return show_board(bot, chat_id, board).await;
+        return show_board(bot, chat_id, board, memory_dir).await;
     }
 
     let empty = stickies::is_empty_board(board);
-    let state = match stickies::load_board_state() {
+    let state = match stickies::load_board_state_at(memory_dir) {
         Ok(state) => state,
         Err(e) => {
             logging::append(&format!("sticky_board_state_error {e}"));
@@ -872,7 +912,7 @@ async fn sync_board(
     match plan {
         BoardPlan::Teardown(message_id) => {
             remove_old_board(bot, chat_id, message_id).await;
-            if let Err(e) = stickies::clear_board_state() {
+            if let Err(e) = stickies::clear_board_state_at(memory_dir) {
                 logging::append(&format!("sticky_board_state_clear_error {e}"));
             }
             logging::append("telegram_board_torn_down");
@@ -914,7 +954,7 @@ async fn sync_board(
         chat_id: chat_id.0,
         message_id: sent.id.0,
     };
-    if let Err(e) = stickies::save_board_state(&state) {
+    if let Err(e) = stickies::save_board_state_at(memory_dir, &state) {
         logging::append(&format!("sticky_board_state_save_error {e}"));
     }
     if refreshed_fallback {
@@ -1097,7 +1137,7 @@ mod tests {
                 base_url: "http://127.0.0.1:9/chat/completions".to_string(),
                 model: "test-model".to_string(),
             }),
-            tools: Tools::new().unwrap(),
+            tools: Tools::new_in(&dir.join("workspace"), &dir.join("memory")).unwrap(),
             identity: prompt::Identity {
                 soul: prompt::DEFAULT_SOUL.to_string(),
                 user: prompt::DEFAULT_USER.to_string(),
@@ -1106,6 +1146,11 @@ mod tests {
                 user_source: prompt::IdentitySource::Default,
             },
             session: session.clone(),
+            paths: InstancePaths {
+                workspace: dir.join("workspace"),
+                memory: dir.join("memory"),
+                session: session_path.clone(),
+            },
             allowed_user_id: 1,
             current_turn: Mutex::new(Some(tokio::spawn(async {
                 std::future::pending::<()>().await;

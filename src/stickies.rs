@@ -25,16 +25,16 @@ pub struct BoardState {
     pub message_id: i32,
 }
 
-pub fn add(text: &str) -> Result<String, String> {
-    add_to(Path::new(memory::MEMORY_DIR), text, locale::latest())
+pub fn add_at(dir: &Path, text: &str, lang: Locale) -> Result<String, String> {
+    add_to(dir, text, lang)
 }
 
-pub fn board(lang: Locale) -> Result<String, String> {
-    board_from(Path::new(memory::MEMORY_DIR), lang)
+pub fn board_at(dir: &Path, lang: Locale) -> Result<String, String> {
+    board_from(dir, lang)
 }
 
-pub fn remove(number: u64) -> Result<String, String> {
-    remove_from(Path::new(memory::MEMORY_DIR), number, locale::latest())
+pub fn remove_at(dir: &Path, number: u64, lang: Locale) -> Result<String, String> {
+    remove_from(dir, number, lang)
 }
 
 pub fn is_board_text(text: &str) -> bool {
@@ -57,8 +57,8 @@ fn empty_board_text(lang: Locale) -> String {
     locale::text(lang, Key::BoardEmpty).to_string()
 }
 
-pub fn load_board_state() -> Result<Option<BoardState>, String> {
-    load_board_state_from(Path::new(memory::MEMORY_DIR))
+pub fn load_board_state_at(dir: &Path) -> Result<Option<BoardState>, String> {
+    load_board_state_from(dir)
 }
 
 fn load_board_state_from(dir: &Path) -> Result<Option<BoardState>, String> {
@@ -75,12 +75,12 @@ fn load_board_state_from(dir: &Path) -> Result<Option<BoardState>, String> {
     }
 }
 
-pub fn save_board_state(state: &BoardState) -> Result<(), String> {
-    save_board_state_to(Path::new(memory::MEMORY_DIR), Some(state))
+pub fn save_board_state_at(dir: &Path, state: &BoardState) -> Result<(), String> {
+    save_board_state_to(dir, Some(state))
 }
 
-pub fn clear_board_state() -> Result<(), String> {
-    save_board_state_to(Path::new(memory::MEMORY_DIR), None)
+pub fn clear_board_state_at(dir: &Path) -> Result<(), String> {
+    save_board_state_to(dir, None)
 }
 
 fn save_board_state_to(dir: &Path, state: Option<&BoardState>) -> Result<(), String> {

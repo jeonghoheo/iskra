@@ -569,3 +569,56 @@ Live: do not perform Telegram or real-provider checks inside this goal.
 - Budgets: stripped binary **6,377,872 bytes = 6.08 MiB**; direct dependencies **7**; CLI idle RSS **4,032 KB = 3.94 MiB** (dummy config, isolated temporary directory). All hard limits pass.
 - Unverified: owner-run Telegram/provider behavior and multi-agent isolation (outside this goal). No commit or push was performed.
 - Next: Stage 1 Goal 2 — instance-owned Tools, Memory, and Session boundaries.
+
+---
+
+## Stage 1 Goal 2 — Instance-owned Tools, Memory, and Session boundaries
+
+Status: **completed 2026-11-23; automated verification passed; changes not committed.** This is the second of the three machine-verifiable goals in `docs/WORKFLOW.md` §9. Design source: `docs/ARCHITECTURE.md` §4 (current coupling), §5 (Agent, Workspace), §6 (RunContext), §9 (local data layout), §12 Stage 1, and §13.
+
+### Task card
+
+- **Outcome**: The composition root creates one runtime instance whose `Tools`, memory, sticky board, and `Session` share explicit paths. Tools/memory/sticky/Session components no longer consult process-global workspace or storage constants for authority. The compatibility `main` instance keeps the existing `workspace/`, `memory/MEMORY.md`, `memory/session.json`, and `memory/stickies.md` layout.
+- **Spec**: `docs/ARCHITECTURE.md` §4 (listed coupling), §5 Workspace, §9 local data layout, §13 verification; `docs/WORKFLOW.md` §9 Goal 2.
+- **Files**: allowed `src/tools.rs`, `src/tools/*.rs` only for capability advertisement, `src/memory.rs`, `src/session.rs`, `src/stickies.rs`, `src/run_context.rs`, `src/loop_.rs`, `src/main.rs`, `src/channel.rs` (wiring only), and one new `src/instance.rs` if the paths need a named value. Forbidden: `Cargo.toml`, new dependencies, registry files (`iskra.json`), on-disk schema changes, `docs/`, `memory/`, `workspace/`, Telegram behavior changes, Telegram `JoinHandle` moves, and multi-agent routing.
+- **Proof**: `cargo test` exits 0 with 0 failed; focused tests prove (a) two `Tools` instances with different workspace/memory roots do not share files or capability advertisements, (b) two `Session` instances with different paths do not share records, (c) compatibility constructors still resolve to `workspace/` and `memory/session.json`, and (d) existing tool-sandbox, memory, session, and `tests/session_cli.rs` checks pass unchanged. `cargo build --release` has zero Iskra warnings; changed files pass `rustfmt --check`.
+- **Current**: HEAD `c67d824`; `cargo test` 117 passed, 0 failed (115 unit + 2 real CLI process tests); 7 direct dependencies; stripped binary 6.08 MiB; CLI idle RSS 3.94 MiB.
+- **Stop**: do not add the Agent/Engine registry, change the `session/v1` schema or its JSON fields, move the Telegram `JoinHandle`, add multi-agent routing or dependencies, or change channel-visible behavior. If a path migration or on-disk schema change becomes necessary, record it and stop.
+- **Live**: owner-run Telegram and real-provider checks stay outside this goal; they run once in normal mode after Goals 1–3.
+
+### Implementation notes at `c67d824`
+
+- `src/tools.rs` keeps `ADVERT: OnceLock<Advert>` and `Tools::schemas()` reads it. The advertisement and schema value should become fields of each `Tools` instance, computed at construction; `Tools::new()` remains the compatibility constructor for `workspace/`.
+- `Tools` uses `WORKSPACE_DIR`, calls `memory::save` for `memory_save`, and does not yet carry a sticky path. `src/stickies.rs` public functions bind `memory::MEMORY_DIR`.
+- `src/memory.rs` already has `load_from(&Path)` / `save_to(&Path, ...)`; production wrappers `load()` / `save()` bind `MEMORY_DIR`.
+- `src/session.rs` already owns its `path` per instance through `Session::load(path)`; `load_default()` binds `SESSION_PATH`.
+- `src/main.rs` constructs `Tools`, `Brain`, and `Session` once. `src/channel.rs` carries them in `ChannelState` and calls `stickies::*` directly.
+- Use one explicit paths value (for example `src/instance.rs` with `workspace`, `memory`, `session`, `stickies`) or explicit constructor arguments. Either is acceptable if the authority path is passed in, not discovered globally.
+- `RunContext` may stay unchanged when `Tools` already owns its paths; extend it only if a component would otherwise reach a global, and do not add unused fields.
+
+### Goal-mode contract
+
+```text
+Implement Stage 1 Goal 2 from docs/ARCHITECTURE.md §4/§5/§9 and docs/WORKFLOW.md §9.
+Done when:
+- Tools, memory, sticky board, and Session storage paths are passed explicitly from the composition root; those components no longer read process-global workspace or storage paths.
+- The process-wide capability advertisement is instance-owned, so two Tools instances can advertise different capabilities.
+- The compatibility main instance still uses workspace/, memory/MEMORY.md, memory/session.json, and memory/stickies.md with unchanged formats.
+- cargo test exits 0 with 0 failed (baseline 117 passed; new isolation tests included).
+- cargo build --release has zero Iskra warnings and changed files pass rustfmt --check.
+Scope: internal ownership/path refactor only. Do not add registry files, change the session/v1 schema, move the Telegram JoinHandle, enable multi-agent routing, add dependencies, or change CLI/Telegram behavior.
+Loop: run focused tests after each change; run the full suite, rustfmt check, release build, and budget measurement once at the end.
+Stop: if a path migration or on-disk schema change becomes necessary, or after two failed approaches, record the actual blocker and stop.
+Live: do not perform Telegram or real-provider checks inside this goal.
+```
+
+### Result (2026-11-23)
+
+- Changed: new `src/instance.rs`; `src/tools.rs`, `src/tools/tests.rs`, `src/memory.rs`, `src/stickies.rs`, `src/session.rs`, `src/run_context.rs`, `src/main.rs`, `src/channel.rs`.
+- `cargo test`: **122 passed, 0 failed** (120 unit + 2 real CLI process tests; +5 new isolation/compatibility tests over the 117 baseline).
+- `cargo build --release`: passed with zero Iskra warnings; only the existing transitive `proc-macro-error2 v2.0.1` future-incompatibility note remains.
+- `rustfmt --check` (edition 2024): `instance.rs`, `main.rs`, `session.rs`, `memory.rs`, `stickies.rs`, `brain.rs`, `run_context.rs`, `channel.rs` clean. `src/tools.rs` and `src/tools/tests.rs` retain their pre-existing formatting debt outside the changed hunks; the new sections are clean.
+- `cargo clippy --all-targets`: the same 5 pre-existing warnings in `channel.rs`, `locale.rs`, and `memory.rs`; none in new code.
+- Budgets: stripped binary **6,394,376 bytes = 6.10 MiB**; direct dependencies **7**; CLI idle RSS **4,000 KB = 3.91 MiB** (dummy config, isolated temporary directory). All hard limits pass.
+- Unverified: owner-run Telegram/provider behavior, multi-agent isolation beyond instance paths, and queue behavior (Goal 3/Stage 2). No commit or push was performed.
+- Next: Stage 1 Goal 3 — Supervisor-owned channel execution.

@@ -21,10 +21,6 @@ pub struct MemoryStatus {
     pub warnings: usize,
 }
 
-pub fn load() -> LoadedMemory {
-    load_from(Path::new(MEMORY_DIR))
-}
-
 pub(crate) fn load_from(dir: &Path) -> LoadedMemory {
     let mut warnings = Vec::new();
 
@@ -118,10 +114,6 @@ fn apply_budget(content: &str) -> (String, bool) {
     }
 
     (out, false)
-}
-
-pub fn save(text: &str) -> Result<String, String> {
-    save_to(Path::new(MEMORY_DIR), text)
 }
 
 pub(crate) fn save_to(dir: &Path, text: &str) -> Result<String, String> {

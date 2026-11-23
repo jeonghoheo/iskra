@@ -814,3 +814,26 @@ Status: **completed; automated verification passed; not committed.**
 - `cargo clippy --all-targets`: 5 pre-existing warnings in `channel.rs`, `locale.rs`, and `memory.rs`; none in changed files.
 - Budgets: stripped binary **6,377,872 bytes = 6.08 MiB**; direct dependencies **7**; CLI idle RSS **4,032 KB = 3.94 MiB** in an isolated dummy-config directory. No real `.env`, personal memory, Telegram request, or provider call was used.
 - Not verified: owner-run Telegram/provider behavior, multi-agent isolation, and queue behavior (later goals). No commit or push was performed.
+
+## Stage 1 Goal 2 — Instance-owned Tools, Memory, and Session boundaries (2026-11-23)
+
+Status: **completed; automated verification passed; not committed.**
+
+### What changed
+
+- Added `src/instance.rs` with `InstancePaths` (`workspace`, `memory`, `session`). `InstancePaths::default()` keeps `workspace/`, `memory/`, and `memory/session.json`.
+- `Tools` now owns its capability advertisement (`advert`) and memory root (`memory_dir`). The process-wide `ADVERT: OnceLock` was removed. `Tools::new_in(workspace, memory)` builds an explicit instance; `Tools::schemas()` reads the instance advertisement.
+- `Tools::execute("memory_save", ...)` writes to the instance memory root through `memory::save_to`. The global `memory::load()`/`save()` wrappers were removed; `load_from`/`save_to` take an explicit path.
+- Stickies expose path-based `add_at`, `board_at`, `remove_at`, `load_board_state_at`, `save_board_state_at`, and `clear_board_state_at`. The global path wrappers were removed; `Tools` and the Telegram channel use the instance memory root.
+- `Session` keeps its per-instance path. `SESSION_FILE` names the file; `load_default()` was removed, and the composition root uses `Session::load(&paths.session)`.
+- `main.rs` creates one `InstancePaths` and passes the same roots to memory loading, `Tools`, `Session`, and the channel. `ChannelState` carries the paths and uses them for `/status`, prompt assembly, sticky commands, and board state.
+- No on-disk format or schema changed. No dependency was added.
+
+### Verification
+
+- `cargo test`: **122 passed, 0 failed** (120 unit + 2 real CLI process tests). New tests cover: two Tools instances with different capability advertisements, two Tools instances keeping memory/sticky files in their own roots, two Sessions with separate paths not sharing records, and the compatibility `InstancePaths::default()` layout.
+- `cargo build --release`: zero Iskra warnings; the existing `proc-macro-error2 v2.0.1` future-incompatibility note remains.
+- `rustfmt --check` (edition 2024): changed files clean except `src/tools.rs` and `src/tools/tests.rs`, which keep pre-existing formatting debt outside the changed hunks; the new sections are clean.
+- `cargo clippy --all-targets`: the same 5 pre-existing warnings in `channel.rs`, `locale.rs`, and `memory.rs`; none in new code.
+- Budgets: stripped binary **6,394,376 bytes = 6.10 MiB**; direct dependencies **7**; CLI idle RSS **4,000 KB = 3.91 MiB** in an isolated dummy-config directory. No real `.env`, personal memory, Telegram request, or provider call was used.
+- Not verified: owner-run Telegram/provider behavior, multi-agent isolation beyond paths, and queue behavior (Goal 3/Stage 2). No commit or push was performed.

@@ -13,11 +13,9 @@ fn temp_root(name: &str) -> PathBuf {
 
 fn tools_for(root: PathBuf) -> Tools {
     let runtime = Runtime::detect(&root).unwrap();
-    Tools {
-        root,
-        runtime,
-        sticky_changed: AtomicBool::new(false),
-    }
+    let memory = root.join("memory");
+    fs::create_dir_all(&memory).unwrap();
+    Tools::from_parts(root, runtime, memory)
 }
 
 fn strings(args: &[&str]) -> Vec<String> {
@@ -818,11 +816,7 @@ async fn cargo_disabled_without_os_sandbox() {
     assert!(!description.contains("cargo"), "{description}");
     assert!(!description.contains("OS sandbox"), "{description}");
 
-    let tools = Tools {
-        root: root.clone(),
-        runtime,
-        sticky_changed: AtomicBool::new(false),
-    };
+    let tools = Tools::from_parts(root.clone(), runtime, root.join("memory"));
     let result = run(&tools, "cargo", &["build"]).await;
     assert!(
         result.as_ref().is_err_and(|e| e.contains("not available")),
@@ -830,6 +824,82 @@ async fn cargo_disabled_without_os_sandbox() {
     );
 
     fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn tools_instances_own_their_capability_advertisement() {
+    let root_a = temp_root("instance-advert-a");
+    let root_b = temp_root("instance-advert-b");
+    let mut a = tools_for(root_a.clone());
+    let mut b = tools_for(root_b.clone());
+    a.advert = Advert {
+        programs: Program::ALL.to_vec(),
+        sandboxed: true,
+    };
+    b.advert = Advert {
+        programs: Vec::new(),
+        sandboxed: false,
+    };
+
+    let names = |tools: &Tools| -> Vec<String> {
+        tools
+            .schemas()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["function"]["name"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert!(names(&a).iter().any(|name| name == "run_command"));
+    assert!(!names(&b).iter().any(|name| name == "run_command"));
+    assert!(names(&a).iter().any(|name| name == "run_command"));
+
+    fs::remove_dir_all(&root_a).unwrap();
+    fs::remove_dir_all(&root_b).unwrap();
+}
+
+#[tokio::test]
+async fn tools_instances_keep_memory_and_stickies_in_their_own_roots() {
+    let root_a = temp_root("instance-memory-a");
+    let root_b = temp_root("instance-memory-b");
+    let memory_a = temp_root("instance-memory-data-a");
+    let memory_b = temp_root("instance-memory-data-b");
+    let a = Tools::from_parts(
+        root_a.clone(),
+        Runtime::detect(&root_a).unwrap(),
+        memory_a.clone(),
+    );
+    let b = Tools::from_parts(
+        root_b.clone(),
+        Runtime::detect(&root_b).unwrap(),
+        memory_b.clone(),
+    );
+
+    a.execute("memory_save", &serde_json::json!({"text": "fact-a"}))
+        .await
+        .unwrap();
+    b.execute("memory_save", &serde_json::json!({"text": "fact-b"}))
+        .await
+        .unwrap();
+
+    let text_a = fs::read_to_string(memory_a.join(crate::memory::MEMORY_FILE)).unwrap();
+    let text_b = fs::read_to_string(memory_b.join(crate::memory::MEMORY_FILE)).unwrap();
+    assert!(text_a.contains("fact-a") && !text_a.contains("fact-b"));
+    assert!(text_b.contains("fact-b") && !text_b.contains("fact-a"));
+
+    a.execute(
+        "sticky_note",
+        &serde_json::json!({"action": "add", "text": "note-a"}),
+    )
+    .await
+    .unwrap();
+    assert!(memory_a.join(crate::stickies::STICKIES_FILE).exists());
+    assert!(!memory_b.join(crate::stickies::STICKIES_FILE).exists());
+
+    fs::remove_dir_all(&root_a).unwrap();
+    fs::remove_dir_all(&root_b).unwrap();
+    fs::remove_dir_all(&memory_a).unwrap();
+    fs::remove_dir_all(&memory_b).unwrap();
 }
 
 #[test]
@@ -889,11 +959,7 @@ impl SandboxLab {
         let runtime = Runtime::detect_with(&root, Path::new(SANDBOX_EXEC), Some(&home)).unwrap();
         assert!(runtime.sandboxed(), "Seatbelt must be available on macOS");
         assert!(runtime.pinned(Program::Cargo).is_ok(), "cargo must be available");
-        let tools = Tools {
-            root,
-            runtime,
-            sticky_changed: AtomicBool::new(false),
-        };
+        let tools = Tools::from_parts(root, runtime, base.join("memory"));
         Self {
             base,
             home,

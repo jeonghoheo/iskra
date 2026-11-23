@@ -50,7 +50,8 @@ mod tests {
 
     #[test]
     fn carries_run_identity_and_the_executor_schemas() {
-        let tools = Tools::new().unwrap();
+        let paths = crate::instance::InstancePaths::default();
+        let tools = Tools::new_in(&paths.workspace, &paths.memory).unwrap();
         let context = RunContext::new(42, MAIN_AGENT_ID, &tools);
 
         assert_eq!(context.run_id(), 42);

@@ -8,7 +8,7 @@ use crate::brain::Message;
 use crate::logging;
 use crate::memory;
 
-pub const SESSION_PATH: &str = "memory/session.json";
+pub const SESSION_FILE: &str = "session.json";
 const VERSION: u32 = 1;
 const MAX_STORED_WORK: usize = 50;
 const MAX_CONTEXT_WORK: usize = 12;
@@ -118,10 +118,6 @@ impl Default for SessionData {
 }
 
 impl Session {
-    pub fn load_default() -> Self {
-        Self::load(Path::new(SESSION_PATH))
-    }
-
     pub fn load(path: &Path) -> Self {
         let mut data = read_data(path);
         if let Ok(state) = data.as_mut() {
@@ -542,6 +538,42 @@ mod tests {
     fn complete(session: &Session, input: &str, answer: &str) {
         let mut turn = session.begin(input).unwrap();
         turn.complete(answer).unwrap();
+    }
+
+    #[test]
+    fn separate_session_paths_do_not_share_records() {
+        let dir = temp_dir("isolation");
+        let path_a = dir.join("a/session.json");
+        let path_b = dir.join("b/session.json");
+        let a = Session::load(&path_a);
+        let b = Session::load(&path_b);
+
+        complete(&a, "only-a", "answer-a");
+        assert_eq!(a.status().unwrap().stored, 1);
+        assert_eq!(
+            b.status().unwrap(),
+            SessionStatus {
+                stored: 0,
+                context: 0,
+                unfinished: false,
+            }
+        );
+
+        complete(&b, "only-b", "answer-b");
+        let mut turn = Session::load(&path_a).begin("next").unwrap();
+        let history = std::mem::take(&mut turn.history);
+        assert!(
+            history
+                .iter()
+                .any(|message| message.content.as_deref() == Some("only-a"))
+        );
+        assert!(
+            !history
+                .iter()
+                .any(|message| message.content.as_deref() == Some("only-b"))
+        );
+
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

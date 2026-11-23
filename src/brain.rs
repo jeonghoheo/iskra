@@ -444,7 +444,8 @@ mod tests {
 
     #[test]
     fn chat_request_takes_tools_from_the_run_context() {
-        let tools = crate::tools::Tools::new().unwrap();
+        let paths = crate::instance::InstancePaths::default();
+        let tools = crate::tools::Tools::new_in(&paths.workspace, &paths.memory).unwrap();
         let context = RunContext::new(11, crate::run_context::MAIN_AGENT_ID, &tools);
         let messages = vec![Message::user("hi")];
 
