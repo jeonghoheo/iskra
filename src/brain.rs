@@ -127,6 +127,16 @@ impl Message {
         }
     }
 
+    pub fn assistant(content: &str) -> Self {
+        Self {
+            role: "assistant".to_string(),
+            content: Some(content.to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+            reasoning_content: None,
+        }
+    }
+
     pub fn tool(tool_call_id: &str, content: &str) -> Self {
         Self {
             role: "tool".to_string(),
@@ -455,8 +465,9 @@ mod tests {
 
         let system = Message::system("sys");
         let user = Message::user("hi");
+        let assistant = Message::assistant("hello");
         let tool = Message::tool("call_1", "out");
-        for message in [system, user, tool] {
+        for message in [system, user, assistant, tool] {
             assert!(message.reasoning_content.is_none());
             let body = serde_json::to_string(&message).unwrap();
             assert!(!body.contains("reasoning_content"));

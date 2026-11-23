@@ -78,6 +78,9 @@ define_keys!(
     HelpHeader,
     StatusModel,
     StatusMemory,
+    StatusSession,
+    SessionSummary,
+    SessionUnfinished,
     StatusTokens,
     StatusCost,
     StatusBalance,
@@ -101,6 +104,7 @@ define_keys!(
     ErrorRepeatedTool,
     ErrorMaxRoundtrips,
     ErrorEmpty,
+    ErrorSession,
     ErrorOther,
     ReasonNotFound,
     ReasonAccessRefused,
@@ -161,6 +165,17 @@ pub fn text(locale: Locale, key: Key) -> &'static str {
         ),
         Key::StatusModel => ("Model: {}", "모델: {}", "Модель: {}"),
         Key::StatusMemory => ("Memory: {}", "기억: {}", "Память: {}"),
+        Key::StatusSession => ("Workspace: {}", "작업 공간: {}", "Рабочее пространство: {}"),
+        Key::SessionSummary => (
+            "{} saved / {} in context",
+            "저장 {}개 / 맥락 {}개",
+            "сохранено: {} / в контексте: {}",
+        ),
+        Key::SessionUnfinished => (
+            " · unfinished work",
+            " · 미완료 작업 있음",
+            " · есть незавершённая работа",
+        ),
         Key::StatusTokens => ("Tokens today: {}", "오늘 토큰: {}", "Токены сегодня: {}"),
         Key::StatusCost => (
             "Spent today: {}",
@@ -247,6 +262,11 @@ pub fn text(locale: Locale, key: Key) -> &'static str {
             "I couldn't produce an answer. Please send it once more.",
             "답을 만들지 못했어요. 다시 한 번 보내 주세요.",
             "Не получилось сформулировать ответ. Отправьте, пожалуйста, ещё раз.",
+        ),
+        Key::ErrorSession => (
+            "I couldn't safely save the workspace, so I stopped. The previous saved data was left unchanged.",
+            "작업 공간을 안전하게 저장할 수 없어 멈췄어요. 기존 저장 내용은 바꾸지 않았어요.",
+            "Не удалось безопасно сохранить рабочее пространство, поэтому я остановилась. Прежние сохранённые данные не изменены.",
         ),
         Key::ErrorOther => (
             "Something went wrong and I stopped. Please try again — /status shows what's going on.",
@@ -348,6 +368,33 @@ pub fn with<T: std::fmt::Display>(locale: Locale, key: Key, value: T) -> String 
     text(locale, key).replace("{}", &value.to_string())
 }
 
+fn with_pair<T: std::fmt::Display, U: std::fmt::Display>(
+    locale: Locale,
+    key: Key,
+    first: T,
+    second: U,
+) -> String {
+    text(locale, key)
+        .replacen("{}", &first.to_string(), 1)
+        .replacen("{}", &second.to_string(), 1)
+}
+
+pub fn session_status(
+    locale: Locale,
+    status: Result<crate::session::SessionStatus, String>,
+) -> String {
+    match status {
+        Ok(status) => {
+            let mut summary = with_pair(locale, Key::SessionSummary, status.stored, status.context);
+            if status.unfinished {
+                summary.push_str(text(locale, Key::SessionUnfinished));
+            }
+            summary
+        }
+        Err(_) => text(locale, Key::Unavailable).to_string(),
+    }
+}
+
 pub fn memory_status(locale: Locale, truncated: bool, warnings: usize) -> String {
     let base = text(
         locale,
@@ -440,5 +487,20 @@ mod tests {
             "partially loaded, 2 warning(s)"
         );
         assert_eq!(memory_status(Locale::Ko, false, 0), "정상");
+        assert_eq!(
+            session_status(
+                Locale::En,
+                Ok(crate::session::SessionStatus {
+                    stored: 3,
+                    context: 2,
+                    unfinished: true,
+                })
+            ),
+            "3 saved / 2 in context · unfinished work"
+        );
+        assert_eq!(
+            session_status(Locale::Ko, Err("unavailable".to_string())),
+            "확인 불가"
+        );
     }
 }

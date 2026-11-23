@@ -4,6 +4,7 @@ use crate::logging;
 use crate::loop_;
 use crate::memory;
 use crate::prompt;
+use crate::session::Session;
 use crate::stickies;
 use crate::tools::Tools;
 use crate::usage;
@@ -65,6 +66,7 @@ struct ChannelState {
     brain: Brain,
     tools: Tools,
     identity: prompt::Identity,
+    session: Session,
     allowed_user_id: u64,
     current_turn: Mutex<Option<JoinHandle<()>>>,
 }
@@ -73,6 +75,7 @@ pub async fn run(
     brain: Brain,
     tools: Tools,
     identity: prompt::Identity,
+    session: Session,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = match TelegramConfig::from_env() {
         Ok(config) => config,
@@ -94,6 +97,7 @@ pub async fn run(
         brain,
         tools,
         identity,
+        session,
         allowed_user_id,
         current_turn: Mutex::new(None),
     });
@@ -516,6 +520,7 @@ fn turn_error_text(lang: Locale, error: &loop_::TurnError) -> String {
             locale::text(lang, Key::ErrorMaxRoundtrips).to_string()
         }
         loop_::TurnError::EmptyResponse(_) => locale::text(lang, Key::ErrorEmpty).to_string(),
+        loop_::TurnError::Session(_) => locale::text(lang, Key::ErrorSession).to_string(),
         loop_::TurnError::Other(_) => locale::text(lang, Key::ErrorOther).to_string(),
     }
 }
@@ -567,8 +572,14 @@ fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str, lang: Loca
 
         let (system_prompt, _) =
             prompt::turn_prompt(&task_state.identity, Path::new(memory::MEMORY_DIR));
-        let reply =
-            loop_::run_turn(&task_state.brain, &task_state.tools, &system_prompt, &input).await;
+        let reply = loop_::run_turn(
+            &task_state.brain,
+            &task_state.tools,
+            &task_state.session,
+            &system_prompt,
+            &input,
+        )
+        .await;
         drop(typing_guard);
         let sticky_changed = task_state.tools.take_sticky_changed();
 
@@ -630,9 +641,16 @@ async fn stop_turn(state: &Arc<ChannelState>, chat_id: ChatId, lang: Locale) -> 
     let handle = { state.current_turn.lock().unwrap().take() };
     let message = match handle {
         Some(handle) if !handle.is_finished() => {
+            let saved = state.session.stop_current();
             handle.abort();
             logging::append("telegram_stop aborted");
-            locale::text(lang, Key::StopStopped)
+            match saved {
+                Ok(_) => locale::text(lang, Key::StopStopped),
+                Err(error) => {
+                    logging::append(&format!("session_error {error}"));
+                    locale::text(lang, Key::ErrorSession)
+                }
+            }
         }
         _ => {
             logging::append("telegram_stop idle");
@@ -655,10 +673,12 @@ async fn send_status(state: &Arc<ChannelState>, chat_id: ChatId, lang: Locale) -
         Some(cost) => locale::with(lang, Key::CostEstimate, format!("${cost:.6}")),
         None => locale::text(lang, Key::CostUnknown).to_string(),
     };
+    let session = locale::session_status(lang, state.session.status());
     let text = status_text(
         lang,
         state.brain.model(),
         &memory,
+        &session,
         usage.total,
         &cost,
         &balance,
@@ -671,16 +691,18 @@ fn status_text(
     lang: Locale,
     model: &str,
     memory: &str,
+    session: &str,
     tokens: u64,
     cost: &str,
     balance: &str,
 ) -> String {
     format!(
-        "{}\n{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}",
         locale::with(lang, Key::StatusCost, cost),
         locale::with(lang, Key::StatusBalance, balance),
         locale::with(lang, Key::StatusModel, model),
         locale::with(lang, Key::StatusMemory, memory),
+        locale::with(lang, Key::StatusSession, session),
         locale::with(lang, Key::StatusTokens, tokens)
     )
 }
@@ -960,6 +982,154 @@ fn split_message(text: &str) -> Vec<&str> {
 mod tests {
     use super::*;
 
+    struct MockBotApi {
+        address: String,
+        messages: Arc<Mutex<Vec<serde_json::Value>>>,
+        stop: std::sync::mpsc::Sender<()>,
+        handle: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl MockBotApi {
+        fn start() -> Self {
+            use std::io::{BufRead, BufReader, Read, Write};
+            use std::net::TcpListener;
+
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let address = listener.local_addr().unwrap().to_string();
+            let messages = Arc::new(Mutex::new(Vec::new()));
+            let server_messages = Arc::clone(&messages);
+            let (stop, stopped) = std::sync::mpsc::channel();
+            let handle = std::thread::spawn(move || {
+                while stopped.try_recv().is_err() {
+                    match listener.accept() {
+                        Ok((stream, _)) => {
+                            stream.set_nonblocking(false).unwrap();
+                            let mut writer = stream.try_clone().unwrap();
+                            let mut reader = BufReader::new(stream);
+                            let mut request_line = String::new();
+                            reader.read_line(&mut request_line).unwrap();
+                            let mut content_length = 0usize;
+                            loop {
+                                let mut header = String::new();
+                                reader.read_line(&mut header).unwrap();
+                                if header == "\r\n" || header.is_empty() {
+                                    break;
+                                }
+                                if let Some((name, value)) = header.split_once(':')
+                                    && name.eq_ignore_ascii_case("content-length")
+                                {
+                                    content_length = value.trim().parse().unwrap();
+                                }
+                            }
+                            let mut body = vec![0; content_length];
+                            reader.read_exact(&mut body).unwrap();
+                            let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                            server_messages.lock().unwrap().push(body);
+                            let response = serde_json::json!({
+                                "ok": true,
+                                "result": {
+                                    "message_id": 1,
+                                    "date": 0,
+                                    "chat": {"id": 42, "type": "private"},
+                                    "text": "ok"
+                                }
+                            });
+                            let response = serde_json::to_vec(&response).unwrap();
+                            write!(
+                                writer,
+                                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                                response.len()
+                            )
+                            .unwrap();
+                            writer.write_all(&response).unwrap();
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
+                        Err(error) => panic!("mock Bot API accept failed: {error}"),
+                    }
+                }
+            });
+            Self {
+                address,
+                messages,
+                stop,
+                handle: Some(handle),
+            }
+        }
+
+        fn url(&self) -> reqwest::Url {
+            reqwest::Url::parse(&format!("http://{}", self.address)).unwrap()
+        }
+    }
+
+    impl Drop for MockBotApi {
+        fn drop(&mut self) {
+            let _ = self.stop.send(());
+            let _ = std::net::TcpStream::connect(&self.address);
+            if let Some(handle) = self.handle.take() {
+                handle.join().unwrap();
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn telegram_stop_persists_stopped_before_task_drop() {
+        let dir = std::env::temp_dir().join(format!(
+            "iskra-channel-stop-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let session_path = dir.join("session.json");
+        let session = Session::load(&session_path);
+        let work = session.begin("stop this work").unwrap();
+        let bot_api = MockBotApi::start();
+        let state = Arc::new(ChannelState {
+            bot: Bot::new("test-token").set_api_url(bot_api.url()),
+            brain: Brain::new(crate::brain::Config {
+                api_key: "dummy".to_string(),
+                base_url: "http://127.0.0.1:9/chat/completions".to_string(),
+                model: "test-model".to_string(),
+            }),
+            tools: Tools::new().unwrap(),
+            identity: prompt::Identity {
+                soul: prompt::DEFAULT_SOUL.to_string(),
+                user: prompt::DEFAULT_USER.to_string(),
+                warnings: Vec::new(),
+                soul_source: prompt::IdentitySource::Default,
+                user_source: prompt::IdentitySource::Default,
+            },
+            session: session.clone(),
+            allowed_user_id: 1,
+            current_turn: Mutex::new(Some(tokio::spawn(async {
+                std::future::pending::<()>().await;
+            }))),
+        });
+
+        stop_turn(&state, ChatId(42), Locale::Ko).await.unwrap();
+
+        let messages = bot_api.messages.lock().unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["chat_id"], 42);
+        assert_eq!(
+            messages[0]["text"].as_str(),
+            Some(locale::text(Locale::Ko, Key::StopStopped))
+        );
+        drop(messages);
+        drop(work);
+        let stored: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&session_path).unwrap()).unwrap();
+        assert_eq!(stored["work"][0]["status"], "stopped");
+        assert!(Session::load(&session_path).status().unwrap().unfinished);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[test]
     fn splits_long_messages_into_bounded_chunks() {
         let text = "a".repeat(MAX_MESSAGE_CHARS * 2 + 5);
@@ -1036,13 +1206,28 @@ mod tests {
 
     #[test]
     fn status_lines_follow_the_approved_order() {
-        let text = status_text(Locale::En, "model-x", "ok", 12345, "~$0.040000", "4.20 USD");
+        let text = status_text(
+            Locale::En,
+            "model-x",
+            "ok",
+            "2 saved / 2 in context",
+            12345,
+            "~$0.040000",
+            "4.20 USD",
+        );
         let cost = text.find("Spent today:").unwrap();
         let balance = text.find("Balance:").unwrap();
         let model = text.find("Model:").unwrap();
         let memory = text.find("Memory:").unwrap();
+        let session = text.find("Workspace:").unwrap();
         let tokens = text.find("Tokens today:").unwrap();
-        assert!(cost < balance && balance < model && model < memory && memory < tokens);
+        assert!(
+            cost < balance
+                && balance < model
+                && model < memory
+                && memory < session
+                && session < tokens
+        );
     }
 
     #[test]
@@ -1075,6 +1260,14 @@ mod tests {
             assert_eq!(
                 turn_error_text(lang, &loop_::TurnError::EmptyResponse("raw".into())),
                 locale::text(lang, Key::ErrorEmpty)
+            );
+            assert_eq!(
+                turn_error_text(lang, &loop_::TurnError::Session("raw path".into())),
+                locale::text(lang, Key::ErrorSession)
+            );
+            assert!(
+                !turn_error_text(lang, &loop_::TurnError::Session("raw path".into()))
+                    .contains("raw path")
             );
             assert_eq!(
                 turn_error_text(lang, &loop_::TurnError::Other("raw secret".into())),

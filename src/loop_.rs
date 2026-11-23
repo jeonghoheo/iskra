@@ -1,5 +1,6 @@
 use crate::brain::{Brain, ChatError, Message};
 use crate::logging;
+use crate::session::{FailureKind, Session};
 use crate::tools::Tools;
 
 pub const MAX_TOOL_ROUNDTRIPS: usize = 10;
@@ -15,6 +16,7 @@ pub enum TurnError {
     RepeatedToolError(String),
     MaxRoundtrips(String),
     EmptyResponse(String),
+    Session(String),
     Other(String),
 }
 
@@ -29,9 +31,26 @@ impl std::fmt::Display for TurnError {
             | Self::RepeatedToolError(detail)
             | Self::MaxRoundtrips(detail)
             | Self::EmptyResponse(detail)
+            | Self::Session(detail)
             | Self::Other(detail) => detail,
         };
         f.write_str(detail)
+    }
+}
+
+impl TurnError {
+    fn failure_kind(&self) -> FailureKind {
+        match self {
+            Self::Timeout(_) => FailureKind::Timeout,
+            Self::Connection(_) => FailureKind::Connection,
+            Self::Auth(_) => FailureKind::Auth,
+            Self::Payment(_) => FailureKind::Payment,
+            Self::Busy(_) => FailureKind::Busy,
+            Self::RepeatedToolError(_) => FailureKind::RepeatedToolError,
+            Self::MaxRoundtrips(_) => FailureKind::MaxRoundtrips,
+            Self::EmptyResponse(_) => FailureKind::EmptyResponse,
+            Self::Session(_) | Self::Other(_) => FailureKind::Other,
+        }
     }
 }
 
@@ -49,8 +68,43 @@ fn from_chat_error(error: ChatError) -> TurnError {
 pub async fn run_turn(
     brain: &Brain,
     tools: &Tools,
+    session: &Session,
     system_prompt: &str,
     user_input: &str,
+) -> Result<String, TurnError> {
+    let mut work = session.begin(user_input).map_err(|error| {
+        logging::append(&format!("session_error {error}"));
+        TurnError::Session(error)
+    })?;
+    let history = std::mem::take(&mut work.history);
+    let omitted = work.omitted;
+    let result = run_active_turn(brain, tools, system_prompt, user_input, history, omitted).await;
+
+    match result {
+        Ok(answer) => {
+            if let Err(error) = work.complete(&answer) {
+                logging::append(&format!("session_error {error}"));
+                return Err(TurnError::Session(error));
+            }
+            Ok(answer)
+        }
+        Err(error) => {
+            if let Err(session_error) = work.fail(error.failure_kind()) {
+                logging::append(&format!("session_error {session_error}"));
+                return Err(TurnError::Session(session_error));
+            }
+            Err(error)
+        }
+    }
+}
+
+async fn run_active_turn(
+    brain: &Brain,
+    tools: &Tools,
+    system_prompt: &str,
+    user_input: &str,
+    history: Vec<Message>,
+    omitted: usize,
 ) -> Result<String, TurnError> {
     logging::append("turn_start");
 
@@ -61,8 +115,14 @@ pub async fn run_turn(
     };
     let self_state =
         crate::usage::self_state_block(brain.model(), brain.base_url(), &daily_usage, &balance);
-    let system_prompt = format!("{system_prompt}\n\n{self_state}");
-    let mut messages = vec![Message::system(&system_prompt), Message::user(user_input)];
+    let system_prompt = format!(
+        "{system_prompt}\n\n{}\n\n{self_state}",
+        crate::session::prompt_note(omitted)
+    );
+    let mut messages = Vec::with_capacity(history.len() + 2);
+    messages.push(Message::system(&system_prompt));
+    messages.extend(history);
+    messages.push(Message::user(user_input));
     let mut roundtrips = 0usize;
     let mut last_error: Option<(String, String)> = None;
     let mut same_error_count = 0usize;

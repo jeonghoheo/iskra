@@ -677,3 +677,36 @@ Telegram showed raw developer-facing model/tool errors, and the user string tabl
 ### Notes
 - No temporary workaround was added. The v2.0 source field (`origin: owner | forwarded | quoted`) will replace this wrapper, as the directive says.
 - Commands inside forwarded text are deliberately not executed; the wrapped text goes to the model as material only.
+
+## v2.0 — `session/v1` resumable owner workspace (2026-11-23)
+
+Status: **owner-approved specification implemented; automated tests and real CLI process checks passed; owner-run Telegram and real-provider verification pending.** No commit, push or merge was performed.
+
+### Scope and state handling
+- The owner selected the workspace-first foundation for the longer-term multi-agent direction and approved the detailed `SESSION.md` specification before implementation.
+- Added `src/session.rs`, a core-owned, versioned `memory/session.json` store with atomic writes, Unix `0600` permissions, credential substitution, 50-record storage and 12-record / 24-KiB replay limits. Owner input and final answers are capped at 8,000 stored characters with an explicit truncation marker.
+- Work transitions are `idle → running → completed | failed | stopped`; startup and cancellation recovery produce `interrupted`. A running write precedes every model call. Corrupt data, unsupported versions and write failures refuse model/tool execution instead of silently resetting the workspace.
+- Completed owner/assistant messages survive restart. Unfinished requests retain a core-generated status note and a fixed prompt rule forbids automatic resumption. Tool calls, tool results and `reasoning_content` remain scoped to the original turn.
+- `src/loop_.rs` now wraps the existing turn engine with session begin/complete/fail handling. CLI and Telegram share the same `Session`; `/stop` persists `stopped` before aborting the task, and `/status` has a localized workspace line in en/ko/ru.
+- Added `tests/session_cli.rs`, which runs the compiled Iskra binary against a local OpenAI-compatible HTTP server with dummy credentials and isolated temporary data. No real credential or personal memory was read.
+
+### Verification (automated)
+1. `cargo test`: **114 passed, 0 failed, 0 ignored** — 112 unit tests (97 baseline + 15 new) and 2 end-to-end CLI process tests. Coverage includes all work states, busy rejection, startup recovery, budgets, redaction, forwarded material, invalid UTF-8/JSON/version fail-closed behavior, and initial/later write failures.
+2. Real CLI process restart: the second process's actual HTTP request contained `[system, previous user, previous assistant, current user]`; the test phrase survived restart, `MEMORY.md` stayed empty, and `session.json` mode was `0600`.
+3. Real process kill: after the first process persisted `running` and reached the local model endpoint, it was killed. The next process changed the record to `interrupted`; with `exit` as the only input, the model POST count stayed at **1** (no new call or retry).
+4. `rustfmt --edition 2024 --check --config skip_children=true` on changed Rust files: passed. Child recursion is disabled because the pre-existing `src/tools*` files are outside this patch and are not repository-wide rustfmt-clean.
+5. `cargo clippy --all-targets`: only the same **5 pre-existing warnings** in the sticky reply path, locale character comparison and memory code; no new session/test warnings. The transitive `proc-macro-error2 v2.0.1` future-incompatibility note is unchanged.
+6. `cargo build --release`: succeeded with zero Iskra warnings. Release binary **8,525,712 bytes**; stripped **6,361,264 bytes = 6.07 MiB** (previous 6,311,696 / 6.02 MiB). CLI idle RSS **4,064 KB = 3.97 MiB**. Direct dependencies **7**; no dependency added. All hard budgets pass.
+7. During test development, two incorrect assertions were corrected (substring matching and a byte-budget fixture), and the mock server was made explicitly blocking on accepted sockets after a parallel-test `WouldBlock` failure. Final repeated integration runs and the full suite passed. These were test fixes, not product workarounds.
+
+### Unverified / next action
+- Owner-run Telegram: recall a test phrase after restart without `memory_save`; `/stop` records unfinished work and does not retry on restart; `/status` shows accurate session counts in the applicable locale.
+- Real configured provider compatibility of replayed assistant history (including thinking-mode behavior) is not yet live-tested; the automated provider was a local OpenAI-compatible server.
+- No multi-agent roles, routing, parallel execution, external adapters, session reset UI, automatic summarization or cloud sync were added.
+- Unrelated `src/tools*` formatting produced recursively by rustfmt was reverted; those files are unchanged from HEAD. Pre-existing untracked `AGENTS.md` and `CLAUDE.md` were left untouched.
+
+### Follow-up — local Bot API `/stop` verification (2026-11-23)
+- Added `channel::tests::telegram_stop_persists_stopped_before_task_drop`, using teloxide's custom API URL with a local HTTP Bot API server and a dummy token. No external Telegram request was made and no personal memory or credential was read.
+- The test drives the real `stop_turn` handler, verifies the Korean stopped response in the actual outgoing HTTP JSON, drops the work guard, and confirms the persisted record remains `stopped` and reloads as unfinished.
+- Final `cargo test`: **115 passed, 0 failed, 0 ignored** (113 unit + 2 CLI process tests). Changed-file rustfmt passes; clippy still reports only the same 5 pre-existing warnings.
+- Production code and release-budget measurements are unchanged by this test-only addition. Owner-run external Telegram and real-provider checks remain pending.

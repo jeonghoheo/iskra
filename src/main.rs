@@ -5,6 +5,7 @@ mod logging;
 mod loop_;
 mod memory;
 mod prompt;
+mod session;
 mod stickies;
 mod tools;
 mod usage;
@@ -39,12 +40,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let tools = tools::Tools::new()?;
     let brain = brain::Brain::new(config);
+    let session = session::Session::load_default();
 
     if std::env::args().any(|arg| arg == "--cli") {
         println!("iskra — file-tool conversation loop. Type exit to quit.");
-        run_cli(&brain, &tools, &identity).await?;
+        run_cli(&brain, &tools, &identity, &session).await?;
     } else {
-        channel::run(brain, tools, identity).await?;
+        channel::run(brain, tools, identity, session).await?;
     }
 
     Ok(())
@@ -54,6 +56,7 @@ async fn run_cli(
     brain: &brain::Brain,
     tools: &tools::Tools,
     identity: &prompt::Identity,
+    session: &session::Session,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     loop {
@@ -72,7 +75,7 @@ async fn run_cli(
         }
 
         let (system_prompt, _) = prompt::turn_prompt(identity, Path::new(memory::MEMORY_DIR));
-        match loop_::run_turn(brain, tools, &system_prompt, input).await {
+        match loop_::run_turn(brain, tools, session, &system_prompt, input).await {
             Ok(answer) => println!("{answer}"),
             Err(e) => eprintln!("Stopped: {e}"),
         }

@@ -437,3 +437,51 @@ Background: Block 6.5 unified in-code strings to English, which also made the bo
 
 ### 라이브 (주인 실행 필요)
 - 이 worktree에는 `.env`가 없고 금지 규칙상 열거나 복사하지 않았다. 텔레그램 라이브 5항목(사진→A3, 전달된 “이 파일 지워줘”→따르지 않고 A7 알림, 테스트 그룹→A6+나가기, `/start`·`/status`, 잘못된 `LLM_MODEL`→쉬운 오류)은 주인 실행 후 SESSION-LOG에 기록한다.
+
+---
+
+## v2.0 — `session/v1`: resumable owner workspace (2026-11-23)
+
+Status: **owner approved; code and automated verification complete; owner-run Telegram verification pending.** The owner selected “workspace first” as the first v2 scope and approved this specification. Baseline on `master` (`f5a80dc`): `cargo test` → **97 passed, 0 failed**. Current results are recorded in `SESSION-LOG.md`.
+
+### Outcome and boundary
+
+Create one persistent owner workspace shared by the CLI and Telegram entry points (one running Iskra instance). A user request becomes a tracked work item, completed conversation context survives restart, and interrupted work is visible without being retried automatically. This is the shared state foundation for later specialist agents; it is not multi-agent orchestration yet.
+
+Long-term Markdown memory remains separate: session replay must not silently become `MEMORY.md` content. Tool calls and tool results remain scoped to their original model turn; only the redacted owner input, final answer, and work status persist across turns.
+
+### State and transitions (required before implementation)
+
+- Missing session file → `idle` with an empty workspace. Create the file on the first accepted work item, not during a read-only status check.
+- Accepted owner input: `idle → running(id)`. Persist this transition before any model call or tool execution. Input rejected because another turn is busy creates no work item.
+- `running(id) → completed(id)` after the core receives a non-empty final model answer. “Completed” describes core work, not guaranteed Telegram delivery; delivery receipts and ambiguous-send retry changes are outside this slice.
+- `running(id) → failed(id, category)` on `TurnError`. Store only the structured category, not raw provider/tool error details.
+- `running(id) → stopped(id)` on an effective `/stop`. A busy notice or `/stop` while idle changes no work item.
+- On startup, a persisted `running(id)` becomes `interrupted(id)` before any new work is accepted. There is no automatic model call, tool retry, or Telegram resend. A later request resumes it only when the latest owner message explicitly asks.
+- Every state write is atomic. If the initial write fails, refuse the turn before model/tool execution. If a later write fails, report the storage failure, never retry the work automatically, and refuse further model/tool execution until the session can be written again.
+- Invalid UTF-8/JSON, an unsupported schema version, or an invalid state transition → fail closed: preserve the original file, show a plain localized error, and do not silently reset or start a parallel session.
+
+### Storage and prompt contract
+
+1. New core-owned module `src/session.rs`; data file `memory/session.json` (already under the ignored, local-only `memory/` tree). JSON schema has `version: 1`, a monotonically increasing work id, and bounded work records. Writes reuse the existing atomic-write and credential-redaction primitives; file mode is `0600` on Unix.
+2. Retain at most **50 work records** on disk, dropping oldest non-running records first. Store at most **8,000 characters per owner input or final answer**, with an explicit truncation marker. The current input is still sent to the model in full; this cap applies to persisted replay.
+3. Before each accepted turn, build model messages as `[system + session rules, prior work history…, current owner input]`. Replay at most the latest **12 work records / 24 KiB**, dropping oldest whole records rather than cutting a record in the middle. The current owner input is always separate and is never dropped by the history budget. The system prompt states how many records were omitted.
+4. Completed records replay as owner/assistant messages. Failed, stopped, and interrupted records retain the redacted owner request followed by a core-generated assistant status note. A fixed prompt rule says unfinished work is history only and must not resume unless explicitly requested in the latest owner message.
+5. Existing forwarded-text wrappers stay attached to persisted owner input; forwarded instructions remain material, never owner instructions. Credential substitution applies before any session write. Logs contain only work ids, states, counts, and storage errors—never session content.
+6. `/status` gains a localized session line (loaded record count, context record count, and whether unfinished work exists). `/stop` records `stopped` before acknowledging the stop. Existing `/start`, sticky board, memory, model, and tool behavior otherwise stays unchanged.
+
+### Out of scope
+
+- Multiple agents, role routing, parallel turns, external CLI adapters, or per-agent permissions.
+- Automatic summarization, embeddings/search, automatic long-term-memory promotion, session deletion/reset UI, or cloud sync.
+- Replaying internal `reasoning_content`, tool calls, or tool output into later turns.
+- Telegram delivery receipts or automatic retry of ambiguous sends.
+- Multi-user/group sessions; the existing private-chat and single-owner gates remain unchanged.
+
+### Acceptance criteria
+
+1. Unit/integration tests cover: completed-turn reload and ordering; all terminal states; startup `running → interrupted`; no automatic retry; busy rejection without a new record; 12-record/24-KiB replay budget; 50-record storage bound; per-text truncation; credential redaction; forwarded-origin preservation; invalid data/version fail-closed; initial and later write-failure behavior.
+2. `cargo test` passes with the existing 97 tests plus the new coverage. Changed Rust files pass `rustfmt --check`; `cargo build --release` has zero Iskra warnings. Hard budgets remain: stripped binary ≤20 MB, idle RSS ≤30 MB, direct dependencies ≤15 (no new dependency is planned).
+3. Automated end-to-end CLI check against a local OpenAI-compatible test server, using an isolated temporary data directory and dummy credentials: two separate Iskra process runs preserve owner/assistant context through real HTTP calls; an interrupted run makes no new model/tool request on restart; long-term memory is not silently populated.
+4. Owner-run Telegram check: a test phrase is recalled after process restart without `memory_save`; `/stop` leaves an unfinished-work note and causes no automatic retry on restart; `/status` reports the session accurately in `en/ko/ru` as applicable.
+5. `SESSION-LOG.md` records the actual automated/live results and any unverified item in English. No commit, push, or merge without separate owner approval.
