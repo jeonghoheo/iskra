@@ -858,3 +858,27 @@ Status: **completed; automated verification passed; not committed.**
 - `cargo clippy --all-targets`: the same 5 pre-existing warnings in `channel.rs`, `locale.rs`, and `memory.rs`; none in new code.
 - Budgets: stripped binary **6,394,384 bytes = 6.10 MiB**; direct dependencies **7**; CLI idle RSS **4,032 KB = 3.94 MiB** in an isolated dummy-config directory. No real `.env`, personal memory, Telegram request, or provider call was used.
 - Not verified: owner-run Telegram `/stop`, busy notice, typing, final reply, and restart recovery. Durable queues and multi-agent execution remain later stages. No commit or push was performed.
+
+## Stage 1 owner-run Telegram verification — passed (2026-11-23)
+
+Status: **passed owner-run Telegram checks.** The automated Stage 1 goals were committed and pushed as `c67d824`, `b19c3e2`, and `2ce77dc`. The owner ran the checklist against one Telegram instance and DeepSeek V4.1 Flash (`deepseek-flash`); this entry records the log evidence the owner asked the agent to inspect.
+
+### Results from `logs/agent.log`
+
+1. **Restart recovery without automatic replay — passed.** `session_loaded records=11 unfinished=1` was followed by `telegram_start`. The first model call came only with a later owner turn (`turn_start run_id=12`), not at startup. After the second restart, `session_loaded records=15 unfinished=3` was likewise followed by no model call until `turn_start run_id=16`.
+2. **`/stop` persistence — passed.** Work `id=12` logged `session_work_end id=12 state=stopped` before `telegram_stop aborted`, followed by `telegram_typing_stop`. Work `id=14` repeated the same order.
+3. **Busy notice — passed.** While work `id=14` was active, a second message logged `telegram_busy`; no second `turn_start` appeared for that message.
+4. **Typing activity — passed.** Runs 12–16 logged `telegram_typing_start`, repeated `telegram_typing_sent`, and `telegram_typing_stop` after the answer or stop.
+5. **Tool round trip — passed.** Work `id=16` logged `model_call ... tools=[write_file]`, `tool_ok name=write_file`, `model_call ... tools=[read_file]`, `tool_ok name=read_file`, then `model_call ... tools=[none]`, `turn_end answer`, and `session_work_end id=16 state=Completed`. Work `id=15` also completed a multi-tool round trip.
+6. **Usage recording — passed.** Every `model_call` line carried non-zero `prompt`, `completion`, and `total` counts.
+7. **No protocol errors — passed.** `grep -c "model_error\|telegram_turn_error" logs/agent.log` returned **0**.
+
+### Session state after the checks
+
+`memory/session.json` reports `version: 1`, `next_id: 17`, and 16 records: 13 `completed` and 3 `stopped`. Session text content was not inspected.
+
+### Cleanup and limits
+
+- Removed the owner-created test files `workspace/live-check.txt`, `workspace/roundtrip.txt`, `workspace/cli-check.txt`, and `workspace/telegram-check.txt`.
+- Kept `workspace/hello.txt` (Block 3 demo) and `workspace/trial_project/` (the Block 6 regression fixture that `SESSION.md` says to keep).
+- Verification covered one owner, one instance, one provider/model, and the local Telegram channel. Multi-agent isolation, queues, ACP, and hosted behavior remain untested.

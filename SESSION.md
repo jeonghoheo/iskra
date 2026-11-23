@@ -523,7 +523,7 @@ The first multi-agent implementation slice is two built-in OpenAI-compatible Age
 
 ## Stage 1 Goal 1 — Engine and RunContext contracts
 
-Status: **completed 2026-11-23; automated verification passed; changes not committed.** This is the first of the three machine-verifiable goals in `docs/WORKFLOW.md` §9. Design source: `docs/ARCHITECTURE.md` §5 (Engine profile, Task and Run), §6 (Engine Adapter), §12 Stage 1, and §13.
+Status: **completed 2026-11-23; automated verification passed; committed as `c67d824`.** This is the first of the three machine-verifiable goals in `docs/WORKFLOW.md` §9. Design source: `docs/ARCHITECTURE.md` §5 (Engine profile, Task and Run), §6 (Engine Adapter), §12 Stage 1, and §13.
 
 ### Task card
 
@@ -567,14 +567,14 @@ Live: do not perform Telegram or real-provider checks inside this goal.
 - `rustfmt --check` (edition 2024): `brain.rs`, `loop_.rs`, `session.rs`, `run_context.rs`, `main.rs` clean. `src/tools.rs` keeps its pre-existing formatting debt outside this change (documented since v1.3); the added `Tools::schemas` method itself is clean.
 - `cargo clippy --all-targets`: 5 pre-existing warnings in `channel.rs`, `locale.rs`, `memory.rs`; none in changed files.
 - Budgets: stripped binary **6,377,872 bytes = 6.08 MiB**; direct dependencies **7**; CLI idle RSS **4,032 KB = 3.94 MiB** (dummy config, isolated temporary directory). All hard limits pass.
-- Unverified: owner-run Telegram/provider behavior and multi-agent isolation (outside this goal). No commit or push was performed.
+- Unverified in this goal: owner-run Telegram/provider behavior and multi-agent isolation; the Stage 1 owner-run Telegram check was performed later. Committed and pushed as `c67d824`.
 - Next: Stage 1 Goal 2 — instance-owned Tools, Memory, and Session boundaries.
 
 ---
 
 ## Stage 1 Goal 2 — Instance-owned Tools, Memory, and Session boundaries
 
-Status: **completed 2026-11-23; automated verification passed; changes not committed.** This is the second of the three machine-verifiable goals in `docs/WORKFLOW.md` §9. Design source: `docs/ARCHITECTURE.md` §4 (current coupling), §5 (Agent, Workspace), §6 (RunContext), §9 (local data layout), §12 Stage 1, and §13.
+Status: **completed 2026-11-23; automated verification passed; committed as `b19c3e2`.** This is the second of the three machine-verifiable goals in `docs/WORKFLOW.md` §9. Design source: `docs/ARCHITECTURE.md` §4 (current coupling), §5 (Agent, Workspace), §6 (RunContext), §9 (local data layout), §12 Stage 1, and §13.
 
 ### Task card
 
@@ -620,14 +620,14 @@ Live: do not perform Telegram or real-provider checks inside this goal.
 - `rustfmt --check` (edition 2024): `instance.rs`, `main.rs`, `session.rs`, `memory.rs`, `stickies.rs`, `brain.rs`, `run_context.rs`, `channel.rs` clean. `src/tools.rs` and `src/tools/tests.rs` retain their pre-existing formatting debt outside the changed hunks; the new sections are clean.
 - `cargo clippy --all-targets`: the same 5 pre-existing warnings in `channel.rs`, `locale.rs`, and `memory.rs`; none in new code.
 - Budgets: stripped binary **6,394,376 bytes = 6.10 MiB**; direct dependencies **7**; CLI idle RSS **4,000 KB = 3.91 MiB** (dummy config, isolated temporary directory). All hard limits pass.
-- Unverified: owner-run Telegram/provider behavior, multi-agent isolation beyond instance paths, and queue behavior (Goal 3/Stage 2). No commit or push was performed.
+- Unverified in this goal: owner-run Telegram/provider behavior, multi-agent isolation beyond instance paths, and queue behavior (Goal 3/Stage 2); the Stage 1 owner-run Telegram check was performed later. Committed and pushed as `b19c3e2`.
 - Next: Stage 1 Goal 3 — Supervisor-owned channel execution.
 
 ---
 
 ## Stage 1 Goal 3 — Supervisor-owned channel execution
 
-Status: **completed 2026-11-23; automated verification passed; changes not committed.** This is the third of the three machine-verifiable goals in `docs/WORKFLOW.md` §9. Design source: `docs/ARCHITECTURE.md` §6 (Run Supervisor), §7 (Run state machine), §12 Stage 1, and §13.
+Status: **completed 2026-11-23; automated verification and owner-run Telegram checks passed; committed as `2ce77dc`.** This is the third of the three machine-verifiable goals in `docs/WORKFLOW.md` §9. Design source: `docs/ARCHITECTURE.md` §6 (Run Supervisor), §7 (Run state machine), §12 Stage 1, and §13.
 
 ### Task card
 
@@ -673,5 +673,5 @@ Live: do not perform Telegram or real-provider checks inside this goal.
 - `rustfmt --check` (edition 2024): `supervisor.rs`, `channel.rs`, and `main.rs` clean.
 - `cargo clippy --all-targets`: the same 5 pre-existing warnings in `channel.rs`, `locale.rs`, and `memory.rs`; none in new code.
 - Budgets: stripped binary **6,394,384 bytes = 6.10 MiB**; direct dependencies **7**; CLI idle RSS **4,032 KB = 3.94 MiB** (dummy config, isolated temporary directory). All hard limits pass.
-- Unverified: owner-run Telegram `/stop`, busy notice, typing, final reply, and restart recovery; durable queues and multi-agent execution remain later stages. No commit or push was performed.
+- Owner-run Telegram verification passed on 2026-11-23 for `/stop`, busy notice, typing, final reply, tool round trip, usage, and restart recovery; log evidence is in `SESSION-LOG.md`. Durable queues and multi-agent execution remain later stages. Committed and pushed as `2ce77dc`.
 - Next: owner-run Stage 1 Telegram verification in normal mode, then a commit decision.
