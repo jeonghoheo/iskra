@@ -837,3 +837,24 @@ Status: **completed; automated verification passed; not committed.**
 - `cargo clippy --all-targets`: the same 5 pre-existing warnings in `channel.rs`, `locale.rs`, and `memory.rs`; none in new code.
 - Budgets: stripped binary **6,394,376 bytes = 6.10 MiB**; direct dependencies **7**; CLI idle RSS **4,000 KB = 3.91 MiB** in an isolated dummy-config directory. No real `.env`, personal memory, Telegram request, or provider call was used.
 - Not verified: owner-run Telegram/provider behavior, multi-agent isolation beyond paths, and queue behavior (Goal 3/Stage 2). No commit or push was performed.
+
+## Stage 1 Goal 3 — Supervisor-owned channel execution (2026-11-23)
+
+Status: **completed; automated verification passed; not committed.**
+
+### What changed
+
+- Added `src/supervisor.rs` with `RunSupervisor`. `start` performs admission atomically under one lock: reject when the stored handle is still running, otherwise spawn and store the new handle. `take_running` removes the handle only when it is still active; a finished task is cleared and reported as no active run.
+- `ChannelState` no longer stores `current_turn: Mutex<Option<JoinHandle<()>>>`; it carries `supervisor: RunSupervisor`. The `tokio::task::JoinHandle` import moved out of the channel module.
+- `start_turn` now asks the supervisor to start the task. On rejection it keeps the existing `telegram_busy` log and localized busy notice. The task body, typing indicator, final reply, and sticky-board sync are unchanged.
+- `stop_turn` takes the running handle from the supervisor, calls `session.stop_current()` first, then aborts. This preserves the "persist stopped before abort" order and the localized stopped/idle replies.
+- The existing channel test now seeds the supervisor with a pending task instead of assigning `current_turn`.
+
+### Verification
+
+- `cargo test`: **125 passed, 0 failed** (123 unit + 2 real CLI process tests). New supervisor tests cover a rejected second start while active, `take_running` clearing exactly once, and a finished run not being treated as active. The existing `telegram_stop_persists_stopped_before_task_drop` mock Bot API test still passes.
+- `cargo build --release`: zero Iskra warnings; the existing `proc-macro-error2 v2.0.1` future-incompatibility note remains.
+- `rustfmt --check` (edition 2024): `supervisor.rs`, `channel.rs`, and `main.rs` clean.
+- `cargo clippy --all-targets`: the same 5 pre-existing warnings in `channel.rs`, `locale.rs`, and `memory.rs`; none in new code.
+- Budgets: stripped binary **6,394,384 bytes = 6.10 MiB**; direct dependencies **7**; CLI idle RSS **4,032 KB = 3.94 MiB** in an isolated dummy-config directory. No real `.env`, personal memory, Telegram request, or provider call was used.
+- Not verified: owner-run Telegram `/stop`, busy notice, typing, final reply, and restart recovery. Durable queues and multi-agent execution remain later stages. No commit or push was performed.

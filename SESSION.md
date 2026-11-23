@@ -622,3 +622,56 @@ Live: do not perform Telegram or real-provider checks inside this goal.
 - Budgets: stripped binary **6,394,376 bytes = 6.10 MiB**; direct dependencies **7**; CLI idle RSS **4,000 KB = 3.91 MiB** (dummy config, isolated temporary directory). All hard limits pass.
 - Unverified: owner-run Telegram/provider behavior, multi-agent isolation beyond instance paths, and queue behavior (Goal 3/Stage 2). No commit or push was performed.
 - Next: Stage 1 Goal 3 — Supervisor-owned channel execution.
+
+---
+
+## Stage 1 Goal 3 — Supervisor-owned channel execution
+
+Status: **completed 2026-11-23; automated verification passed; changes not committed.** This is the third of the three machine-verifiable goals in `docs/WORKFLOW.md` §9. Design source: `docs/ARCHITECTURE.md` §6 (Run Supervisor), §7 (Run state machine), §12 Stage 1, and §13.
+
+### Task card
+
+- **Outcome**: A core-owned `RunSupervisor` owns the active turn `JoinHandle`; `ChannelState` no longer stores it. Admission (busy check + spawn + store) is atomic. `/stop` takes the running handle, persists `stopped` before aborting, and keeps the existing localized replies, typing indicator, and final-reply behavior.
+- **Spec**: `docs/ARCHITECTURE.md` §6 "Run Supervisor" and cancellation order, §7 transition rules; `docs/WORKFLOW.md` §9 Goal 3.
+- **Files**: new `src/supervisor.rs`; `src/channel.rs`; `src/main.rs` only for module registration; `SESSION.md`/`SESSION-LOG.md`/`NOW.md` for results. Forbidden: registry files, durable queues, global concurrency limits beyond the current single active turn, multi-agent routing, new dependencies, `session/v1` schema changes, and Telegram-visible behavior changes.
+- **Proof**: `cargo test` exits 0 with 0 failed (baseline 122 passed; new supervisor tests included); new tests prove a second start is rejected while active, a finished task is not treated as active, and `take_running` clears exactly once; the existing `telegram_stop_persists_stopped_before_task_drop` mock Bot API test still passes; `cargo build --release` has zero Iskra warnings; changed files pass `rustfmt --check`.
+- **Current**: HEAD `b19c3e2`; `cargo test` 122 passed, 0 failed (120 unit + 2 real CLI process tests); 7 direct dependencies; stripped binary 6.10 MiB; CLI idle RSS 3.91 MiB.
+- **Stop**: do not add durable queues, admission limits beyond one active turn per instance, multi-agent routing, registry files, or new dependencies. Do not change the order "persist stopped → abort" or any Telegram-visible text/flow. If a queue or run-state-machine change becomes necessary, record it and stop.
+- **Live**: owner-run Telegram `/stop`, busy notice, typing indicator, final reply, and restart recovery checks stay outside; run once after Goals 1–3.
+
+### Implementation notes at `b19c3e2`
+
+- `ChannelState` currently has `current_turn: Mutex<Option<JoinHandle<()>>>`. `start_turn` checks busy, spawns, then stores the handle. `stop_turn` takes it, checks `is_finished`, calls `session.stop_current()`, aborts, and sends the localized reply.
+- The existing channel test pre-seeds `current_turn` with a pending task and a running session work; it asserts the stopped state is persisted and the reply is sent.
+- `RunSupervisor` should own only the handle in this goal. Keep session persistence in the channel so the current order and error handling stay unchanged.
+- Make admission atomic inside the supervisor: lock, reject if the stored handle is still running, otherwise spawn and store while holding the lock.
+- Add `mod supervisor;` in `src/main.rs`. Do not move business logic out of `run_turn` or the channel task body.
+
+### Goal-mode contract
+
+```text
+Implement Stage 1 Goal 3 from docs/ARCHITECTURE.md §6/§7 and docs/WORKFLOW.md §9.
+Done when:
+- A core-owned RunSupervisor owns the active turn JoinHandle; ChannelState no longer stores one.
+- Busy admission is atomic: a second start is rejected while the active handle is running.
+- /stop takes the running handle, persists stopped before aborting, and keeps existing localized replies, typing, and final-reply behavior.
+- cargo test exits 0 with 0 failed (baseline 122 passed; new supervisor tests included).
+- cargo build --release has zero Iskra warnings and changed files pass rustfmt --check.
+Scope: move handle ownership and admission into the supervisor only. Do not add durable queues, extra concurrency limits, registry files, multi-agent routing, dependencies, session schema changes, or Telegram-visible behavior changes.
+Loop: run focused tests after each change; run the full suite, rustfmt check, release build, and budget measurement once at the end.
+Stop: if a queue or run-state-machine change becomes necessary, or after two failed approaches, record the actual blocker and stop.
+Live: do not perform Telegram or real-provider checks inside this goal.
+```
+
+### Result (2026-11-23)
+
+- Changed: new `src/supervisor.rs`; `src/channel.rs`, `src/main.rs`.
+- `ChannelState` no longer stores a `JoinHandle`; `RunSupervisor` owns the active turn. `start` performs the busy check, spawn, and store under one lock. `take_running` clears only a still-running handle; a finished handle is reported as no active run.
+- `start_turn` attempts supervisor admission and keeps the existing `telegram_busy` log and localized busy notice on rejection. `stop_turn` takes the running handle, persists `stopped` through the session, aborts, and keeps the localized stopped/idle replies. Typing and final-reply behavior in the task body are unchanged.
+- `cargo test`: **125 passed, 0 failed** (123 unit + 2 real CLI process tests; +3 supervisor tests over the 122 baseline).
+- `cargo build --release`: passed with zero Iskra warnings; only the existing transitive `proc-macro-error2 v2.0.1` future-incompatibility note remains.
+- `rustfmt --check` (edition 2024): `supervisor.rs`, `channel.rs`, and `main.rs` clean.
+- `cargo clippy --all-targets`: the same 5 pre-existing warnings in `channel.rs`, `locale.rs`, and `memory.rs`; none in new code.
+- Budgets: stripped binary **6,394,384 bytes = 6.10 MiB**; direct dependencies **7**; CLI idle RSS **4,032 KB = 3.94 MiB** (dummy config, isolated temporary directory). All hard limits pass.
+- Unverified: owner-run Telegram `/stop`, busy notice, typing, final reply, and restart recovery; durable queues and multi-agent execution remain later stages. No commit or push was performed.
+- Next: owner-run Stage 1 Telegram verification in normal mode, then a commit decision.

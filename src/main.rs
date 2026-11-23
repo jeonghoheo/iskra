@@ -9,6 +9,7 @@ mod prompt;
 mod run_context;
 mod session;
 mod stickies;
+mod supervisor;
 mod tools;
 mod usage;
 

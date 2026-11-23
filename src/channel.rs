@@ -7,11 +7,12 @@ use crate::memory;
 use crate::prompt;
 use crate::session::Session;
 use crate::stickies;
+use crate::supervisor::RunSupervisor;
 use crate::tools::Tools;
 use crate::usage;
 
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use teloxide::dptree;
@@ -21,7 +22,6 @@ use teloxide::types::{
     ParseMode,
 };
 use teloxide::{ApiError, RequestError};
-use tokio::task::JoinHandle;
 
 const MAX_MESSAGE_CHARS: usize = 4096;
 const TYPING_REFRESH_SECS: u64 = 4;
@@ -70,7 +70,7 @@ struct ChannelState {
     session: Session,
     paths: InstancePaths,
     allowed_user_id: u64,
-    current_turn: Mutex<Option<JoinHandle<()>>>,
+    supervisor: RunSupervisor,
 }
 
 pub async fn run(
@@ -103,7 +103,7 @@ pub async fn run(
         session,
         paths,
         allowed_user_id,
-        current_turn: Mutex::new(None),
+        supervisor: RunSupervisor::default(),
     });
 
     logging::append("telegram_start");
@@ -568,24 +568,9 @@ fn repeated_reason_key(detail: &str) -> Key {
 }
 
 fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str, lang: Locale) {
-    let busy = {
-        let slot = state.current_turn.lock().unwrap();
-        slot.as_ref().is_some_and(|handle| !handle.is_finished())
-    };
-    if busy {
-        logging::append("telegram_busy");
-        let bot = state.bot.clone();
-        tokio::spawn(async move {
-            let _ = bot
-                .send_message(chat_id, locale::text(lang, Key::BusyNotice))
-                .await;
-        });
-        return;
-    }
-
     let task_state = Arc::clone(state);
     let input = text.to_string();
-    let handle = tokio::spawn(async move {
+    let started = state.supervisor.start(async move {
         let (typing_stop, typing_rx) = tokio::sync::watch::channel(false);
         let typing_guard = TypingGuard(typing_stop);
         tokio::spawn(typing_loop(task_state.bot.clone(), chat_id, typing_rx));
@@ -633,7 +618,15 @@ fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str, lang: Loca
             }
         }
     });
-    *state.current_turn.lock().unwrap() = Some(handle);
+    if started.is_err() {
+        logging::append("telegram_busy");
+        let bot = state.bot.clone();
+        tokio::spawn(async move {
+            let _ = bot
+                .send_message(chat_id, locale::text(lang, Key::BusyNotice))
+                .await;
+        });
+    }
 }
 
 struct TypingGuard(tokio::sync::watch::Sender<bool>);
@@ -664,9 +657,9 @@ async fn typing_loop(bot: Bot, chat_id: ChatId, mut stop: tokio::sync::watch::Re
 }
 
 async fn stop_turn(state: &Arc<ChannelState>, chat_id: ChatId, lang: Locale) -> HandlerResult {
-    let handle = { state.current_turn.lock().unwrap().take() };
+    let handle = state.supervisor.take_running();
     let message = match handle {
-        Some(handle) if !handle.is_finished() => {
+        Some(handle) => {
             let saved = state.session.stop_current();
             handle.abort();
             logging::append("telegram_stop aborted");
@@ -678,7 +671,7 @@ async fn stop_turn(state: &Arc<ChannelState>, chat_id: ChatId, lang: Locale) -> 
                 }
             }
         }
-        _ => {
+        None => {
             logging::append("telegram_stop idle");
             locale::text(lang, Key::StopNoActive)
         }
@@ -1021,6 +1014,7 @@ fn split_message(text: &str) -> Vec<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
 
     struct MockBotApi {
         address: String,
@@ -1130,6 +1124,8 @@ mod tests {
         let session = Session::load(&session_path);
         let work = session.begin("stop this work").unwrap();
         let bot_api = MockBotApi::start();
+        let supervisor = RunSupervisor::default();
+        supervisor.start(std::future::pending::<()>()).unwrap();
         let state = Arc::new(ChannelState {
             bot: Bot::new("test-token").set_api_url(bot_api.url()),
             brain: Brain::new(crate::brain::Config {
@@ -1152,9 +1148,7 @@ mod tests {
                 session: session_path.clone(),
             },
             allowed_user_id: 1,
-            current_turn: Mutex::new(Some(tokio::spawn(async {
-                std::future::pending::<()>().await;
-            }))),
+            supervisor,
         });
 
         stop_turn(&state, ChatId(42), Locale::Ko).await.unwrap();
