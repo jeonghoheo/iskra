@@ -710,3 +710,45 @@ Status: **owner-approved specification implemented; automated tests and real CLI
 - The test drives the real `stop_turn` handler, verifies the Korean stopped response in the actual outgoing HTTP JSON, drops the work guard, and confirms the persisted record remains `stopped` and reloads as unfinished.
 - Final `cargo test`: **115 passed, 0 failed, 0 ignored** (113 unit + 2 CLI process tests). Changed-file rustfmt passes; clippy still reports only the same 5 pre-existing warnings.
 - Production code and release-budget measurements are unchanged by this test-only addition. Owner-run external Telegram and real-provider checks remain pending.
+
+
+## Agent workbench — architecture and business Stage 0 (2026-11-23)
+
+Status: **approved design documentation and automated baseline complete; no production code changed; owner-run `session/v1` live verification remains pending.**
+
+### Current-state correction
+
+The actual repository is clean at the start of this Stage 0 work on `master`/`origin/master` HEAD `d8b9abc` (`wip: goal 중간 저장`), which already contains the `session/v1` implementation. The personal `NOW.md` entry describing `f5a80dc` and uncommitted session files was stale. Actual Git state and source were used as the current baseline.
+
+### Design and reference review
+
+Reviewed the current Rust module boundaries and the public architecture, license, product, and pricing material of OpenMausBot and OpenBot.
+
+- OpenMausBot: Apache 2.0 outside its separate `enterprise/` tree. Its normalized engine/runtime contracts, registry/admission, durable queue, approval cards, and portable packages are candidates for selective, attributed reuse. Its broad Electron/VM/voice/connector surface is not part of the Iskra slice.
+- OpenBot: PolyForm Noncommercial 1.0.0. Its independent workspace/session, durable FIFO, explicit delegation, and team operating model are useful general ideas. No OpenBot code, text, tests, or assets will be copied into the commercial product. Its documented full-access/no-per-action-approval mode is rejected for Iskra.
+- Preferred engine path: keep the built-in OpenAI-compatible HTTP engine and evaluate one standard ACP subprocess adapter later rather than cloning many provider-specific drivers. External tools must remain inside core approval, audit, sandbox, and cancellation boundaries.
+- Business recommendation: free full local orchestration with BYOK/BYO-agent; charge for always-on infrastructure, human team seats, operations, and enterprise services rather than per Agent. Avoid OpenBot-style commercial-license-plus-hosting double charging. Set prices only after measuring actual costs.
+
+The approved detailed decisions are in `docs/ARCHITECTURE.md` and `docs/BUSINESS.md`.
+
+### Current coupling recorded for Stage 1
+
+- `ChannelState` owns one brain/tools/identity/session and one active `JoinHandle`.
+- `Brain::chat` directly obtains global tool schemas.
+- `Tools` uses a fixed workspace and a process-global capability advertisement.
+- Memory/sticky/locale/usage paths include global state that must become instance/context owned before independent Agents are safe.
+- Current session records do not identify Agent, Run, parent Task, queue, approval, artifact, usage, or delivery state.
+
+### Verification performed on the deliverable baseline
+
+1. `cargo test`: **115 passed, 0 failed, 0 ignored** — 113 unit tests and 2 real CLI process tests. The existing transitive `proc-macro-error2 v2.0.1` future-incompatibility note remains.
+2. `cargo build --release`: passed with **zero Iskra warnings**.
+3. A temporary copy of the release binary was stripped and measured: **6,361,272 bytes = 6.07 MiB**. The temporary copy was removed.
+4. CLI idle RSS measured after one second with dummy model configuration in an isolated temporary working directory: **3,216 KB = 3.14 MiB**. No real `.env`, personal memory, model call, or Telegram request was used. The process was stopped and the temporary directory removed.
+5. `Cargo.toml` direct dependencies: **7**. All hard budgets remain within their limits.
+
+### Files and remaining verification
+
+Added `docs/ARCHITECTURE.md` and `docs/BUSINESS.md`; updated project status/log documents. No Rust source, manifest, dependency, or public feature claim was changed.
+
+Not verified here: real Telegram restart recall, `/stop` and `/status`, and real configured-provider replay/thinking behavior. No multi-agent runtime, ACP adapter, external engine, payment, account, hosted service, commit, push, or external send was performed.

@@ -485,3 +485,36 @@ Long-term Markdown memory remains separate: session replay must not silently bec
 3. Automated end-to-end CLI check against a local OpenAI-compatible test server, using an isolated temporary data directory and dummy credentials: two separate Iskra process runs preserve owner/assistant context through real HTTP calls; an interrupted run makes no new model/tool request on restart; long-term memory is not silently populated.
 4. Owner-run Telegram check: a test phrase is recalled after process restart without `memory_save`; `/stop` leaves an unfinished-work note and causes no automatic retry on restart; `/status` reports the session accurately in `en/ko/ru` as applicable.
 5. `SESSION-LOG.md` records the actual automated/live results and any unverified item in English. No commit, push, or merge without separate owner approval.
+
+
+---
+
+## Agent workbench — architecture and business Stage 0 (2026-11-23)
+
+Status: **target architecture and business strategy approved; design documents and automated baseline complete; `session/v1` owner-run live gate remains pending.** No multi-agent execution code has been started.
+
+### Direction
+
+Keep the existing Rust single-binary core and its fail-closed authority boundaries. Build a core-owned Agent/Run runtime rather than merely instantiating multiple `Brain` values. Selectively port permitted OpenMausBot non-`enterprise/` contracts and queue patterns with Apache attribution. Independently implement general workspace/queue ideas seen in OpenBot without copying its noncommercial code, text, tests, or assets.
+
+The first multi-agent implementation slice is two built-in OpenAI-compatible Agents with explicit `@agent` routing, independent session/memory/workspace/usage, per-agent FIFO queues, and bounded global concurrency. ACP, automatic model routing, delegation, desktop UI, and hosted mode remain separate gates.
+
+### Design sources of truth
+
+- `docs/ARCHITECTURE.md`: component ownership, Agent/Engine/Task/Run contracts, state transitions, queue/admission, local data layout, migration, ACP security, implementation stages, and acceptance criteria.
+- `docs/BUSINESS.md`: reference business structures, free-local/paid-always-on strategy, team and enterprise offers, licensing boundary, rollout gates, metrics, and stop rules.
+
+### Reconfirmed baseline at HEAD `d8b9abc`
+
+- `cargo test`: **115 passed, 0 failed** (113 unit + 2 real CLI process tests).
+- `cargo build --release`: passed with zero Iskra warnings; the existing transitive `proc-macro-error2` future-incompatibility note remains.
+- Stripped release binary: **6,361,272 bytes = 6.07 MiB**.
+- Dummy-configuration CLI idle RSS: **3,216 KB = 3.14 MiB**. This used an isolated temporary working directory, not real credentials or personal memory.
+- Direct dependencies: **7**. All existing hard budgets pass.
+
+### Next gate
+
+1. The owner runs the existing `session/v1` Telegram and real configured-provider checks: restart recall without `memory_save`, `/stop` with no automatic retry after restart, accurate `/status`, and replay/thinking compatibility.
+2. Do not begin Stage 1 multi-agent runtime code until that live gate is recorded as passed.
+3. After the gate, implement Stage 1 as a behavior-preserving single-Agent runtime before adding the Stage 2 two-Agent slice.
+4. No commit, push, paid account, external deployment, or external send without separate owner approval.
