@@ -792,3 +792,25 @@ The immediate cause for this rule was the completed interactive verification goa
 Stage 1 is documented as three sequential goals: Engine/RunContext contracts, instance-owned Tools/Memory/Session boundaries, and Supervisor-owned channel execution. Each uses focused tests while iterating and one full milestone verification. No Stage 1 implementation was started by this documentation task.
 
 No automated test or build was rerun because only documentation and workflow guidance changed. No commit or push was performed.
+
+## Stage 1 Goal 1 — Engine and RunContext contracts (2026-11-23)
+
+Status: **completed; automated verification passed; not committed.**
+
+### What changed
+
+- Added `src/run_context.rs` with `RunContext` carrying `run_id`, `agent_id`, the approved `tool_schemas`, and the matching `&Tools` executor. `RunContext::new` derives the schemas from the same `Tools` instance, so the model cannot be told about tools this run cannot execute.
+- `Brain::chat` now takes `&RunContext` and builds its request from `context.tool_schemas()`. It no longer calls a global tool-schema function. Request serialization, `reasoning_content` echo, usage parsing, and structured `ChatError` mapping are unchanged.
+- `loop_::run_active_turn` uses the same context for tool execution, and `turn_start` records `run_id` and `agent=main`.
+- `Tools` exposes the instance method `schemas()`. The former global free function was removed while the process-wide capability advertisement (`ADVERT`) remains for Goal 2.
+- `session::PreparedTurn::id()` exposes the work id as the Run identity.
+- `src/main.rs` registers the new module only. The `run_turn` call sites in `src/main.rs` and `src/channel.rs` are unchanged.
+
+### Verification
+
+- `cargo test`: **117 passed, 0 failed** (115 unit + 2 real CLI process tests). New tests cover RunContext identity/schema source and the request-body schema source.
+- `cargo build --release`: zero Iskra warnings; the existing `proc-macro-error2 v2.0.1` future-incompatibility note remains.
+- `rustfmt --check` (edition 2024): changed files clean except `src/tools.rs`, which retains pre-existing formatting debt outside this change; the added `Tools::schemas` method is clean.
+- `cargo clippy --all-targets`: 5 pre-existing warnings in `channel.rs`, `locale.rs`, and `memory.rs`; none in changed files.
+- Budgets: stripped binary **6,377,872 bytes = 6.08 MiB**; direct dependencies **7**; CLI idle RSS **4,032 KB = 3.94 MiB** in an isolated dummy-config directory. No real `.env`, personal memory, Telegram request, or provider call was used.
+- Not verified: owner-run Telegram/provider behavior, multi-agent isolation, and queue behavior (later goals). No commit or push was performed.

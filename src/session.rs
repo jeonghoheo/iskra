@@ -316,6 +316,10 @@ impl Session {
 }
 
 impl PreparedTurn {
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
     pub fn complete(&mut self, answer: &str) -> Result<(), String> {
         self.finish(WorkStatus::Completed, Some(answer), None)
     }

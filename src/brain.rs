@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use crate::run_context::RunContext;
+
 pub const DEFAULT_BASE_URL: &str = "https://api.deepseek.com/chat/completions";
 pub const DEFAULT_MODEL: &str = "deepseek-flash";
 pub const MODEL_TIMEOUT_SECS: u64 = 60;
@@ -235,6 +237,19 @@ struct ChatRequest<'a> {
     tool_choice: &'a str,
 }
 
+fn chat_request<'a>(
+    model: &'a str,
+    messages: &'a [Message],
+    context: &RunContext<'_>,
+) -> ChatRequest<'a> {
+    ChatRequest {
+        model,
+        messages,
+        tools: context.tool_schemas().clone(),
+        tool_choice: "auto",
+    }
+}
+
 #[derive(Deserialize)]
 struct ChatResponse {
     choices: Vec<Choice>,
@@ -274,13 +289,12 @@ impl Brain {
         &self.config.base_url
     }
 
-    pub async fn chat(&self, messages: &[Message]) -> Result<ChatReply, ChatError> {
-        let request = ChatRequest {
-            model: &self.config.model,
-            messages,
-            tools: crate::tools::schemas(),
-            tool_choice: "auto",
-        };
+    pub async fn chat(
+        &self,
+        context: &RunContext<'_>,
+        messages: &[Message],
+    ) -> Result<ChatReply, ChatError> {
+        let request = chat_request(&self.config.model, messages, context);
 
         let exchange = async {
             let response = self
@@ -426,6 +440,21 @@ mod tests {
         assert_eq!(config.base_url, DEFAULT_BASE_URL);
         assert_eq!(config.model, DEFAULT_MODEL);
         assert_eq!(DEFAULT_MODEL, "deepseek-flash");
+    }
+
+    #[test]
+    fn chat_request_takes_tools_from_the_run_context() {
+        let tools = crate::tools::Tools::new().unwrap();
+        let context = RunContext::new(11, crate::run_context::MAIN_AGENT_ID, &tools);
+        let messages = vec![Message::user("hi")];
+
+        let request = chat_request("model-x", &messages, &context);
+        let body = serde_json::to_value(&request).unwrap();
+
+        assert_eq!(body["tools"], *context.tool_schemas());
+        assert_eq!(body["tool_choice"], "auto");
+        assert_eq!(body["model"], "model-x");
+        assert_eq!(body["messages"][0]["content"], "hi");
     }
 
     #[test]

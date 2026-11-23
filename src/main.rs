@@ -5,6 +5,7 @@ mod logging;
 mod loop_;
 mod memory;
 mod prompt;
+mod run_context;
 mod session;
 mod stickies;
 mod tools;

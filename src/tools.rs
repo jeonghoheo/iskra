@@ -58,16 +58,9 @@ struct Advert {
     sandboxed: bool,
 }
 
-/// What `schemas()` advertises: only the programs actually available on this
-/// machine, decided once in `Tools::new`.
+/// What `Tools::schemas` advertises: only the programs actually available on
+/// this machine, decided once in `Tools::new`.
 static ADVERT: OnceLock<Advert> = OnceLock::new();
-
-pub fn schemas() -> Value {
-    match ADVERT.get() {
-        Some(advert) => schemas_for(&advert.programs, advert.sandboxed),
-        None => schemas_for(&[], false),
-    }
-}
 
 fn schemas_for(programs: &[Program], sandboxed: bool) -> Value {
     let mut tools = vec![
@@ -239,6 +232,13 @@ impl Tools {
             runtime,
             sticky_changed: AtomicBool::new(false),
         })
+    }
+
+    pub fn schemas(&self) -> Value {
+        match ADVERT.get() {
+            Some(advert) => schemas_for(&advert.programs, advert.sandboxed),
+            None => schemas_for(&[], false),
+        }
     }
 
     pub fn take_sticky_changed(&self) -> bool {

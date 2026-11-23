@@ -1,5 +1,6 @@
 use crate::brain::{Brain, ChatError, Message};
 use crate::logging;
+use crate::run_context::{MAIN_AGENT_ID, RunContext};
 use crate::session::{FailureKind, Session};
 use crate::tools::Tools;
 
@@ -78,7 +79,9 @@ pub async fn run_turn(
     })?;
     let history = std::mem::take(&mut work.history);
     let omitted = work.omitted;
-    let result = run_active_turn(brain, tools, system_prompt, user_input, history, omitted).await;
+    let context = RunContext::new(work.id(), MAIN_AGENT_ID, tools);
+    let result =
+        run_active_turn(brain, &context, system_prompt, user_input, history, omitted).await;
 
     match result {
         Ok(answer) => {
@@ -100,13 +103,17 @@ pub async fn run_turn(
 
 async fn run_active_turn(
     brain: &Brain,
-    tools: &Tools,
+    context: &RunContext<'_>,
     system_prompt: &str,
     user_input: &str,
     history: Vec<Message>,
     omitted: usize,
 ) -> Result<String, TurnError> {
-    logging::append("turn_start");
+    logging::append(&format!(
+        "turn_start run_id={} agent={}",
+        context.run_id(),
+        context.agent_id()
+    ));
 
     let daily_usage = crate::usage::today();
     let balance = match brain.balance_cached().await {
@@ -129,7 +136,7 @@ async fn run_active_turn(
     let mut empty_retried = false;
 
     loop {
-        let reply = brain.chat(&messages).await.map_err(|e| {
+        let reply = brain.chat(context, &messages).await.map_err(|e| {
             logging::append(&format!("model_error err={e}"));
             from_chat_error(e)
         })?;
@@ -193,7 +200,7 @@ async fn run_active_turn(
             let name = call.function.name.clone();
             let outcome = match serde_json::from_str::<serde_json::Value>(&call.function.arguments)
             {
-                Ok(args) => tools.execute(&name, &args).await,
+                Ok(args) => context.tools().execute(&name, &args).await,
                 Err(e) => Err(format!("Failed to parse arguments JSON: {e}")),
             };
 

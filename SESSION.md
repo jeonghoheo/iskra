@@ -518,3 +518,54 @@ The first multi-agent implementation slice is two built-in OpenAI-compatible Age
 2. Stage 1 — the behavior-preserving single-Agent runtime boundary — may now begin as a separate implementation task. Stage 2's two-Agent slice remains a later step.
 3. No commit, push, paid account, external deployment, or external send without separate owner approval.
 4. Plan/Goal/normal-mode selection follows `docs/WORKFLOW.md`. Stage 1 is split into three machine-verifiable goals; owner-run Telegram verification stays outside goals.
+
+---
+
+## Stage 1 Goal 1 — Engine and RunContext contracts
+
+Status: **completed 2026-11-23; automated verification passed; changes not committed.** This is the first of the three machine-verifiable goals in `docs/WORKFLOW.md` §9. Design source: `docs/ARCHITECTURE.md` §5 (Engine profile, Task and Run), §6 (Engine Adapter), §12 Stage 1, and §13.
+
+### Task card
+
+- **Outcome**: `Brain::chat` stops reading `crate::tools::schemas()` directly. Approved tool schemas, the matching `Tools` executor, and Agent/Run identity reach the engine through one explicit `RunContext`. Existing user-visible behavior is unchanged.
+- **Spec**: `docs/ARCHITECTURE.md` §6 "Engine Adapter" (RunContext contents) and §5 (Agent/Run identity); `docs/WORKFLOW.md` §9 Goal 1.
+- **Files**: allowed `src/brain.rs`, `src/loop_.rs`, `src/tools.rs`, `src/session.rs`, new `src/run_context.rs`, and `src/main.rs` only to register the new module. Forbidden: `Cargo.toml`, new dependencies, registry files (`iskra.json`), `docs/`, `memory/`, `workspace/`, and any Telegram `JoinHandle` move.
+- **Proof**: `cargo test` exits 0 with 0 failed (baseline 115 passed; new RunContext tests included); `cargo build --release` has zero Iskra warnings; changed files pass `rustfmt --check`; `tests/session_cli.rs` still proves real HTTP request/response and restart behavior; focused tests prove the request body is built from `RunContext.tool_schemas` and that reasoning echo/omission behavior is unchanged.
+- **Current**: HEAD `cb39d8e`; baseline `cargo test` 115 passed (113 unit + 2 real CLI process tests); 7 direct dependencies; stripped binary 6.07 MiB; CLI idle RSS 3.14 MiB.
+- **Stop**: do not remove the process-wide capability advertisement (`ADVERT`), add the Agent/Engine registry, move the Telegram `JoinHandle`, add multi-agent routing, add dependencies, or change CLI/Telegram behavior. If a contract choice contradicts `docs/ARCHITECTURE.md`, record it and stop.
+- **Live**: owner-run Telegram and real-provider checks stay outside this goal; they run once in normal mode after Goals 1–3.
+
+### Implementation notes at `cb39d8e`
+
+- `Brain::chat(&self, messages)` in `src/brain.rs` currently builds `ChatRequest { tools: crate::tools::schemas(), .. }`.
+- `src/tools.rs` exposes the process-wide `schemas()` and the per-instance `Tools::execute(&self, name, args)`.
+- `loop_::run_turn` is called from `src/main.rs` (CLI) and `src/channel.rs` (Telegram); both call sites should stay unchanged.
+- `session::PreparedTurn` owns the work `id` privately; expose a read-only accessor for Run identity.
+- `RunContext` should carry at least `run_id`, `agent_id`, `tool_schemas`, and `&Tools`; the loop uses the same context for tool execution so no second source of schemas appears.
+
+### Goal-mode contract
+
+```text
+Implement Stage 1 Goal 1 from docs/ARCHITECTURE.md §5/§6 and docs/WORKFLOW.md §9.
+Done when:
+- Brain::chat no longer calls crate::tools::schemas() directly.
+- An explicit RunContext carries the approved tool schemas, the matching Tools executor, and Agent/Run identity into the engine.
+- cargo test exits 0 with 0 failed (baseline 115 passed; new RunContext tests included).
+- cargo build --release has zero Iskra warnings and changed files pass rustfmt --check.
+- Request serialization, reasoning_content echo, usage recording, and structured model error paths are unchanged.
+Scope: internal contract refactor only. Do not remove the global capability advertisement, add registry files, move the Telegram JoinHandle, enable multi-agent routing, add dependencies, or change CLI/Telegram behavior.
+Loop: run focused tests after each change; run the full suite, rustfmt check, and release build once at the end.
+Stop: on a contradiction with docs/ARCHITECTURE.md or after two failed approaches, record the actual blocker and stop.
+Live: do not perform Telegram or real-provider checks inside this goal.
+```
+
+### Result (2026-11-23)
+
+- Changed: new `src/run_context.rs`; `src/brain.rs`, `src/loop_.rs`, `src/tools.rs`, `src/session.rs`, `src/main.rs`.
+- `cargo test`: **117 passed, 0 failed** (115 unit + 2 real CLI process tests; +2 new RunContext tests over the 113-unit baseline).
+- `cargo build --release`: passed with zero Iskra warnings; only the existing transitive `proc-macro-error2 v2.0.1` future-incompatibility note remains.
+- `rustfmt --check` (edition 2024): `brain.rs`, `loop_.rs`, `session.rs`, `run_context.rs`, `main.rs` clean. `src/tools.rs` keeps its pre-existing formatting debt outside this change (documented since v1.3); the added `Tools::schemas` method itself is clean.
+- `cargo clippy --all-targets`: 5 pre-existing warnings in `channel.rs`, `locale.rs`, `memory.rs`; none in changed files.
+- Budgets: stripped binary **6,377,872 bytes = 6.08 MiB**; direct dependencies **7**; CLI idle RSS **4,032 KB = 3.94 MiB** (dummy config, isolated temporary directory). All hard limits pass.
+- Unverified: owner-run Telegram/provider behavior and multi-agent isolation (outside this goal). No commit or push was performed.
+- Next: Stage 1 Goal 2 — instance-owned Tools, Memory, and Session boundaries.
