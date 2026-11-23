@@ -491,7 +491,7 @@ Long-term Markdown memory remains separate: session replay must not silently bec
 
 ## Agent workbench — architecture and business Stage 0 (2026-11-23)
 
-Status: **target architecture and business strategy approved; design documents and automated baseline complete; `session/v1` owner-run live gate remains pending.** No multi-agent execution code has been started.
+Status: **target architecture and business strategy approved; design documents and automated baseline complete; `session/v1` owner-run live gate passed with DeepSeek V4.1 Flash on 2026-11-23.** No multi-agent execution code has been started.
 
 ### Direction
 
@@ -512,9 +512,9 @@ The first multi-agent implementation slice is two built-in OpenAI-compatible Age
 - Dummy-configuration CLI idle RSS: **3,216 KB = 3.14 MiB**. This used an isolated temporary working directory, not real credentials or personal memory.
 - Direct dependencies: **7**. All existing hard budgets pass.
 
-### Next gate
+### Live gate result and next step
 
-1. The owner runs the existing `session/v1` Telegram and real configured-provider checks: restart recall without `memory_save`, `/stop` with no automatic retry after restart, accurate `/status`, and replay/thinking compatibility.
-2. Do not begin Stage 1 multi-agent runtime code until that live gate is recorded as passed.
-3. After the gate, implement Stage 1 as a behavior-preserving single-Agent runtime before adding the Stage 2 two-Agent slice.
-4. No commit, push, paid account, external deployment, or external send without separate owner approval.
+1. The DeepSeek V4.1 Flash live gate passed on 2026-11-23: restart recall without `memory_save`, thinking/tool round trip, cross-turn replay with tools, `/stop` persistence, no automatic restart replay, and accurate `/status` were all confirmed by the owner and logs. Details are in `SESSION-LOG.md`.
+2. Stage 1 — the behavior-preserving single-Agent runtime boundary — may now begin as a separate implementation task. Stage 2's two-Agent slice remains a later step.
+3. No commit, push, paid account, external deployment, or external send without separate owner approval.
+4. Plan/Goal/normal-mode selection follows `docs/WORKFLOW.md`. Stage 1 is split into three machine-verifiable goals; owner-run Telegram verification stays outside goals.

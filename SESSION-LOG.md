@@ -752,3 +752,43 @@ The approved detailed decisions are in `docs/ARCHITECTURE.md` and `docs/BUSINESS
 Added `docs/ARCHITECTURE.md` and `docs/BUSINESS.md`; updated project status/log documents. No Rust source, manifest, dependency, or public feature claim was changed.
 
 Not verified here: real Telegram restart recall, `/stop` and `/status`, and real configured-provider replay/thinking behavior. No multi-agent runtime, ACP adapter, external engine, payment, account, hosted service, commit, push, or external send was performed.
+
+
+## DeepSeek V4.1 Flash `session/v1` live gate — passed (2026-11-23)
+
+Status: **passed owner-run Telegram and real-provider verification.** The provider was DeepSeek V4.1 Flash through the official `deepseek-flash` model name. No Rust source, dependency, or committed model default was changed. No commit or push was performed for this live result.
+
+### Provider and setup
+
+- Official docs checked on 2026-11-23: `deepseek-flash` currently resolves to **DeepSeek-V4.1-Flash-1017**; the OpenAI-format base URL is `https://api.deepseek.com/chat/completions`; thinking mode is enabled by default.
+- One Iskra instance was run with `LLM_MODEL=deepseek-flash` and the official endpoint. The existing `.env` was not opened, printed, or copied by the executor. No personal memory content, reasoning text, or credentials were read or recorded.
+- The previous restart and `/stop` runs were deliberately terminated for the verification; background task notifications reporting those expected terminations were not product failures.
+
+### Results
+
+1. **`/status` — passed.** Before the tests it reported model `deepseek-flash`, memory normal, six stored records and six context records. After the final restart it reported model `deepseek-flash`, **11 stored / 11 context records**, memory normal, and an unfinished work item. It also reported 65,149 tokens used today, an estimated $0.022226 cost, and $4.94 remaining balance.
+2. **Restart recall without `memory_save` — passed.** Session work `id=7` completed the owner request to answer `ember-live-42`. After restart, the log showed `session_loaded records=7 unfinished=0`; work `id=8` answered the recall question with `deepseek-flash`, `prompt=2946`, no tool call, and no error. The owner confirmed that the actual reply contained `ember-live-42`. No `memory_save` call occurred in the metadata logs, so recall came from session replay rather than long-term memory.
+3. **Thinking-mode tool round trip — passed.** Session `id=9` completed three model calls: `write_file`, `read_file`, then a final answer. Both tool calls succeeded and no 400 or parsing error occurred. The test file contained `iskra-deepseek-live-ok`.
+4. **Cross-turn replay with tools — passed.** Session `id=10` followed the tool turn after the completed history was present in the session. The first request carried `tools=[run_command,read_file]`; `run_command` and `read_file` succeeded, the final answer completed, and no reasoning-content-related 400 or parsing error occurred. The owner confirmed that the reply identified `deepseek-live-check.txt` and `iskra-deepseek-live-ok`.
+5. **`/stop` persistence and no restart replay — passed.** A long-answer request created session `id=11`; `/stop` produced `session_work_end id=11 state=stopped` and `telegram_stop aborted` before a model call completed. After restart the log showed `session_loaded records=11 unfinished=1`. The total persisted `model_call` count stayed **85 → 85**, with no new model or tool execution. The owner confirmed that `/status` showed the unfinished item.
+
+### Cleanup and unverified limits
+
+- Only the generated test file `workspace/deepseek-live-check.txt` was removed during cleanup. Other workspace, memory, session, and log data were left intact.
+- The observed cross-turn tool requests were accepted without replaying past `reasoning_content`, despite the provider documenting reasoning echo requirements for requests carrying tools. This passed for the tested DeepSeek V4.1 Flash turns, but provider behavior for other models, future versions, or longer histories is not generalized.
+- Verification covered one owner, one running instance, one provider/model, and the local Telegram channel. It did not verify multiple agents, ACP, hosted mode, or Stage 1 runtime changes.
+
+
+## Token/time-efficient development workflow (2026-11-23)
+
+Status: **approved operational workflow documented; no production code changed.**
+
+Added `docs/WORKFLOW.md` and linked it from `AGENTS.md` and `SESSION.md`.
+
+The workflow assigns broad architecture and unresolved decisions to Plan mode with a stronger model, bounded machine-verifiable implementation to DeepSeek Goal mode, and owner-driven Telegram/provider checks to normal mode. A smaller Plan-mode pass is optional only when the large specification leaves a real choice unresolved.
+
+The immediate cause for this rule was the completed interactive verification goal: it consumed 24 turns and 19.4k tokens, with repeated blocked/resume cycles caused by owner-input waiting. Future goals must not contain pending owner input. Live verification is prepared and recorded outside autonomous goals.
+
+Stage 1 is documented as three sequential goals: Engine/RunContext contracts, instance-owned Tools/Memory/Session boundaries, and Supervisor-owned channel execution. Each uses focused tests while iterating and one full milestone verification. No Stage 1 implementation was started by this documentation task.
+
+No automated test or build was rerun because only documentation and workflow guidance changed. No commit or push was performed.
