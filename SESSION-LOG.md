@@ -1378,3 +1378,31 @@ The images cover Outcome → Task → Run → Evidence, six outcome metrics, BYO
 - These are target visuals, not screenshots of an implemented product. Headless/Outcome/BYOUI/Lease/Cloud/GLM compatibility and managed pricing remain unimplemented or unvalidated as explicitly marked.
 - No customer interview, actual payment, GLM live-provider call, customer deployment or production UI was performed.
 - The next code step remains owner review of the compact Stage 2.5-A card. The next business step is the P0-H demand interviews. Each subsequent technical card requires its own scope, state transitions, proof and explicit start instruction.
+
+
+## Authority Hub anti-absorption strategy and competitor correction (2026-11-24)
+
+Status: **approved competitive architecture and validation card recorded; documentation only; no new code Goal, adapter, partnership, provider account, customer outreach, deployment, commit or push.**
+
+### What changed
+
+- `docs/ARCHITECTURE.md` adds the target Authority and integration-independence contract. Iskra must own canonical Identity, Authority, Outcome, Evidence and Delivery while external Agents/models/tools are replaceable capabilities and UIs are replaceable projections.
+- New target contracts: `adapter/v1`, `capability/v1`, `policy/v1`, `event/v1` and `evidence/v1`, alongside `outcome/v1`, `headless/v1` and `delivery/v1`. The document defines external principal/scope, CloudEvents-compatible events, anti-loop IDs, canonical storage, detachable adapters, least-privilege delegation, export/restore and no-replay behavior.
+- `docs/BUSINESS.md` adds the Authority Hub and anti-absorption strategy, platform-specific authority boundaries and a required AgentField/CodeAF/OpenClaw bake-off. Iskra must prove practical advantages rather than claim a unique category.
+- `SESSION.md` adds the P0-H cross-vendor proof questions and one design-only HUB-PROOF vertical integration card: external request → untrusted adapter → Outcome → scoped execution → independent evidence → scoped delivery → provider swap and UI detach.
+- The revised win condition is the smallest Outcome-verified Authority Hub: single binary, acceptance/evidence, BYOUI, no invisible replay, Local → Managed recovery and cross-provider evaluation.
+
+### Competitor evidence used
+
+- AgentField docs: Agents as APIs, service discovery, shared memory, deferred execution, human approval, identity, verifiable credentials, access policies, decision receipts, signed audit chain, multiple SDKs and `docker compose`.
+- CodeAF docs: managers/subteams, budgets, standing orders, schedules, remote machines and headless mode.
+- OpenClaw official docs: local multi-channel assistant, desktop/Gateway, Node/Bun, daemon, backup/update/migration and hosting options.
+- Hermes Agent official site confirms a free open-source agent with memory/skills and desktop downloads. Its Kanban, Telegram budgets and approval gates were not verified.
+- No official evidence was found for Guild.ai, VDF AI Networks or Elestio managed OpenClaw, so those claims are excluded from the strategy.
+
+### Verification and limits
+
+- No Rust code, tests or manifests changed. Latest recorded code baseline remains **215 passed, 0 failed**, not rerun for this documentation work.
+- Final `git diff --check` passed. No customer interviews, actual provider calls, AgentField installation, partnership or paid validation was performed.
+- Stage 2.5-A `delivery/v1` remains the current implementation target. HUB-PROOF is a design card, not authorization to implement adapters or start another Goal.
+- Stop conditions now include no practical advantage over AgentField/CodeAF/OpenClaw, vendor-owned canonical state, permission bypass, unrelated custom workflows or negative managed economics.

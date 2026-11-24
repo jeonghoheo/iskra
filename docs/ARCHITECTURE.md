@@ -106,6 +106,30 @@ A canonical typed event log lets Web Ops, Telegram/Slack, CLI, Kanban and custom
 
 A future multi-dispatcher claim may carry a Lease with an owner and expiry, heartbeat/renew and release/completion. Expiry marks work interrupted/unknown for explicit evaluation; it never automatically retries a model call, external write, payment or delivery. The current single-dispatcher lock does not gain a lease merely for presentation parity.
 
+### Authority and integration independence (target contracts, not implemented)
+
+Iskra becomes a hub only if it owns the canonical **Identity, Authority, Outcome, Evidence and Delivery** records. Protocol compatibility alone does not make Iskra independent. External Agents, Boards, models and tools are replaceable capabilities; external UIs are replaceable projections.
+
+The target contracts are:
+
+- `adapter/v1`: normalizes transport, external IDs, commands and events. Adapters never decide admission, permissions, acceptance, settlement or retry.
+- `capability/v1`: provider-independent operations, artifacts, cancellation, health and declared resource limits. Unknown cost/health/capability remains `unknown`.
+- `policy/v1`: issuer + tenant + agent instance + credential/reference + policy revision, with resource/operation/workspace/network/budget/expiry scopes. An external display profile is not a principal.
+- `event/v1`: a CloudEvents-compatible envelope plus `outcome_id`, `task_id`, `run_id`, `delivery_id`, `actor`, `sequence`, `lease`, `scopes` and `policy_revision`.
+- `evidence/v1`: artifact hash/provenance, acceptance result, evaluator, human correction/approval, total cost, latency, retries and resource use.
+
+Integration invariants:
+
+1. External input is untrusted material, never an owner instruction or a grant. Apply instruction hierarchy and content quarantine.
+2. Delegated Agents never inherit broader secrets, workspace, network or budget than the parent approved.
+3. Iskra's store is canonical; external stores are projections or caches, not active-active authorities.
+4. `source_event_id`, `origin_adapter`, `forwarded_by` and `hop_count` prevent sync loops and duplicate Runs.
+5. Adapter removal, vendor outage or account expiry must not destroy Iskra policy, evidence, Procedures or local built-in execution.
+6. Lease expiry, provider timeout, delivery `unknown` and restart never automatically repeat side effects.
+7. Export and restore cover Outcome, Evidence, Procedure, registry and audit data so exit does not depend on a vendor.
+
+AgentField, CodeAF, OpenClaw and other authority runtimes already provide adjacent identity, policy, approval, headless or audit capabilities. Iskra must therefore prove its smaller operational form and distinct Outcome/BYOUI/failure semantics rather than claim those categories as unique.
+
 ### Workspace
 
 A Workspace is an owner-approved file root identified by ID. Models never choose arbitrary host paths.
@@ -509,7 +533,7 @@ Stage 2.5-A acceptance requires automated transition, failure, restart, event-la
 ### Stage 4 — Outcome, Headless and product surfaces
 
 - Add provider profiles and labelled cross-provider/cross-engine Outcome evaluations. GLM is an early compatibility candidate, not a hard-coded product identity.
-- Define `outcome/v1` and a local authenticated `headless/v1` with idempotency, strict schemas, request bounds and cursor-based event projections.
+- Define `outcome/v1`, `adapter/v1`, `capability/v1`, `policy/v1`, `event/v1` and `evidence/v1`, then add a local authenticated `headless/v1` with idempotency, strict schemas, request bounds and cursor-based authorized event projections.
 - Add `verification/v1`, reusable Procedures/Routines, credential-free portable packages and the Intake → Outcome Contract → shadow Run → approval flow.
 - Implement an official thin Outcome Board as one BYOUI projection. Generated UIs run outside Core and begin read-only; approvals use Core commands only.
 - Add managed always-on, schedules/webhooks, backup/restore and remote access only after local reliability and retention are demonstrated.
@@ -555,6 +579,9 @@ The future Outcome/Headless/BYOUI gate must additionally prove:
 - Two independent clients receive identical authorized Outcome state through monotonic event cursors, with no automatic restart replay or duplicate admission.
 - A generated/external UI cannot write stores, bypass approval, read another scope or export secrets. External sync uses minimum fields and warns about differing platform grants.
 - Lease heartbeat, renew, release and expiry never automatically repeat side effects or reopen cancelled work.
+- Duplicate/looped external events cannot create a new Run or side effect; adapter removal and vendor outage preserve canonical state and local built-in execution.
+- The same Outcome Contract runs against two providers/engines without changing acceptance or evidence formats.
+- A documented AgentField/CodeAF/OpenClaw comparison measures installation time, total resources/support, Outcome semantics, BYOUI scope enforcement, failure replay, provider swap, exit portability and managed recovery cost; no generic Hub claim is made without a practical advantage.
 - Verified Outcome Rate, total cost, time to evidence, human intervention and delivery assurance are measured with external-engine resources included rather than hidden.
 
 ## 14. Reuse and license boundary
@@ -583,3 +610,8 @@ References:
 - https://modelcontextprotocol.io/docs/getting-started/intro
 - https://a2a-protocol.org/latest/
 - https://docs.z.ai/devpack/tool/claude
+- https://agentfield.ai/docs/agentfield
+- https://agentfield.ai/docs/codeaf
+- https://openclaw.ai/
+- https://docs.openclaw.ai/install
+- https://hermes-agent.nousresearch.com/

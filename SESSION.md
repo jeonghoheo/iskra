@@ -1149,3 +1149,53 @@ These are **design-card names and gates, not authorization to start all implemen
 ### Visual deliverables in this strategy slice
 
 The completed visual set is `docs/assets/iskra-outcome-model.svg`, `iskra-byo-ui.svg`, `iskra-headless-strategy.svg`, `iskra-control-plane-architecture.svg`, `iskra-final-product.svg`, and `iskra-ops-wireframe.png`. All are labelled **Target / Concept / Not implemented** and use synthetic data. The five SVG files passed XML parsing and were rendered with `sips` at 1600×1000; the Outcome Board PNG is 1800×1100. All rendered images passed `ReadMediaFile` inspection for aspect ratio, clipping, Korean text and panel/button visibility. An initial Quick Look thumbnail render produced square cropped images and was discarded as an invalid verification artifact; correct `sips` renders replaced it. These are design assets, not claims of implemented product behavior.
+
+
+---
+
+## Authority Hub anti-absorption addendum (2026-11-24)
+
+Status: **approved competitive refinement recorded; no new code Goal, adapter implementation, partnership, provider account or customer outreach.** Stage 2.5-A `delivery/v1` remains the current implementation target.
+
+### Competitive correction
+
+AgentField is now the first required comparison. Its public docs already list Agents as APIs, service discovery, shared memory, deferred execution, human approval, identity, verifiable credentials, access policies, decision receipts, signed audit chain, multiple SDKs and `docker compose`. CodeAF adds managers, budgets, standing orders, schedules and headless mode. OpenClaw already provides local multi-channel assistants and hosting options. Therefore identity/policy/audit/headless is not an uncontested category.
+
+Iskra's revised target is the **smallest Outcome-verified Authority Hub**: single-binary operation, Outcome acceptance/evidence, BYOUI scope enforcement, no invisible replay, simple Local → Managed recovery and cross-provider evaluation. Guild.ai and VDF AI Networks are excluded because no official evidence was found. Elestio managed OpenClaw is also excluded pending an official product page. Hermes Agent's Kanban, Telegram budgets and approval-gate claims remain unverified and are not used.
+
+### P0-H additional proof questions
+
+Add to the existing 15-interview card:
+
+- Which system currently owns the Task, permissions, acceptance and result evidence?
+- Why is direct AgentField/CodeAF/OpenClaw/Vercel usage insufficient for this recurring work?
+- What concrete secret, scope, duplicate, replay, delivery or data-residency failure requires a separate hub?
+- What must stop working when an external provider/UI/adapter is removed?
+- Who approves the Outcome and what evidence is accepted independently of the executing Agent?
+- What always-on recovery, audit retention or policy operation has a measurable budget?
+
+The demand gate changes to: **five teams with a real cross-vendor Authority/Outcome problem and three teams with a specific recurring Outcome that requires Iskra in the execution path plus a managed budget discussion.** Generic connector interest and GLM setup requests do not pass.
+
+### HUB-PROOF — one vertical integration card (design only)
+
+- **Outcome**: Prove that one external client can submit an Outcome to Iskra and that Iskra—not the external platform—owns principal, policy, acceptance, evidence and delivery. Then prove provider and UI replacement without changing the Outcome Contract.
+- **Spec**: `docs/ARCHITECTURE.md` §5 “Authority and integration independence” and §13 future gate; `docs/BUSINESS.md` “Authority Hub and anti-absorption strategy.”
+- **Candidate channel**: Exactly one of Vercel Board or CI/GitHub webhook, selected only from an actual design-partner use case. Do not build both.
+- **Required sequence**: external request → untrusted adapter and idempotency mapping → Iskra Outcome → policy-scoped Agent/Run → independent evidence → scoped result/delivery → provider A→B swap and UI detach.
+- **Proof**: All external calls carry owner/principal/outcome/idempotency/scope; duplicate/loop events create no new Run; external profiles cannot broaden authority; Outcome completion differs from delivery `sent/unknown`; two clients see the same authorized Outcome; adapter removal preserves state and local execution; two providers preserve acceptance/evidence; secret and scope canaries never leak.
+- **Comparison**: Repeat the same scenario against AgentField/CodeAF/OpenClaw and record installation time, total RAM/CPU/support, Outcome semantics, BYOUI scope, replay behavior, provider swap, exit portability and recovery cost.
+- **Current**: `master` HEAD `bf0b65c`; latest recorded code baseline is 215 passed, 0 failed, not rerun for this design work. `delivery/v1` is not implemented. This card is not an implementation Goal.
+- **Stop**: If the integration requires an external canonical store or policy bypass, stop it. If the comparison shows no practical Iskra advantage, stop the generic Hub and consider a small adapter instead.
+- **Live**: Owner approves provider accounts, real client calls, data collection, external posting, deployment and any partnership separately. Do not contact Vercel, Anthropic, AgentField or customers merely because this design exists.
+
+### Moat and stop rules
+
+Accumulate open conformance tests, labelled Outcome evaluations, Procedure/failure corpus, evidence continuity, reference integrations and managed restore/delivery assurance. Connector count is not a metric. Export and readable state remain available because lock-in is not the moat.
+
+Stop or reposition when:
+
+- Direct AgentField/CodeAF/OpenClaw already satisfies the customer's requirements with no practical Iskra advantage.
+- Twenty qualified contacts and three concrete paid proposals produce no purchase.
+- The only useful path requires vendor-owned canonical state or weaker permissions.
+- Every design partner requires unrelated custom workflows or private forks.
+- External engine resources and human intervention make managed economics worse than the alternative.

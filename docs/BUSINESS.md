@@ -61,6 +61,35 @@ Z.AI officially supports GLM Coding Plan integration with Claude Code, and Russi
 
 The approved Stage 2.5-A `delivery/v1` contract remains the current implementation target. The commercial and long-term architecture strategy does not replace it or start a parallel code Goal. Subsequent sequential cards cover provider compatibility, `outcome/v1`, `headless/v1`, scoped event projections, managed operation and only then bounded delegation/leases where required.
 
+### Authority Hub and anti-absorption strategy
+
+Iskra is not a hub merely because it connects to other products. It becomes one only when customers choose it as the canonical owner of **Identity, Authority, Outcome, Evidence and Delivery**. External Agents and models are replaceable capabilities; external UIs and Boards are replaceable projections. An adapter may translate transport and IDs but never decides admission, permission, acceptance, settlement or retry.
+
+The revised competitive position is **the smallest Outcome-verified Authority Hub**, not the most feature-rich one:
+
+- A single binary with measured resource budgets instead of a required framework/Docker/DB stack.
+- Customer Outcomes with baseline/target, acceptance and required evidence, compared against AgentField decision receipts rather than assumed to be unique.
+- BYOUI and customer-generated interfaces whose scopes and approval path remain enforced outside Core.
+- No invisible replay on provider timeout, lease expiry, delivery `unknown` or restart, proven through failure injection.
+- One Local → Managed path with working backup/restore/export/delete and measured total cost.
+- GLM and other provider profiles as a distribution wedge, never the permanent product identity.
+
+AgentField is the first required comparison: its public documentation includes Agents as APIs, identity, verifiable credentials, access policies, decision receipts, signed audit chain, multiple SDKs and `docker compose`. CodeAF adds managers, budgets, schedules and headless mode. OpenClaw already provides local multi-channel assistants, daemon and hosting choices. Iskra must not claim those categories as open space.
+
+The required bake-off measures installation time, total RAM/CPU/support effort, Outcome acceptance, BYOUI scope enforcement, duplicate/replay behavior, provider swap, exit portability and managed recovery cost. If Iskra has no practical advantage over AgentField/CodeAF/OpenClaw, stop the generic Hub build or reposition it as a small adapter rather than a competing control plane.
+
+| Platform | Allowed relationship | Authority boundary |
+|---|---|---|
+| Vercel Board | Optional task inlet/outlet and BYOUI channel | Board is never canonical policy or evidence; no full message mirroring |
+| Anthropic Managed Agents | Limited external execution capability and artifacts | Iskra does not claim ownership of its hosted session/sandbox |
+| OpenMausBot | External harness through ProviderAdapter/capability contracts | MausBot keeps its own turn/permission authority; no control claim |
+| AgentField / CodeAF | Direct comparison and optional REST/SDK/HTTP capability | Never claim identity, policy, audit, budgets or headless as Iskra-only |
+| OpenClaw / Hermes Agent | Limited external execution or channel integration | Local free and multi-channel are not differentiators; unverified Kanban/budget/hosting claims are excluded |
+| LangGraph / Temporal | External worker/runtime via A2A/HTTP/CloudEvents | Iskra does not replace their runtimes or reimplement their frameworks |
+| GLM / DeepSeek | Provider and evaluation profiles | No hard-coded default or provider-specific Core policy |
+
+The defensibility assets are the open conformance kit, labelled Outcome evaluations, Procedure/failure corpus, evidence continuity, reference integrations, managed restore/delivery assurance and actual customer distribution. Exportability remains a feature; forced lock-in is not the moat.
+
 ## 1. Product thesis
 
 Iskra should be the **lightweight, model-neutral, safety-first Outcome control plane for software teams that want several AI agents to complete verifiable work through any client or UI**.
@@ -250,6 +279,7 @@ These measures are more aligned with the goal than downloads, stars, number of b
 
 - Interview 15 qualified technical users, including at least five actual GLM users and five teams operating multiple Agent engines.
 - Record current providers, spend, switching reasons, laptop-off work, API clients, delivery/recovery failures and existing alternatives.
+- Ask who owns Task, permissions, outcome acceptance and result evidence today; why direct AgentField/CodeAF/OpenClaw/Vercel use is insufficient; and whether Iskra must sit in the execution path for a specific recurring Outcome.
 - Design three synthetic demonstrations: backend/CI → Outcome API → evidence/result; GLM versus another provider on the same labelled Outcome; scheduled/webhook work → approval → delivery/audit.
 
 Gate: five teams confirm a real multi-provider/Agent operations problem and three discuss a concrete managed design-partner Task and budget. GLM setup questions alone validate content demand, not Control Plane demand.
@@ -328,6 +358,7 @@ Stop or narrow expansion when:
 - Multi-Agent coordination costs more than it saves on the same Tasks.
 - External engines require bypassing core policy to be useful.
 - Hosted usage grows but unit economics remain negative after price/allowance correction.
+- AgentField/CodeAF/OpenClaw already wins the customer's installation, Outcome, BYOUI, recovery or total-cost requirements without a practical Iskra advantage; reposition as an adapter instead of a generic Hub.
 - Users create Agents but do not retain or reuse successful workflows.
 - A new surface would violate the local binary, privacy, security, or dependency budgets without a separately approved reason.
 
