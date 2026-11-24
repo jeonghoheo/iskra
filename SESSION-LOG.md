@@ -882,3 +882,45 @@ Status: **passed owner-run Telegram checks.** The automated Stage 1 goals were c
 - Removed the owner-created test files `workspace/live-check.txt`, `workspace/roundtrip.txt`, `workspace/cli-check.txt`, and `workspace/telegram-check.txt`.
 - Kept `workspace/hello.txt` (Block 3 demo) and `workspace/trial_project/` (the Block 6 regression fixture that `SESSION.md` says to keep).
 - Verification covered one owner, one instance, one provider/model, and the local Telegram channel. Multi-agent isolation, queues, ACP, and hosted behavior remain untested.
+
+## v1.4 — Telegram reachability hardening (2026-11-24)
+
+Status: **implemented, committed, and pushed as `97ff7ae`; owner-run live check passed.** The B3 live-proxy measurement remains unverified because no proxy was available.
+
+### What changed
+
+- `Cargo.toml`: reqwest now enables the `socks` feature. Direct dependencies remain **7**; the resolved package set is unchanged.
+- `src/health.rs` (new): Telegram reachability state (`starting` / `ok` / `degraded` / `unreachable`), atomic 0600 JSON writes, a 30 s `get_me` watchdog, and unit tests. The snapshot lives at `memory/telegram_health.json` and contains timestamps, counters, and a short error category only.
+- `src/channel.rs`: startup probes `get_me` inside a **20 s** window (1/2/4/8 s delays, 5 s per attempt), logs `telegram_start_retry`, writes `telegram_fatal`, and uses `try_dispatch_with_listener` instead of the panicking `dispatch`. Runtime polling errors go through a custom `ErrorHandler` and log `telegram_poll_error`; the watchdog records API reachability.
+- `src/main.rs`: a channel startup failure exits with code **2** instead of a panic.
+- `README.md`: new **Known limitations** section covering HTTP/SOCKS5 proxy variables, `socks5h://`, ignored `TELOXIDE_PROXY`, macOS system proxy not being read, the 20 s startup window, and the runtime health file.
+- The health file's `last_api_ok` comes from the 30 s `get_me` watchdog, not from a `getUpdates` success hook: teloxide exposes no polling-success callback, and wrapping the stream would need a new direct dependency or a larger polling refactor. A silently stuck polling loop is bounded by the 17 s HTTP timeout.
+
+### Verification
+
+- `cargo test`: **136 passed, 0 failed** (134 unit + 2 real CLI process tests; baseline 125, +11 tests: 8 health unit tests, 1 runtime mock Bot API test, 2 helper tests).
+- `cargo build --release`: zero Iskra warnings; the existing `proc-macro-error2 v2.0.1` future-incompatibility note remains.
+- `rustfmt --check` (edition 2024): `health.rs`, `channel.rs`, and `main.rs` clean.
+- `cargo clippy --all-targets`: the same 5 pre-existing warnings in `channel.rs`, `locale.rs`, and `memory.rs`; none in new code.
+- Budgets: stripped binary **6,512,152 bytes = 6.21 MiB**; direct dependencies **7**; CLI idle RSS **3,984 KB = 3.89 MiB** in an isolated dummy-config directory.
+- Startup failure: closed proxy port → exit **2**, 20.3 s, 5 attempts, `telegram_fatal reason=network`, no panic; blackhole proxy → exit **2**, 20.1 s, no panic. The health file reported `state=unreachable`.
+- SOCKS5: the release binary completed SOCKS5 handshakes through a local sink. `socks5://` resolved `api.telegram.org` locally to `149.154.166.110:443`; `socks5h://` sent `api.telegram.org:443` as a domain request.
+- Runtime mock: the integration test moved `ok → degraded → unreachable → ok` and produced `telegram_poll_error` lines. Test events append to the shared `logs/agent.log` because logging uses a process-global path; the test lines around ts 1795487017–1795487020 are not live failures.
+
+### Owner-run live check
+
+- A debug binary built from the new source (PID 84368, started 2026-11-24 05:29) ran against the real `.env`; the executor did not open or print `.env`.
+- `telegram_start` appeared without any `telegram_start_retry`; `telegram_commands_registered` succeeded for en, ko, and ru; `telegram_fatal` count was **0**.
+- `memory/telegram_health.json` reported `state: ok`, no errors, and `last_api_ok_unix` advanced **1795489097 → 1795489157** over the observation interval.
+- One real turn completed: `session_work_start id=17`, `turn_start run_id=17`, `model_call model=deepseek-flash ... total=3950`, `turn_end answer`, `session_work_end id=17 state=Completed`, and `telegram_reply_sent chunks=1`.
+- Two ESTABLISHED TCP connections to `149.154.166.110:443` were visible for the instance.
+
+### Unverified
+
+- **B3**: real Telegram receive/reply through a user-provided HTTP or SOCKS5 proxy. No proxy was available, so the Task B report keeps B3 as Unverified.
+- Generalization to other networks, proxies, providers, or long-running outages.
+
+### Next
+
+- Close B3 when a proxy address is provided.
+- Proceed to the Stage 2 design (two built-in HTTP agents, explicit `@agent`, independent state, FIFO) unless the owner chooses another next step.
