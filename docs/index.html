@@ -268,7 +268,7 @@
     <canvas id="sparks" aria-hidden="true"></canvas>
     <div class="wrap hero-grid">
       <div>
-        <span class="badge" data-i18n="badge"><span class="dot" aria-hidden="true">✦</span><span>v1 complete · <b>real-use testing</b></span></span>
+        <span class="badge" data-i18n="badge"><span class="dot" aria-hidden="true">✦</span><span>v2 in progress · <b>two-agent runtime</b></span></span>
         <h1 data-i18n="h1">A lightweight AI agent,<br><em>built by hand</em>
           <span class="en">Iskra (искра) means “spark” — a personal agent harness, written in Rust.</span>
         </h1>
@@ -504,14 +504,19 @@ cargo run</pre></div>
   <section id="roadmap">
     <div class="wrap">
       <div class="sec-head">
-        <span class="sec-tag" data-i18n="rmTag">ROADMAP · V1</span>
-        <h2 data-i18n="rmH2">Building v1 in six blocks</h2>
-        <p data-i18n="rmP">Not everything at once. Every block has acceptance criteria, and the next block starts only after verification passes.</p>
+        <span class="sec-tag" data-i18n="rmTag">ROADMAP · V1 → V2</span>
+        <h2 data-i18n="rmH2">V1 is complete. V2 is in progress.</h2>
+        <p data-i18n="rmP">v1 shipped in six verified blocks. The first v2 slice — a two-agent workbench with durable runs and explicit routing — is implemented and live-verified. ACP engines, bounded delegation, and decision-model routing remain later stages.</p>
       </div>
       <div class="progress-wrap">
-        <div class="progress-top"><b data-i18n="progLabel">v1 progress</b><span class="mono" data-i18n="progMeta">BLOCK 6 / 6 · REAL-USE TESTING</span></div>
+        <div class="progress-top"><b data-i18n="progLabel">v1 progress</b><span class="mono" data-i18n="progMeta">BLOCK 6 / 6 · COMPLETE</span></div>
         <div class="bar" role="progressbar" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100" aria-label="v1 progress 100%"><i></i></div>
       </div>
+      <div class="progress-wrap" style="margin-top:14px">
+        <div class="progress-top"><b data-i18n="prog2Label">v2 progress</b><span class="mono" data-i18n="prog2Meta">STAGE 2 COMPLETE · STAGE 3 NEXT</span></div>
+        <div class="bar" role="progressbar" aria-valuenow="50" aria-valuemin="0" aria-valuemax="100" aria-label="v2 progress 50%"><i style="width:50%"></i></div>
+      </div>
+      <div class="sec-tag" data-i18n="v1BlocksTag" style="margin-top:18px">V1 · SIX VERIFIED BLOCKS</div>
       <div class="road">
         <div class="block done"><div class="bn">01</div><div><h3><span data-i18n="b1t">Skeleton</span> <span class="status done" data-i18n="stDone">Done</span></h3><p data-i18n="b1p">From installing Rust to <span class="mono">cargo new iskra</span> — a minimal project that compiles and runs.</p></div></div>
         <div class="block done"><div class="bn">02</div><div><h3><span data-i18n="b2t">First call</span> <span class="status done" data-i18n="stDone">Done</span></h3><p data-i18n="b2p">The minimal circuit that asks the model one sentence and prints the answer. Your own key, isolated in .env.</p></div></div>
@@ -566,7 +571,7 @@ cargo run</pre></div>
     title: "Iskra — A tiny personal agent harness in Rust",
     brandSub: "PERSONAL AGENT HARNESS",
     navHow: "How it works", navFeat: "Features", navSafe: "Sandbox", navStart: "Quickstart", navRoad: "Roadmap",
-    badge: `<span class="dot" aria-hidden="true">✦</span><span>v1 complete · <b>real-use testing</b></span>`,
+    badge: `<span class="dot" aria-hidden="true">✦</span><span>v2 in progress · <b>two-agent runtime</b></span>`,
     h1: `A lightweight AI agent,<br><em>built by hand</em><span class="en">Iskra (искра) means “spark” — a personal agent harness, written in Rust.</span>`,
     heroSub: `Iskra is a personal agent harness built from the loop up — not a giant framework you adopt off the shelf, but <b>a small core you write and understand yourself</b>. A single Rust binary, a brain you plug in yourself — any model, your own API key (BYO-key) — and file tools that cannot leak outside their sandbox.`,
     ctaGithub: "View on GitHub", ctaQuick: "Quickstart →",
@@ -678,9 +683,11 @@ cargo run`,
     hint2: `From Block 3 on, this circuit grows into <span class="mono">brain.rs · loop_.rs · tools.rs</span>.`,
     hint3: `Design decisions and per-block verification records live in the repository's <span class="mono">SESSION-LOG.md</span>.`,
     toastCopied: "Command copied", toastFail: "Copy failed — select and copy it manually", toastUnsupported: "Copying is not supported in this browser",
-    rmTag: "ROADMAP · V1", rmH2: "Building v1 in six blocks",
-    rmP: "Not everything at once. Every block has acceptance criteria, and the next block starts only after verification passes.",
-    progLabel: "v1 progress", progMeta: "BLOCK 6 / 6 · REAL-USE TESTING",
+    rmTag: "ROADMAP · V1 → V2", rmH2: "V1 is complete. V2 is in progress.",
+    rmP: "v1 shipped in six verified blocks. The first v2 slice — a two-agent workbench with durable runs and explicit routing — is implemented and live-verified. ACP engines, bounded delegation, and decision-model routing remain later stages.",
+    progLabel: "v1 progress", progMeta: "BLOCK 6 / 6 · COMPLETE",
+    prog2Label: "v2 progress", prog2Meta: "STAGE 2 COMPLETE · STAGE 3 NEXT",
+    v1BlocksTag: "V1 · SIX VERIFIED BLOCKS",
     b1t: "Skeleton", b1p: `From installing Rust to <span class="mono">cargo new iskra</span> — a minimal project that compiles and runs.`,
     b2t: "First call", b2p: "The minimal circuit that asks the model one sentence and prints the answer. Your own key, isolated in .env.",
     b3t: "Loop + file tools", b3p: `The agent loop and sandboxed read/write — verified down to the <span class="mono">../secret.txt</span> refusal.`,
@@ -701,7 +708,7 @@ cargo run`,
     title: "Искра — лёгкий персональный агентный харнесс на Rust",
     brandSub: "PERSONAL AGENT HARNESS",
     navHow: "Как это работает", navFeat: "Возможности", navSafe: "Песочница", navStart: "Быстрый старт", navRoad: "Дорожная карта",
-    badge: `<span class="dot" aria-hidden="true">✦</span><span>v1 завершена · <b>личное тестирование</b></span>`,
+    badge: `<span class="dot" aria-hidden="true">✦</span><span>v2 в работе · <b>среда с двумя агентами</b></span>`,
     h1: `Лёгкий AI-агент,<br><em>собранный своими руками</em><span class="en">ISKRA — персональный агентный харнесс, написанный на Rust.</span>`,
     heroSub: `«Искра» — это персональный агентный харнесс, построенный начиная с самой петли (loop), а не гигантский фреймворк, который берут готовым: <b>маленькое ядро, которое пишешь и понимаешь сам</b>. Один бинарник на Rust, мозг, который подключаете вы сами, — любая модель, ваш собственный API-ключ (BYO-key), — и файловые инструменты, которые не могут выйти за пределы песочницы.`,
     ctaGithub: "Смотреть на GitHub", ctaQuick: "Быстрый старт →",
@@ -813,9 +820,11 @@ cargo run`,
     hint2: `Начиная с Блока 3 этот контур вырастает в <span class="mono">brain.rs · loop_.rs · tools.rs</span>.`,
     hint3: `Проектные решения и записи проверки по каждому блоку лежат в <span class="mono">SESSION-LOG.md</span> репозитория.`,
     toastCopied: "Команда скопирована", toastFail: "Не удалось скопировать — выделите и скопируйте вручную", toastUnsupported: "В этом браузере копирование не поддерживается",
-    rmTag: "ДОРОЖНАЯ КАРТА · V1", rmH2: "Собираем v1 за шесть блоков",
-    rmP: "Не всё сразу. У каждого блока есть критерии приёмки, и следующий блок начинается только после прохождения проверки.",
-    progLabel: "Прогресс v1", progMeta: "БЛОК 6 / 6 · ТЕСТИРОВАНИЕ В ЛИЧНОМ ИСПОЛЬЗОВАНИИ",
+    rmTag: "ДОРОЖНАЯ КАРТА · V1 → V2", rmH2: "V1 завершена. V2 в работе.",
+    rmP: "v1 выпущена шестью проверенными блоками. Первый слой v2 — среда с двумя агентами, долговечная очередь задач и явная маршрутизация — реализован и проверен в реальном использовании. Движки ACP, ограниченное делегирование и маршрутизация через модель решений остаются следующими этапами.",
+    progLabel: "Прогресс v1", progMeta: "БЛОК 6 / 6 · ГОТОВО",
+    prog2Label: "Прогресс v2", prog2Meta: "ЭТАП 2 ГОТОВ · ДАЛЕЕ ЭТАП 3",
+    v1BlocksTag: "V1 · ШЕСТЬ ПРОВЕРЕННЫХ БЛОКОВ",
     b1t: "Каркас", b1p: `От установки Rust до <span class="mono">cargo new iskra</span> — минимальный проект, который компилируется и запускается.`,
     b2t: "Первый вызов", b2p: "Минимальный контур, который задаёт модели одно предложение и печатает ответ. Ваш собственный ключ, изолированный в .env.",
     b3t: "Петля + файловые инструменты", b3p: `Агентная петля и чтение/запись в песочнице — проверено вплоть до отказа на <span class="mono">../secret.txt</span>.`,
@@ -836,7 +845,7 @@ cargo run`,
     title: "Iskra — Rust로 만든 가벼운 개인용 에이전트 하네스",
     brandSub: "PERSONAL AGENT HARNESS",
     navHow: "작동 방식", navFeat: "기능", navSafe: "샌드박스", navStart: "빠른 시작", navRoad: "로드맵",
-    badge: `<span class="dot" aria-hidden="true">✦</span><span>v1 완성 · <b>실사용 테스트 중</b></span>`,
+    badge: `<span class="dot" aria-hidden="true">✦</span><span>v2 진행 중 · <b>두 에이전트 런타임</b></span>`,
     h1: `내 손으로 만드는<br><em>가벼운 AI 에이전트</em><span class="en">ISKRA — Rust로 쓴 개인용 에이전트 하네스.</span>`,
     heroSub: `이스크라(искра, “불꽃”)는 거대한 프레임워크를 가져다 쓰는 대신, <b>에이전트의 심장인 루프부터 직접 만든</b> 개인용 에이전트 하네스입니다. Rust 단일 바이너리, 직접 연결하는 두뇌 — 어떤 모델이든 본인의 API 키로(BYO-key) — 그리고 밖으로 새지 않는 샌드박스 파일 도구.`,
     ctaGithub: "GitHub에서 보기", ctaQuick: "빠른 시작 →",
@@ -948,9 +957,11 @@ cargo run`,
     hint2: `Block 3부터는 이 회로가 <span class="mono">brain.rs · loop_.rs · tools.rs</span>로 나뉘어 자랍니다.`,
     hint3: `설계 결정과 블록별 검수 기록은 저장소의 <span class="mono">SESSION-LOG.md</span>에 남아 있습니다.`,
     toastCopied: "명령어가 복사됐습니다", toastFail: "복사에 실패했습니다 — 직접 선택해 복사하세요", toastUnsupported: "이 브라우저에서는 복사가 지원되지 않습니다",
-    rmTag: "로드맵 · ROADMAP V1", rmH2: "여섯 블록으로 짓는 v1",
-    rmP: "한 번에 다 만들지 않습니다. 블록마다 합격 기준이 있고, 검수를 통과해야 다음으로 넘어갑니다.",
-    progLabel: "v1 진행률", progMeta: "BLOCK 6 / 6 · 실사용 테스트 중",
+    rmTag: "로드맵 · V1 → V2", rmH2: "v1은 완료, v2는 진행 중",
+    rmP: "v1은 검증된 여섯 블록으로 완성됐습니다. v2의 첫 조각인 두 에이전트 워크벤치(지속 작업 큐·명시적 라우팅)는 구현과 라이브 검증을 마쳤습니다. ACP 엔진, 제한된 위임, 결정 모델 라우팅은 이후 단계입니다.",
+    progLabel: "v1 진행률", progMeta: "BLOCK 6 / 6 · 완료",
+    prog2Label: "v2 진행률", prog2Meta: "STAGE 2 완료 · 다음 STAGE 3",
+    v1BlocksTag: "V1 · 검증된 여섯 블록",
     b1t: "뼈대", b1p: `Rust 설치부터 <span class="mono">cargo new iskra</span>까지 — 컴파일·실행되는 최소 프로젝트.`,
     b2t: "첫 호출", b2p: "본인이 연결한 모델에 한 문장을 묻고 답을 받는 최소 회로. 키는 .env로 격리.",
     b3t: "루프 + 파일 도구", b3p: `에이전트 루프와 샌드박스 read/write. <span class="mono">../secret.txt</span> 거부까지 검증.`,

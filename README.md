@@ -9,14 +9,15 @@
 
 ![License: FSL-1.1-ALv2](https://img.shields.io/badge/License-FSL--1.1--ALv2-blue.svg)
 ![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)
-![Status](https://img.shields.io/badge/Status-v1%20complete%20%C2%B7%20real--use%20testing-brightgreen.svg)
+![Status](https://img.shields.io/badge/Status-v2%20in%20progress%20%C2%B7%20two--agent%20runtime-blue.svg)
 
 Iskra is a personal agent that lives in a messenger, remembers what you tell it — immediately and across restarts,
 uses tools under strict permission boundaries, and is designed to be taken apart
 and reassembled — swap the model, the channel, or the tools without touching the core.
 
-> **Status:** v1 is complete and in real-use testing. The core loop, file tools,
-> memory and the Telegram channel all work today.
+> **Status:** v1 is complete and in real-use testing. The first v2 slice — a two-agent
+> workbench with durable runs and explicit routing — is implemented and live-verified.
+> ACP engines, bounded delegation, and decision-model routing remain later stages.
 > This repository contains code only — personal memory, data and secrets never live here.
 
 ## Design principles
@@ -38,7 +39,7 @@ and reassembled — swap the model, the channel, or the tools without touching t
    budget, credential redaction on save, and infection defenses — today as rules
    the model is given, with a structural quarantine for outside content planned for v2.
 
-## Current state (v1)
+## Current state (v1 complete · v2 in progress)
 
 - [x] Rust skeleton + brain (direct HTTP, no SDK) — the model is a swappable part; v1 ships with DeepSeek as the default
 - [x] Conversation loop with stop conditions (max tool round-trips, repeated-error halt)
@@ -48,6 +49,7 @@ and reassembled — swap the model, the channel, or the tools without touching t
 - [x] Shell tool (`ls`, `cat`, `git`, `cargo`) with subcommand and argument policy, cleared environment and macOS sandbox (cargo is disabled where no OS sandbox exists) + a verified coding task
 - [x] Shell hardening (v1.1): 21 bypass paths closed and covered by tests
 - [x] Two-agent runtime (Stage 2): a local `iskra.json` registry (at most two agents), an isolated model, tools, memory, Session, workspace and usage record per agent, a durable run queue in `memory/runs.json`, explicit `@agent` routing, `/agents`, `/status [@agent]`, `/stop [@agent]`, `/resume [@agent]`, and `@name` attribution on replies from another agent
+- [ ] Next up: one validated ACP engine path and bounded delegation (Stage 3); decision-model routing and product surfaces remain later stages
 
 ## Known limitations
 
@@ -89,7 +91,7 @@ and reassembled — swap the model, the channel, or the tools without touching t
 | Version | Direction |
 |---|---|
 | v1 | A personal agent for one user (Telegram, one brain, five tools, Markdown memory) |
-| v2 | Swappable parts — contract specs formalized, multiple brains, decision-model routing |
+| v2 (in progress) | Swappable parts — two-agent runtime, durable runs and explicit routing are done; ACP engines, bounded delegation and decision-model routing remain |
 | v3 | Delegated work — triggers, bot packages, identity spec (`identity/v1`) |
 | v4 | Desktop app (Tauri) — multi-bot, computer use behind approval gates |
 | v5 | Product — hosted mode, per-user memory + adapter serving, signed releases |

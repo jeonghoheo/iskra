@@ -1,6 +1,6 @@
 # Iskra Agent Workbench Architecture
 
-Status: **approved target design; the Stage 2 two-Agent slice is implemented in the working tree, Stage 3 and later are not started**.
+Status: **approved target design; the Stage 2 two-Agent slice is committed as `3d3c98f`, Stage 3 and later are not started**.
 Date: 2026-11-24.
 
 This document defines the architecture for turning Iskra from one persistent personal agent into a model-neutral workbench for multiple agents. It preserves the existing Rust core, local data ownership, fail-closed tools, and single-binary distribution.
