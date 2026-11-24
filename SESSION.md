@@ -1060,7 +1060,7 @@ Customer content and metrics require explicit consent and minimization. Local ex
 
 ### P0-S — sales-package and customer-discovery card (normal mode)
 
-- **Outcome**: A truthful paid-pilot offer, a real intake/payment route, an interview outline, and a qualified-lead list are ready before broad product investment.
+- **Outcome**: A truthful buyable offer, a real intake/payment route, an asynchronous intake form, and a qualified-inquiry list are ready before broad product investment.
 - **Spec**: `docs/BUSINESS.md` §0 and §6 Phase B; the approved commercialization plan saved in the session plan file.
 - **Files**: `docs/BUSINESS.md`, `docs/index.html`, and existing README/site files only for verified behavior and the actual offer. No new framework or unverified pricing/checkout UI.
 - **Proof**: The page names the target customer, $300 experiment, included/excluded scope, BYOK/model charges, support and refund boundary, known limitations, and a working owner-approved intake route. Every product claim maps to current verified behavior or is labelled planned. The owner confirms payment/tax/refund feasibility.
@@ -1072,10 +1072,10 @@ Customer content and metrics require explicit consent and minimization. Local ex
 
 | Timing | Work | Evidence |
 |---|---|---|
-| Day 1–2 | Finalize offer, exclusions, refund/support boundary, payment/tax path, and ten-question problem-interview outline | Owner-reviewable offer and a legal payment route |
+| Day 1–2 | Finalize offer, exclusions, refund/support boundary, payment/tax path, and the ten-question asynchronous intake form | Owner-reviewable offer and a legal payment route |
 | Day 2–5 | Prepare three reproducible workflow demonstrations and the installation/diagnostic/export requirements; do not displace `delivery/v1` implementation | Real artifacts, expected checks, model/time/cost fields, and known limits |
 | Day 4–6 | Narrow the existing site message and add a real pilot CTA after intake is approved | No dead checkout or unsupported claim |
-| Day 5–14 | Select 30 qualified leads, request ten problem interviews, and offer at most three paid pilots | Contact/interview/payment outcomes, not free-interest counts |
+| Day 5–14 | Post at most two listings, collect asynchronous intake responses, and offer at most three paid audits or pilots (see the interview-free demand ladder) | Listing views, intake starts and paid orders, not free-interest counts |
 | On delivery | Measure time to first useful Task, Task success, manual repair, and support effort for 14 days | Customer-specific evidence with no private data in the repository |
 
 ### Productization sequencing gate
@@ -1086,7 +1086,7 @@ Do not start all productization slices as one autonomous Goal. Owner-only paymen
 
 ### Commercial stop and expansion rules
 
-- Ten qualified interviews with no paid pilot: change the customer/problem/offer rather than adding features.
+- Ten qualified intake responses or listings with no paid audit: change the customer/problem/offer rather than adding features.
 - Fewer than two of the first three owners active in week four: do not expand managed hosting; fix retention first.
 - Below 80% verified Task success or above one manual repair per Task on average: do not broaden claims or self-serve acquisition.
 - Managed gross margin below 70% or stabilized support above 30 minutes/customer/month: correct price, allowance, or scope before onboarding more customers.
@@ -1120,11 +1120,11 @@ Vercel Board already provides a hosted message/task primitive with claims, lease
 
 - **Outcome**: Evidence that technical teams will pay for a Managed Headless Workspace rather than merely request GLM setup help.
 - **Spec**: `docs/BUSINESS.md` §0 and §6 Phase A.
-- **Scope**: 15 qualified interviews, at least five actual GLM Coding Plan/API users and five teams operating multiple Agent engines; no new product code or customer data collection without consent.
+- **Scope**: 15 qualified interviews, at least five actual GLM Coding Plan/API users and five teams operating multiple Agent engines; no new product code or customer data collection without consent. **Superseded 2026-11-24:** the 15-interview requirement is replaced by the interview-free demand ladder at the end of this file. The questions and the qualitative target remain, but written responses collected asynchronously count as evidence.
 - **Proof**: Current providers, spend, switching reasons, laptop-off work, API clients, operational failures and alternatives are recorded. Five teams confirm a real multi-provider/Agent operations problem and three discuss a concrete managed design-partner Task and budget.
 - **Current**: `master` HEAD `b5af990`; latest recorded code baseline 215 passed, 0 failed, not rerun for this strategy work. Stage 2.5-A is designed but not implemented.
 - **Stop**: If only GLM setup demand appears, treat it as content demand. If five teams do not confirm the operating problem, do not start the large Headless/cloud build. External messages and publication require separate owner approval.
-- **Live**: Owner performs interviews and any actual GLM/provider/account/payment/network checks. No representative “Russian developers are migrating to GLM” claim is allowed without representative evidence.
+- **Live**: Owner performs any actual GLM/provider/account/payment/network checks and approves each listing. No representative “Russian developers are migrating to GLM” claim is allowed without representative evidence.
 
 ### Sequential technical cards after P0-H
 
@@ -1174,7 +1174,7 @@ Add to the existing 15-interview card:
 - Who approves the Outcome and what evidence is accepted independently of the executing Agent?
 - What always-on recovery, audit retention or policy operation has a measurable budget?
 
-The demand gate changes to: **five teams with a real cross-vendor Authority/Outcome problem and three teams with a specific recurring Outcome that requires Iskra in the execution path plus a managed budget discussion.** Generic connector interest and GLM setup requests do not pass.
+The demand gate changes to: **five teams with a real cross-vendor Authority/Outcome problem and three teams with a specific recurring Outcome that requires Iskra in the execution path plus a managed budget discussion.** Generic connector interest and GLM setup requests do not pass. **Revised 2026-11-24:** these five and three confirmations are no longer collected through owner-held interviews; the interview-free demand ladder replaces them with dated public evidence, asynchronous written responses, and at least one paid audit delivered through Iskra with an accepted Launch or Managed proposal.
 
 ### HUB-PROOF — one vertical integration card (design only)
 
@@ -1199,3 +1199,79 @@ Stop or reposition when:
 - The only useful path requires vendor-owned canonical state or weaker permissions.
 - Every design partner requires unrelated custom workflows or private forks.
 - External engine resources and human intervention make managed economics worse than the alternative.
+
+---
+
+## Interview-free demand ladder (2026-11-24)
+
+Status: **owner constraint recorded — one-to-one interviews with strangers are not feasible for this owner, so the demand gate is replaced by a transaction-first ladder. No payment account, listing, publication, outreach or customer-data collection has been started by this entry.** Stage 2.5-A `delivery/v1` remains the current implementation target.
+
+### Why the 15-interview gate is replaced
+
+`P0-H` measured willingness to pay through conversation. That is the weakest available proxy and it depends on a capability the owner does not have. Replace the proxy, not the goal. Cash received, a stranger spending effort on an intake form, and a public listing's conversion are stronger signals and require no scheduled call. An interview answers "would you buy"; a paid order answers "you bought".
+
+Where qualitative detail is still needed, the owner reads written answers collected asynchronously instead of holding calls.
+
+### Ladder
+
+| Gate | Owner time | Artifact | Pass | If it fails |
+|---|---|---|---|---|
+| **G1 desk evidence** | 2–3 days | Dated public records with URL and quote from GitHub issues, Reddit/HN, Habr, provider/Z.AI forums and Korean developer communities | ≥8 records of cross-vendor agent operation pain; ≥3 explicitly asking for a layer that owns state, authority or evidence across agents | If the pain is only token cost or model setup, keep the GLM migration wedge and do not build the Hub |
+| **G2 buyable async offer** | 2 days | One page, ten-question async intake form, payment path, and the offer boundary | A stranger can read, qualify, pay and submit inputs without any call; owner confirms payment/tax/refund feasibility | If payment is unavailable, run G3 with a free diagnostic form and treat it as qualitative evidence only, not demand |
+| **G3 distribution without an audience** | 14 days | At most two listings where an ad can be posted without an existing following: Upwork/Fiverr, Korean marketplaces such as 크몽/숨고, Habr or Telegram channels with explicit self-promotion rules, Reddit/HN threads where allowed | 200+ listing views, 5+ intake starts, 1+ paid order | 0 orders at 200 views changes the problem, offer or price — never adds features or connectors |
+| **G4 deliver, then upsell** | 3–5 days | The first paid deliverable plus recorded hours, provider cost, defects and manual repair | Delivered within 48 hours, ≤4 owner hours, produced through the same Iskra path the product will use; at least one of the first three buyers accepts a Launch or Managed proposal | If every next-step proposal is rejected, the audit sells diagnosis rather than operation; reclassify the paid product as the audit or a small adapter, not Managed |
+
+### G2 offer under test — Agent Ops Audit, $49 hypothesis
+
+Inputs: agent/model/engine inventory, existing scripts, redacted failure logs. Outputs:
+
+1. Who currently owns Task, permissions, approval, acceptance and result evidence.
+2. Duplicate-run, restart and delivery-unknown risks with reproduction notes.
+3. Cost per verified Outcome from real runs, not list prices.
+4. A provider-switch or migration plan with the acceptance checks that must survive it.
+5. Three reproducible Outcomes with acceptance evidence the buyer can rerun.
+
+Why a buyer pays: it is cheaper than the one to two days the buyer would spend assembling the same analysis, and the deliverable is a document plus runnable scripts rather than advice. Why Iskra is required: the audit must be produced by headless Outcome runs with recorded evidence, so the offer cannot be delivered by a chat prompt alone.
+
+Guard: this audit is a **demand instrument, not the product**. It must run through the same Iskra path the product will use. If one audit needs more than four owner hours or a bespoke deliverable, stop after three audits and redefine the offer — that is the consultancy signal the strategy already forbids.
+
+### Asynchronous interview, when written answers are acceptable
+
+Deliver the `P0-H` questions plus the Authority Hub questions through an Iskra-run Telegram or web intake and post the link only where self-promotion is allowed. The owner reads transcripts and never schedules a call. Five completed written responses count as the qualitative evidence `P0-H` wanted; zero responses after 14 days is itself an answer about reachability.
+
+### What each signal does and does not prove
+
+| Signal | Proves | Does not prove |
+|---|---|---|
+| Paid $49 audit | someone pays for agent-operations diagnosis | willingness to pay monthly for managed execution |
+| 200 views, 0 orders | the offer or channel is wrong | that the problem does not exist |
+| Desk evidence | the pain is publicly reported | that those people will pay |
+| Owner dogfooding | the product path works | external demand |
+
+Only a paid managed order proves the managed hypothesis. The ladder exists to reach the first transaction in weeks, not to replace that proof.
+
+### Timing
+
+G1 2–3 days, G2 2 days, G3 14 days overlapping G1 follow-up, G4 3–5 days. First revenue is possible within three weeks and a design partner within four. The fifteen-interview route had no revenue and an open-ended schedule.
+
+### Replaced demand gate
+
+Phase A now passes when:
+
+1. G1 publishes dated pain evidence with receipts.
+2. G3 produces at least one paid audit.
+3. G4 delivers it with Iskra in the execution path in at most four owner hours.
+4. At least one of the first three buyers accepts a Launch or Managed proposal.
+
+Five conversational confirmations and three budget discussions are no longer required. One paid managed order plus two delivered audits is stronger evidence than fifteen interviews and replaces the gate. The earlier twenty-contact/three-proposal stop rule is reinterpreted as twenty listing-qualified inquiries and three paid proposals.
+
+### Unchanged stop rules
+
+- Direct AgentField/CodeAF/OpenClaw already satisfies the customer's requirements with no practical Iskra advantage.
+- The only useful path requires vendor-owned canonical state or weaker permissions.
+- Every buyer requires unrelated custom workflows or a private fork.
+- Three consecutive audits that each require bespoke work stop the offer.
+
+### Live
+
+Owner approves the price, payment/tax route, listing text, channel and any publication separately. No account creation, listing, posting or outreach happens merely because this ladder exists. Publishing product claims requires the corresponding verified behavior or an explicit planned label.

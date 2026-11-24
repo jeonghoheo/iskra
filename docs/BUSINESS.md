@@ -34,7 +34,7 @@ The customer pays for this operating result:
 | **Team** | Human collaboration | Seats, shared Agent/Procedure packages, private overrides, organization policy, approval roles and audit retention | Human seats plus resources after single-owner managed retention is proven |
 | **Private Deployment / Support** | Higher-touch revenue | Self-hosted deployment, migration, security review, training and support | Scoped services without private Core forks or unimplemented Team claims |
 
-Do not set final public prices by copying competitors. The first paid offer is a monthly **Managed Headless Workspace** design-partner beta, not a one-time installation fee. A realistic first paid-beta target is **8–16 weeks after product and security gates**, not an immediate revenue promise. LOIs, waitlists and free usage are not revenue.
+Do not set final public prices by copying competitors. The product's first paid offer is a monthly **Managed Headless Workspace** design-partner beta, not a one-time installation fee. A realistic first paid-beta target is **8–16 weeks after product and security gates**, not an immediate revenue promise. The $49 **Agent Ops Audit** described under demand validation is a separate demand instrument that funds discovery; it is not the product, and it must be produced through the same Iskra path so that delivering it is also a product test. LOIs, waitlists and free usage are not revenue.
 
 ### Outcome and BYOUI as product differentiators
 
@@ -53,7 +53,9 @@ Vercel Board can become an optional communication adapter later; Iskra does not 
 
 ### Demand and GLM validation
 
-During the first 14 days, interview 15 qualified technical users, including at least five actual GLM Coding Plan/API users and five teams running multiple Agent engines. Validate real provider spend, switching reasons, laptop-off work, API clients, operational failures and current alternatives. Require five teams with an actual multi-provider/Agent operating problem and three with a concrete managed design-partner Task and budget discussion.
+Demand is validated by transactions, not by scheduled interviews. An owner who cannot hold intro calls runs an interview-free ladder instead: (1) collect dated public evidence of cross-vendor Agent operation pain from GitHub issues, Reddit/HN, Habr and provider forums; (2) publish one asynchronous, buyable **Agent Ops Audit** under a $49 price hypothesis with a ten-question intake form and a payment path that needs no call; (3) list it on at most two channels that require no existing audience, measuring views, intake starts and paid orders; (4) deliver the first paid audit through the same Iskra path the product will use, then offer the $300 Launch and $49/month Managed.
+
+Gate: one paid audit delivered within 48 hours and four owner hours with Iskra in the execution path, and one of the first three buyers accepting a Launch or Managed proposal. Fifteen interviews and three budget conversations are no longer a gate; written answers through an Iskra-run intake may replace them, and five completed responses count as the qualitative evidence. The audit is a demand instrument, not the product: three consecutive audits requiring bespoke work stop the offer and reclassify it as consultancy. Details and failure rules are in `SESSION.md` "Interview-free demand ladder".
 
 Z.AI officially supports GLM Coding Plan integration with Claude Code, and Russian-language setup/payment guides exist. No representative evidence has been found that most Russian developers are migrating to GLM. Treat GLM as an early Russian-speaking developer-community wedge and the next provider-compatibility candidate, never as the whole market thesis or a hard-coded default.
 
@@ -277,12 +279,13 @@ These measures are more aligned with the goal than downloads, stars, number of b
 
 ### Phase A — demand and wedge evidence, Day 1–14
 
-- Interview 15 qualified technical users, including at least five actual GLM users and five teams operating multiple Agent engines.
-- Record current providers, spend, switching reasons, laptop-off work, API clients, delivery/recovery failures and existing alternatives.
+- Collect at least eight dated public records of cross-vendor Agent operation pain, including at least three asking for a layer that owns state, authority or evidence across agents. Written evidence replaces scheduled interviews.
+- Record current providers, spend, switching reasons, laptop-off work, API clients, delivery/recovery failures and existing alternatives from those records and from asynchronous intake responses.
 - Ask who owns Task, permissions, outcome acceptance and result evidence today; why direct AgentField/CodeAF/OpenClaw/Vercel use is insufficient; and whether Iskra must sit in the execution path for a specific recurring Outcome.
+- Publish one buyable asynchronous Agent Ops Audit, list it on at most two channels that need no existing audience, and measure views, intake starts and paid orders.
 - Design three synthetic demonstrations: backend/CI → Outcome API → evidence/result; GLM versus another provider on the same labelled Outcome; scheduled/webhook work → approval → delivery/audit.
 
-Gate: five teams confirm a real multi-provider/Agent operations problem and three discuss a concrete managed design-partner Task and budget. GLM setup questions alone validate content demand, not Control Plane demand.
+Gate: at least one paid audit delivered within four owner hours with Iskra in the path, and one of the first three buyers accepting a Launch or Managed proposal. GLM setup questions alone validate content demand, not Control Plane demand; zero orders at meaningful listing views changes the problem, offer or price rather than the feature set.
 
 ### Phase B — reliability and Headless Local v0, 0–3 months
 
@@ -360,6 +363,7 @@ Stop or narrow expansion when:
 - Hosted usage grows but unit economics remain negative after price/allowance correction.
 - AgentField/CodeAF/OpenClaw already wins the customer's installation, Outcome, BYOUI, recovery or total-cost requirements without a practical Iskra advantage; reposition as an adapter instead of a generic Hub.
 - Users create Agents but do not retain or reuse successful workflows.
+- Three consecutive Agent Ops Audits require bespoke analysis instead of the same Iskra path; reclassify the offer as consultancy or narrow it to a small adapter.
 - A new surface would violate the local binary, privacy, security, or dependency budgets without a separately approved reason.
 
 ## 8. Explicitly avoided strategies
