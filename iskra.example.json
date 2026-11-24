@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "engines": [
+    {
+      "id": "main-engine",
+      "kind": "openai_compatible",
+      "base_url": "https://api.deepseek.com/chat/completions",
+      "model": "deepseek-flash",
+      "api_key_env": "LLM_API_KEY"
+    }
+  ],
+  "agents": [
+    {
+      "id": "main",
+      "display_name": "Iskra",
+      "engine_id": "main-engine",
+      "role": "Personal assistant"
+    }
+  ]
+}

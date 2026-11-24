@@ -13,15 +13,17 @@ pub const MAIN_AGENT_ID: &str = "main";
 pub struct RunContext<'a> {
     run_id: u64,
     agent_id: &'a str,
+    engine_id: &'a str,
     tool_schemas: Value,
     tools: &'a Tools,
 }
 
 impl<'a> RunContext<'a> {
-    pub fn new(run_id: u64, agent_id: &'a str, tools: &'a Tools) -> Self {
+    pub fn new(run_id: u64, agent_id: &'a str, engine_id: &'a str, tools: &'a Tools) -> Self {
         Self {
             run_id,
             agent_id,
+            engine_id,
             tool_schemas: tools.schemas(),
             tools,
         }
@@ -33,6 +35,10 @@ impl<'a> RunContext<'a> {
 
     pub fn agent_id(&self) -> &str {
         self.agent_id
+    }
+
+    pub fn engine_id(&self) -> &str {
+        self.engine_id
     }
 
     pub fn tool_schemas(&self) -> &Value {
@@ -52,10 +58,11 @@ mod tests {
     fn carries_run_identity_and_the_executor_schemas() {
         let paths = crate::instance::InstancePaths::default();
         let tools = Tools::new_in(&paths.workspace, &paths.memory).unwrap();
-        let context = RunContext::new(42, MAIN_AGENT_ID, &tools);
+        let context = RunContext::new(42, MAIN_AGENT_ID, "main-engine", &tools);
 
         assert_eq!(context.run_id(), 42);
         assert_eq!(context.agent_id(), MAIN_AGENT_ID);
+        assert_eq!(context.engine_id(), "main-engine");
         assert_eq!(context.tool_schemas(), &tools.schemas());
     }
 }

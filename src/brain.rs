@@ -18,10 +18,6 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn from_env() -> Result<Self, String> {
-        Self::from_lookup(|key| std::env::var(key).ok())
-    }
-
     pub fn from_lookup<F>(lookup: F) -> Result<Self, String>
     where
         F: Fn(&str) -> Option<String>,
@@ -205,27 +201,76 @@ pub struct ChatReply {
     pub usage: Option<Usage>,
 }
 
+/// Structured model-call failure. The human-readable `detail` may contain a
+/// truncated provider body and is only for the owner-facing path; logs use
+/// `category()` and `status()` plus Run identity instead.
 #[derive(Debug)]
-pub enum ChatError {
-    Timeout(String),
-    Connection(String),
-    Auth(String),
-    Payment(String),
-    Busy(String),
-    Other(String),
+pub struct ChatError {
+    kind: ChatErrorKind,
+    status: Option<u16>,
+    detail: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChatErrorKind {
+    Timeout,
+    Connection,
+    Auth,
+    Payment,
+    Busy,
+    Other,
+}
+
+impl ChatErrorKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Timeout => "timeout",
+            Self::Connection => "connection",
+            Self::Auth => "auth",
+            Self::Payment => "payment",
+            Self::Busy => "busy",
+            Self::Other => "other",
+        }
+    }
+}
+
+impl ChatError {
+    fn new(kind: ChatErrorKind, detail: String) -> Self {
+        Self {
+            kind,
+            status: None,
+            detail,
+        }
+    }
+
+    fn with_status(kind: ChatErrorKind, status: reqwest::StatusCode, detail: String) -> Self {
+        Self {
+            kind,
+            status: Some(status.as_u16()),
+            detail,
+        }
+    }
+
+    pub fn kind(&self) -> ChatErrorKind {
+        self.kind
+    }
+
+    pub fn category(&self) -> &'static str {
+        self.kind.as_str()
+    }
+
+    pub fn status(&self) -> Option<u16> {
+        self.status
+    }
+
+    pub fn into_detail(self) -> String {
+        self.detail
+    }
 }
 
 impl std::fmt::Display for ChatError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let detail = match self {
-            Self::Timeout(detail)
-            | Self::Connection(detail)
-            | Self::Auth(detail)
-            | Self::Payment(detail)
-            | Self::Busy(detail)
-            | Self::Other(detail) => detail,
-        };
-        f.write_str(detail)
+        f.write_str(&self.detail)
     }
 }
 
@@ -312,12 +357,16 @@ impl Brain {
         let (status, body) =
             match tokio::time::timeout(Duration::from_secs(MODEL_TIMEOUT_SECS), exchange).await {
                 Err(_) => {
-                    return Err(ChatError::Timeout(format!(
-                        "Model call timed out after {MODEL_TIMEOUT_SECS}s"
-                    )));
+                    return Err(ChatError::new(
+                        ChatErrorKind::Timeout,
+                        format!("Model call timed out after {MODEL_TIMEOUT_SECS}s"),
+                    ));
                 }
                 Ok(Err(e)) => {
-                    return Err(ChatError::Connection(format!("Model call failed: {e}")));
+                    return Err(ChatError::new(
+                        ChatErrorKind::Connection,
+                        format!("Model call failed: {e}"),
+                    ));
                 }
                 Ok(Ok(exchange)) => exchange,
             };
@@ -326,13 +375,18 @@ impl Brain {
             return Err(classify_status(status, &body));
         }
 
-        let parsed: ChatResponse = serde_json::from_str(&body)
-            .map_err(|e| ChatError::Other(format!("Failed to parse response JSON: {e}")))?;
-        let choice = parsed
-            .choices
-            .into_iter()
-            .next()
-            .ok_or_else(|| ChatError::Other("Model response has no choices".to_string()))?;
+        let parsed: ChatResponse = serde_json::from_str(&body).map_err(|e| {
+            ChatError::new(
+                ChatErrorKind::Other,
+                format!("Failed to parse response JSON: {e}"),
+            )
+        })?;
+        let choice = parsed.choices.into_iter().next().ok_or_else(|| {
+            ChatError::new(
+                ChatErrorKind::Other,
+                "Model response has no choices".to_string(),
+            )
+        })?;
 
         Ok(ChatReply {
             message: choice.message,
@@ -356,31 +410,49 @@ impl Brain {
 
         let result =
             match tokio::time::timeout(Duration::from_secs(BALANCE_TIMEOUT_SECS), exchange).await {
-                Err(_) => Err(format!(
-                    "Balance lookup timed out after {BALANCE_TIMEOUT_SECS}s"
+                Err(_) => Err(BalanceFailure::new(
+                    "timeout",
+                    None,
+                    format!("Balance lookup timed out after {BALANCE_TIMEOUT_SECS}s"),
                 )),
-                Ok(Err(e)) => Err(format!("Balance lookup failed: {e}")),
+                Ok(Err(e)) => Err(BalanceFailure::new(
+                    "connection",
+                    None,
+                    format!("Balance lookup failed: {e}"),
+                )),
                 Ok(Ok((status, body))) => {
                     if !status.is_success() {
-                        Err(format!(
-                            "Balance API error {status}: {}",
-                            truncate_chars(&body, 300)
+                        Err(BalanceFailure::new(
+                            "http",
+                            Some(status.as_u16()),
+                            format!("Balance API error {status}: {}", truncate_chars(&body, 300)),
                         ))
                     } else {
-                        serde_json::from_str(&body)
-                            .map_err(|e| format!("Failed to parse balance response: {e}"))
+                        serde_json::from_str(&body).map_err(|e| {
+                            BalanceFailure::new(
+                                "parse",
+                                None,
+                                format!("Failed to parse balance response: {e}"),
+                            )
+                        })
                     }
                 }
             };
 
-        if let Err(e) = &result {
-            crate::logging::append(&format!("balance_error {e}"));
+        if let Err(failure) = &result {
+            crate::logging::append(&format!(
+                "balance_error model={} category={} status={}",
+                self.config.model,
+                failure.category,
+                status_label(failure.status)
+            ));
         }
+        let value = result.map_err(|failure| failure.detail);
         *self.balance_cache.lock().unwrap() = Some(BalanceCache {
             fetched: Instant::now(),
-            value: result.clone(),
+            value: value.clone(),
         });
-        result
+        value
     }
 
     pub async fn balance_cached(&self) -> Result<BalanceResponse, String> {
@@ -399,15 +471,38 @@ impl Brain {
     }
 }
 
+struct BalanceFailure {
+    category: &'static str,
+    status: Option<u16>,
+    detail: String,
+}
+
+impl BalanceFailure {
+    fn new(category: &'static str, status: Option<u16>, detail: String) -> Self {
+        Self {
+            category,
+            status,
+            detail,
+        }
+    }
+}
+
+fn status_label(status: Option<u16>) -> String {
+    status
+        .map(|code| code.to_string())
+        .unwrap_or_else(|| "none".to_string())
+}
+
 fn classify_status(status: reqwest::StatusCode, body: &str) -> ChatError {
     let detail = format!("Model API error {status}: {}", truncate_chars(body, 300));
-    match status.as_u16() {
-        401 | 403 => ChatError::Auth(detail),
-        402 => ChatError::Payment(detail),
-        429 => ChatError::Busy(detail),
-        500..=599 => ChatError::Busy(detail),
-        _ => ChatError::Other(detail),
-    }
+    let kind = match status.as_u16() {
+        401 | 403 => ChatErrorKind::Auth,
+        402 => ChatErrorKind::Payment,
+        429 => ChatErrorKind::Busy,
+        500..=599 => ChatErrorKind::Busy,
+        _ => ChatErrorKind::Other,
+    };
+    ChatError::with_status(kind, status, detail)
 }
 
 fn truncate_chars(text: &str, limit: usize) -> String {
@@ -446,7 +541,7 @@ mod tests {
     fn chat_request_takes_tools_from_the_run_context() {
         let paths = crate::instance::InstancePaths::default();
         let tools = crate::tools::Tools::new_in(&paths.workspace, &paths.memory).unwrap();
-        let context = RunContext::new(11, crate::run_context::MAIN_AGENT_ID, &tools);
+        let context = RunContext::new(11, crate::run_context::MAIN_AGENT_ID, "main-engine", &tools);
         let messages = vec![Message::user("hi")];
 
         let request = chat_request("model-x", &messages, &context);
@@ -617,34 +712,34 @@ mod tests {
     fn classifies_http_statuses() {
         use reqwest::StatusCode;
 
-        assert!(matches!(
-            classify_status(StatusCode::UNAUTHORIZED, "nope"),
-            ChatError::Auth(_)
-        ));
-        assert!(matches!(
-            classify_status(StatusCode::FORBIDDEN, "nope"),
-            ChatError::Auth(_)
-        ));
-        assert!(matches!(
-            classify_status(StatusCode::PAYMENT_REQUIRED, "nope"),
-            ChatError::Payment(_)
-        ));
-        assert!(matches!(
-            classify_status(StatusCode::TOO_MANY_REQUESTS, "nope"),
-            ChatError::Busy(_)
-        ));
-        assert!(matches!(
-            classify_status(StatusCode::INTERNAL_SERVER_ERROR, "nope"),
-            ChatError::Busy(_)
-        ));
-        assert!(matches!(
-            classify_status(StatusCode::BAD_GATEWAY, "nope"),
-            ChatError::Busy(_)
-        ));
-        assert!(matches!(
-            classify_status(StatusCode::NOT_FOUND, "nope"),
-            ChatError::Other(_)
-        ));
+        let auth = classify_status(StatusCode::UNAUTHORIZED, "nope");
+        assert_eq!(auth.kind(), ChatErrorKind::Auth);
+        assert_eq!(auth.category(), "auth");
+        assert_eq!(auth.status(), Some(401));
+        assert_eq!(
+            classify_status(StatusCode::FORBIDDEN, "nope").kind(),
+            ChatErrorKind::Auth
+        );
+        assert_eq!(
+            classify_status(StatusCode::PAYMENT_REQUIRED, "nope").kind(),
+            ChatErrorKind::Payment
+        );
+        assert_eq!(
+            classify_status(StatusCode::TOO_MANY_REQUESTS, "nope").kind(),
+            ChatErrorKind::Busy
+        );
+        assert_eq!(
+            classify_status(StatusCode::INTERNAL_SERVER_ERROR, "nope").kind(),
+            ChatErrorKind::Busy
+        );
+        assert_eq!(
+            classify_status(StatusCode::BAD_GATEWAY, "nope").kind(),
+            ChatErrorKind::Busy
+        );
+        assert_eq!(
+            classify_status(StatusCode::NOT_FOUND, "nope").kind(),
+            ChatErrorKind::Other
+        );
 
         let detail = classify_status(StatusCode::UNAUTHORIZED, "raw body").to_string();
         assert!(detail.contains("401"));

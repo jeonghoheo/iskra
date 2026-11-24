@@ -98,7 +98,9 @@ impl Program {
     }
 
     pub fn from_name(name: &str) -> Option<Program> {
-        Program::ALL.into_iter().find(|program| program.name() == name)
+        Program::ALL
+            .into_iter()
+            .find(|program| program.name() == name)
     }
 
     /// Fixed absolute locations for system programs. cargo is resolved from the
@@ -270,7 +272,12 @@ impl Runtime {
 
     /// Build the command for an allowed program whose arguments already passed the
     /// policy. git gets the forced isolation options in front of the model's args.
-    pub fn command(&self, program: Program, args: &[String], cwd: &Path) -> Result<Command, String> {
+    pub fn command(
+        &self,
+        program: Program,
+        args: &[String],
+        cwd: &Path,
+    ) -> Result<Command, String> {
         let exe = self.pinned(program)?.to_path_buf();
         let mut full_args: Vec<String> = Vec::new();
         if program == Program::Git {
@@ -284,7 +291,13 @@ impl Runtime {
     }
 
     /// Low-level construction shared by `command` and the process tests.
-    pub fn command_for_exe(&self, exe: &Path, args: &[String], cwd: &Path, sandboxed: bool) -> Command {
+    pub fn command_for_exe(
+        &self,
+        exe: &Path,
+        args: &[String],
+        cwd: &Path,
+        sandboxed: bool,
+    ) -> Command {
         let mut command = match (&self.seatbelt, sandboxed) {
             (Some(seatbelt), true) => {
                 let mut command = Command::new(&seatbelt.exec);
@@ -327,7 +340,10 @@ impl Runtime {
             ("GIT_CONFIG_GLOBAL", OsString::from("/dev/null")),
             ("GIT_TERMINAL_PROMPT", OsString::from("0")),
             ("GIT_ASKPASS", OsString::new()),
-            ("GIT_CEILING_DIRECTORIES", self.project_root.clone().into_os_string()),
+            (
+                "GIT_CEILING_DIRECTORIES",
+                self.project_root.clone().into_os_string(),
+            ),
             ("GIT_PAGER", OsString::from("cat")),
             ("GIT_EDITOR", OsString::from("true")),
             ("GIT_AUTHOR_NAME", OsString::from("Iskra")),
@@ -391,7 +407,9 @@ fn seatbelt_for(
 }
 
 fn real_home() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from).filter(|p| p.is_absolute())
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
 }
 
 fn real_rustup_home() -> Option<PathBuf> {

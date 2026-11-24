@@ -33,6 +33,7 @@ Iskra는 메신저 안에 살면서 들은 것을 바로, 그리고 재시작 �
 - [x] 발신자 허용 목록이 있는 텔레그램 창구
 - [x] 셸 도구 (`ls`, `cat`, `git`, `cargo`) — 하위 명령·인자 정책, 비운 환경 변수, macOS 샌드박스 (OS 샌드박스가 없는 곳에서는 cargo 꺼짐) + 검증된 코딩 과제
 - [x] 셸 보강 (v1.1): 우회 경로 21개 차단, 전부 테스트로 고정
+- [x] 두 에이전트 런타임 (Stage 2): 로컬 `iskra.json` 레지스트리(에이전트 최대 2개), 에이전트별로 분리된 모델·도구·기억·세션·작업 폴더·사용량, `memory/runs.json`의 지속 작업 큐, 명시적 `@agent` 라우팅, `/agents`·`/status [@agent]`·`/stop [@agent]`·`/resume [@agent]`, 다른 에이전트 답변의 `@이름` 머리말
 
 ## 로드맵
 
@@ -52,6 +53,8 @@ cd iskra
 cp .env.example .env   # 모델 API 키를 넣으세요 (LLM_API_KEY — 어떤 제공자든 가능, 기본값은 DeepSeek)
 cargo run
 ```
+
+두 번째 에이전트를 더하려면 실행 위치에 로컬 `iskra.json`을 만드세요(형식은 `docs/ARCHITECTURE.md` §12). `iskra.json`이 없으면 기존처럼 `main` 하나로 동작합니다. 한 데이터 디렉터리에는 Iskra 인스턴스를 하나만 실행할 수 있으며, 두 번째 프로세스는 모델 호출이나 상태 파일 쓰기 전에 거부됩니다. 추가 에이전트의 작업 폴더와 기억 폴더는 ID에서 파생된 실제 디렉터리여야 하고(`agent-workspaces/<id>/`, `memory/agents/<id>/`), `main`·다른 에이전트·바깥 경로를 가리키는 심볼릭 링크나 임의 경로는 시작 시 거부됩니다.
 
 ## 라이선스
 

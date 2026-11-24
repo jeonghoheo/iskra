@@ -1,15 +1,15 @@
-use crate::brain::{BalanceResponse, Brain};
+use crate::brain::BalanceResponse;
 use crate::health::{self, Health};
-use crate::instance::InstancePaths;
 use crate::locale::{self, Key, Locale};
 use crate::logging;
-use crate::loop_;
 use crate::memory;
 use crate::prompt;
-use crate::session::Session;
+use crate::route::{self, RouteError};
+use crate::run::{Core, RunError, RunQueueStatus, RunState, RunTicket, RuntimeEventKind};
+use crate::run_context::MAIN_AGENT_ID;
+use crate::runtime::AgentRuntime;
+use crate::session::FailureKind;
 use crate::stickies;
-use crate::supervisor::RunSupervisor;
-use crate::tools::Tools;
 use crate::usage;
 
 use std::path::Path;
@@ -30,10 +30,12 @@ const TYPING_REFRESH_SECS: u64 = 4;
 const STARTUP_WINDOW_SECS: u64 = 20;
 const STARTUP_ATTEMPT_TIMEOUT_SECS: u64 = 5;
 const HEALTH_INTERVAL_SECS: u64 = 30;
-const COMMAND_KEYS: [(&str, Key); 5] = [
+const COMMAND_KEYS: [(&str, Key); 7] = [
     ("start", Key::StartDescription),
     ("status", Key::StatusDescription),
+    ("agents", Key::AgentsDescription),
     ("stickies", Key::StickiesDescription),
+    ("resume", Key::ResumeDescription),
     ("stop", Key::StopDescription),
     ("help", Key::HelpDescription),
 ];
@@ -69,22 +71,17 @@ fn env_non_empty(key: &str) -> Option<String> {
 
 struct ChannelState {
     bot: Bot,
-    brain: Brain,
-    tools: Tools,
-    identity: prompt::Identity,
-    session: Session,
-    paths: InstancePaths,
+    core: Arc<Core>,
     allowed_user_id: u64,
-    supervisor: RunSupervisor,
 }
 
-pub async fn run(
-    brain: Brain,
-    tools: Tools,
-    identity: prompt::Identity,
-    session: Session,
-    paths: InstancePaths,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+impl ChannelState {
+    fn main(&self) -> &AgentRuntime {
+        self.core.registry().main()
+    }
+}
+
+pub async fn run(core: Arc<Core>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = match TelegramConfig::from_env() {
         Ok(config) => config,
         Err(e) => {
@@ -98,8 +95,9 @@ pub async fn run(
         allowed_user_id,
     } = config;
     let bot = Bot::new(token);
+    let memory_dir = core.registry().main().paths.memory.clone();
 
-    let health = Arc::new(Health::new(paths.memory.join(health::FILE_NAME)));
+    let health = Arc::new(Health::new(memory_dir.join(health::FILE_NAME)));
     let now = health::now_unix();
     if let Err(e) = health.write_force(now) {
         logging::append(&format!("health_write_error {e}"));
@@ -115,13 +113,8 @@ pub async fn run(
 
     let state = Arc::new(ChannelState {
         bot: bot.clone(),
-        brain,
-        tools,
-        identity,
-        session,
-        paths,
+        core,
         allowed_user_id,
-        supervisor: RunSupervisor::default(),
     });
 
     if let Err(error) = serve(
@@ -354,17 +347,17 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
 
     if forwarded {
         let wrapped = prompt::wrap_forwarded(&user_message);
-        start_turn(&state, chat_id, &wrapped, lang);
+        start_turn(&state, chat_id, MAIN_AGENT_ID, &wrapped, lang);
         return Ok(());
     }
 
     if let Some(reply) = msg.reply_to_message() {
         if is_board_reply(reply) {
             if let Ok(number) = user_message.trim().parse::<u64>() {
-                match stickies::remove_at(&state.paths.memory, number, lang) {
+                match stickies::remove_at(&state.main().paths.memory, number, lang) {
                     Ok(_) => {
                         logging::append(&format!("telegram_sticky_remove number={number}"));
-                        let board = match stickies::board_at(&state.paths.memory, lang) {
+                        let board = match stickies::board_at(&state.main().paths.memory, lang) {
                             Ok(board) => board,
                             Err(e) => {
                                 logging::append(&format!("sticky_board_error {e}"));
@@ -385,7 +378,7 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
                             chat_id,
                             &board,
                             BoardMode::Update,
-                            &state.paths.memory,
+                            &state.main().paths.memory,
                         )
                         .await
                         {
@@ -413,20 +406,32 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
                 }
                 return Ok(());
             }
+            start_turn(&state, chat_id, MAIN_AGENT_ID, &user_message, lang);
+            return Ok(());
         }
     }
 
-    match command_name(&user_message).as_deref() {
-        Some("/start") => {
+    let (command, args) = command_parts(&user_message).unwrap_or_default();
+    match command.as_str() {
+        "/start" => {
             bot.send_message(chat_id, start_text(lang)).await?;
         }
-        Some("/help") => {
+        "/help" => {
             bot.send_message(chat_id, help_text(lang)).await?;
         }
-        Some("/stickies") => handle_stickies_command(&state, chat_id, &user_message, lang).await?,
-        Some("/stop") => stop_turn(&state, chat_id, lang).await?,
-        Some("/status") => send_status(&state, chat_id, lang).await?,
-        _ => start_turn(&state, chat_id, &user_message, lang),
+        "/stickies" => handle_stickies_command(&state, chat_id, &user_message, lang).await?,
+        "/stop" => stop_turn(&state, chat_id, &args, lang).await?,
+        "/resume" => resume_turn(&state, chat_id, &args, lang).await?,
+        "/status" => send_status(&state, chat_id, &args, lang).await?,
+        "/agents" => send_agents(&state, chat_id, lang).await?,
+        _ => match route::select(&user_message, state.core.registry()) {
+            Ok(route) => start_turn(&state, chat_id, &route.agent_id, &route.input, lang),
+            Err(error) => {
+                logging::append(&format!("telegram_route_error err={error:?}"));
+                bot.send_message(chat_id, route_error_text(lang, error))
+                    .await?;
+            }
+        },
     }
 
     Ok(())
@@ -586,13 +591,25 @@ async fn handle_reaction(
     Ok(())
 }
 
-fn command_name(text: &str) -> Option<String> {
-    let first = text.split_whitespace().next()?;
+fn command_parts(text: &str) -> Option<(String, String)> {
+    let (first, rest) = match text.split_once(char::is_whitespace) {
+        Some((first, rest)) => (first, rest),
+        None => (text, ""),
+    };
     if !first.starts_with('/') {
         return None;
     }
     let name = first.split('@').next().unwrap_or(first);
-    Some(name.to_string())
+    Some((name.to_string(), rest.trim().to_string()))
+}
+
+pub(crate) fn route_error_text(lang: Locale, error: RouteError) -> String {
+    match error {
+        RouteError::Empty => locale::text(lang, Key::RouteEmpty).to_string(),
+        RouteError::Malformed => locale::text(lang, Key::RouteMalformed).to_string(),
+        RouteError::UnknownAgent(agent) => locale::with(lang, Key::RouteUnknownAgent, agent),
+        RouteError::Unavailable(agent) => locale::with(lang, Key::RouteUnavailable, agent),
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -633,10 +650,10 @@ async fn handle_stickies_command(
     match parse_stickies_command(text) {
         StickiesCommand::Show => send_stickies(state, chat_id, lang).await,
         StickiesCommand::Remove(number) => {
-            match stickies::remove_at(&state.paths.memory, number, lang) {
+            match stickies::remove_at(&state.main().paths.memory, number, lang) {
                 Ok(_) => {
                     logging::append(&format!("telegram_sticky_remove number={number}"));
-                    let board = match stickies::board_at(&state.paths.memory, lang) {
+                    let board = match stickies::board_at(&state.main().paths.memory, lang) {
                         Ok(board) => board,
                         Err(e) => {
                             logging::append(&format!("sticky_board_error {e}"));
@@ -659,7 +676,7 @@ async fn handle_stickies_command(
                         chat_id,
                         &board,
                         BoardMode::Update,
-                        &state.paths.memory,
+                        &state.main().paths.memory,
                     )
                     .await
                     {
@@ -710,25 +727,33 @@ async fn handle_stickies_command(
     }
 }
 
-fn turn_error_text(lang: Locale, error: &loop_::TurnError) -> String {
-    match error {
-        loop_::TurnError::Timeout(_) | loop_::TurnError::Connection(_) => {
+fn failure_text(lang: Locale, category: FailureKind, detail: &str) -> String {
+    match category {
+        FailureKind::Timeout | FailureKind::Connection => {
             locale::text(lang, Key::ErrorTimeout).to_string()
         }
-        loop_::TurnError::Auth(_) => locale::text(lang, Key::ErrorAuth).to_string(),
-        loop_::TurnError::Payment(_) => locale::text(lang, Key::ErrorPayment).to_string(),
-        loop_::TurnError::Busy(_) => locale::text(lang, Key::ErrorBusy).to_string(),
-        loop_::TurnError::RepeatedToolError(detail) => locale::with(
+        FailureKind::Auth => locale::text(lang, Key::ErrorAuth).to_string(),
+        FailureKind::Payment => locale::text(lang, Key::ErrorPayment).to_string(),
+        FailureKind::Busy => locale::text(lang, Key::ErrorBusy).to_string(),
+        FailureKind::RepeatedToolError => locale::with(
             lang,
             Key::ErrorRepeatedTool,
             locale::text(lang, repeated_reason_key(detail)),
         ),
-        loop_::TurnError::MaxRoundtrips(_) => {
-            locale::text(lang, Key::ErrorMaxRoundtrips).to_string()
-        }
-        loop_::TurnError::EmptyResponse(_) => locale::text(lang, Key::ErrorEmpty).to_string(),
-        loop_::TurnError::Session(_) => locale::text(lang, Key::ErrorSession).to_string(),
-        loop_::TurnError::Other(_) => locale::text(lang, Key::ErrorOther).to_string(),
+        FailureKind::MaxRoundtrips => locale::text(lang, Key::ErrorMaxRoundtrips).to_string(),
+        FailureKind::EmptyResponse => locale::text(lang, Key::ErrorEmpty).to_string(),
+        FailureKind::Other => locale::text(lang, Key::ErrorOther).to_string(),
+    }
+}
+
+pub(crate) fn submission_error_text(lang: Locale, error: &RunError) -> String {
+    match error {
+        RunError::Store(_) => locale::text(lang, Key::ErrorSession).to_string(),
+        RunError::QueueFull => locale::text(lang, Key::BusyNotice).to_string(),
+        RunError::UnknownAgent(agent) => locale::with(lang, Key::RouteUnknownAgent, agent),
+        RunError::AgentUnavailable(agent) => locale::with(lang, Key::RouteUnavailable, agent),
+        RunError::InputTooLong => locale::text(lang, Key::InputTooLong).to_string(),
+        _ => locale::text(lang, Key::ErrorOther).to_string(),
     }
 }
 
@@ -754,65 +779,177 @@ fn repeated_reason_key(detail: &str) -> Key {
     }
 }
 
-fn start_turn(state: &Arc<ChannelState>, chat_id: ChatId, text: &str, lang: Locale) {
-    let task_state = Arc::clone(state);
-    let input = text.to_string();
-    let started = state.supervisor.start(async move {
-        let (typing_stop, typing_rx) = tokio::sync::watch::channel(false);
-        let typing_guard = TypingGuard(typing_stop);
-        tokio::spawn(typing_loop(task_state.bot.clone(), chat_id, typing_rx));
+fn start_turn(
+    state: &Arc<ChannelState>,
+    chat_id: ChatId,
+    agent_id: &str,
+    text: &str,
+    lang: Locale,
+) {
+    let mut events = state.core.subscribe();
+    match state.core.submit(agent_id, text) {
+        Ok(ticket) => {
+            logging::append(&format!(
+                "telegram_run_submitted run_id={} agent={agent_id}",
+                ticket.id
+            ));
+            let notice = queued_notice(state, agent_id, ticket.id, lang);
+            let core = Arc::clone(&state.core);
+            let bot = state.bot.clone();
+            let agent_id = agent_id.to_string();
+            tokio::spawn(async move {
+                watch_turn(
+                    core,
+                    bot,
+                    chat_id,
+                    agent_id,
+                    ticket,
+                    lang,
+                    &mut events,
+                    notice,
+                )
+                .await;
+            });
+        }
+        Err(error) => {
+            logging::append(&format!("telegram_submit_error agent={agent_id} {error}"));
+            let text = submission_error_text(lang, &error);
+            let bot = state.bot.clone();
+            tokio::spawn(async move {
+                if let Err(e) = bot.send_message(chat_id, text).await {
+                    logging::append(&format!("telegram_send_failed {e}"));
+                }
+            });
+        }
+    }
+}
 
-        let (system_prompt, _) =
-            prompt::turn_prompt(&task_state.identity, &task_state.paths.memory);
-        let reply = loop_::run_turn(
-            &task_state.brain,
-            &task_state.tools,
-            &task_state.session,
-            &system_prompt,
-            &input,
-        )
-        .await;
-        drop(typing_guard);
-        let sticky_changed = task_state.tools.take_sticky_changed();
-
-        let answer = match reply {
-            Ok(answer) => answer,
-            Err(e) => {
-                logging::append(&format!("telegram_turn_error {e}"));
-                turn_error_text(lang, &e)
-            }
-        };
-        if let Err(e) = send_reply(&task_state.bot, chat_id, &answer).await {
+#[allow(clippy::too_many_arguments)]
+async fn watch_turn(
+    core: Arc<Core>,
+    bot: Bot,
+    chat_id: ChatId,
+    agent_id: String,
+    ticket: RunTicket,
+    lang: Locale,
+    events: &mut tokio::sync::broadcast::Receiver<crate::run::RuntimeEvent>,
+    notice: Option<(String, String)>,
+) {
+    if let Some((text, log)) = notice {
+        logging::append(&log);
+        if let Err(e) = bot.send_message(chat_id, text).await {
             logging::append(&format!("telegram_send_failed {e}"));
         }
-
-        if sticky_changed {
-            match stickies::board_at(&task_state.paths.memory, lang) {
-                Ok(board) => {
-                    if let Err(e) = sync_board(
-                        &task_state.bot,
-                        chat_id,
-                        &board,
-                        BoardMode::Update,
-                        &task_state.paths.memory,
-                    )
-                    .await
-                    {
-                        logging::append(&format!("telegram_board_sync_error {e}"));
+    }
+    let mut typing: Option<TypingGuard> = None;
+    loop {
+        match events.recv().await {
+            Ok(event) if event.run_id == ticket.id => match event.kind {
+                RuntimeEventKind::Started => {
+                    logging::append(&format!(
+                        "telegram_run_started run_id={} agent={} revision={} seq={}",
+                        ticket.id, event.agent_id, event.revision, event.seq
+                    ));
+                    if typing.is_none() {
+                        let (stop, stop_rx) = tokio::sync::watch::channel(false);
+                        typing = Some(TypingGuard(stop));
+                        tokio::spawn(typing_loop(bot.clone(), chat_id, stop_rx));
                     }
                 }
-                Err(e) => logging::append(&format!("sticky_board_error {e}")),
+                RuntimeEventKind::Completed { answer } => {
+                    drop(typing.take());
+                    let text = attributed_reply(&agent_id, &answer);
+                    if let Err(e) = send_reply(&bot, chat_id, &text).await {
+                        logging::append(&format!("telegram_send_failed {e}"));
+                    }
+                    sync_sticky_after_turn(&core, &bot, chat_id, lang).await;
+                    break;
+                }
+                RuntimeEventKind::Failed { category, detail } => {
+                    drop(typing.take());
+                    logging::append(&format!(
+                        "telegram_turn_error run_id={} agent={agent_id} category={category:?}",
+                        ticket.id
+                    ));
+                    let text = attributed_reply(&agent_id, &failure_text(lang, category, &detail));
+                    if let Err(e) = send_reply(&bot, chat_id, &text).await {
+                        logging::append(&format!("telegram_send_failed {e}"));
+                    }
+                    sync_sticky_after_turn(&core, &bot, chat_id, lang).await;
+                    break;
+                }
+                RuntimeEventKind::Cancelled => {
+                    drop(typing.take());
+                    logging::append(&format!("telegram_run_cancelled run_id={}", ticket.id));
+                    break;
+                }
+                RuntimeEventKind::StorageFailed => {
+                    drop(typing.take());
+                    logging::append(&format!("telegram_storage_failed run_id={}", ticket.id));
+                    let text = attributed_reply(&agent_id, locale::text(lang, Key::ErrorSession));
+                    if let Err(e) = send_reply(&bot, chat_id, &text).await {
+                        logging::append(&format!("telegram_send_failed {e}"));
+                    }
+                    break;
+                }
+            },
+            Ok(_) => {}
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                logging::append(&format!(
+                    "telegram_event_lagged run_id={} skipped={skipped}",
+                    ticket.id
+                ));
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                drop(typing.take());
+                logging::append(&format!("telegram_event_closed run_id={}", ticket.id));
+                break;
             }
         }
-    });
-    if started.is_err() {
-        logging::append("telegram_busy");
-        let bot = state.bot.clone();
-        tokio::spawn(async move {
-            let _ = bot
-                .send_message(chat_id, locale::text(lang, Key::BusyNotice))
-                .await;
-        });
+    }
+}
+
+fn queued_notice(
+    state: &Arc<ChannelState>,
+    agent_id: &str,
+    run_id: u64,
+    lang: Locale,
+) -> Option<(String, String)> {
+    if !matches!(state.core.run_state(run_id), Ok(Some(RunState::Queued))) {
+        return None;
+    }
+    let waiting = state
+        .core
+        .queue_status(agent_id)
+        .map(|status| status.queued.saturating_sub(1))
+        .unwrap_or(0);
+    let display = state
+        .core
+        .registry()
+        .slot(agent_id)
+        .map(|slot| slot.display_name.clone())
+        .unwrap_or_else(|| agent_id.to_string());
+    let text = locale::with_values(lang, Key::QueueAccepted, &[display, waiting.to_string()]);
+    Some((
+        text,
+        format!("telegram_run_queued run_id={run_id} agent={agent_id} waiting={waiting}"),
+    ))
+}
+
+async fn sync_sticky_after_turn(core: &Core, bot: &Bot, chat_id: ChatId, lang: Locale) {
+    let main = core.registry().main();
+    if !main.tools.take_sticky_changed() {
+        return;
+    }
+    match stickies::board_at(&main.paths.memory, lang) {
+        Ok(board) => {
+            if let Err(e) =
+                sync_board(bot, chat_id, &board, BoardMode::Update, &main.paths.memory).await
+            {
+                logging::append(&format!("telegram_board_sync_error {e}"));
+            }
+        }
+        Err(e) => logging::append(&format!("sticky_board_error {e}")),
     }
 }
 
@@ -843,74 +980,299 @@ async fn typing_loop(bot: Bot, chat_id: ChatId, mut stop: tokio::sync::watch::Re
     logging::append("telegram_typing_stop");
 }
 
-async fn stop_turn(state: &Arc<ChannelState>, chat_id: ChatId, lang: Locale) -> HandlerResult {
-    let handle = state.supervisor.take_running();
-    let message = match handle {
-        Some(handle) => {
-            let saved = state.session.stop_current();
-            handle.abort();
-            logging::append("telegram_stop aborted");
-            match saved {
-                Ok(_) => locale::text(lang, Key::StopStopped),
-                Err(error) => {
-                    logging::append(&format!("session_error {error}"));
-                    locale::text(lang, Key::ErrorSession)
-                }
-            }
+async fn stop_turn(
+    state: &Arc<ChannelState>,
+    chat_id: ChatId,
+    args: &str,
+    lang: Locale,
+) -> HandlerResult {
+    let agent_id = match route::target(args, state.core.registry()) {
+        Ok(agent_id) => agent_id,
+        Err(error) => {
+            logging::append(&format!("telegram_stop_target_error err={error:?}"));
+            state
+                .bot
+                .send_message(chat_id, route_error_text(lang, error))
+                .await?;
+            return Ok(());
         }
-        None => {
-            logging::append("telegram_stop idle");
+    };
+
+    let message = match state.core.cancel_agent(&agent_id) {
+        Ok(report) if report.cancelled == 0 => {
+            logging::append(&format!("telegram_stop idle agent={agent_id}"));
             locale::text(lang, Key::StopNoActive)
+        }
+        Ok(report) => {
+            logging::append(&format!(
+                "telegram_stop aborted agent={agent_id} cancelled={} active={}",
+                report.cancelled, report.active
+            ));
+            locale::text(lang, Key::StopStopped)
+        }
+        Err(error) => {
+            logging::append(&format!("telegram_stop_error agent={agent_id} {error}"));
+            locale::text(lang, Key::ErrorSession)
         }
     };
     state.bot.send_message(chat_id, message).await?;
     Ok(())
 }
 
-async fn send_status(state: &Arc<ChannelState>, chat_id: ChatId, lang: Locale) -> HandlerResult {
-    let balance = match state.brain.balance().await {
+async fn resume_turn(
+    state: &Arc<ChannelState>,
+    chat_id: ChatId,
+    args: &str,
+    lang: Locale,
+) -> HandlerResult {
+    let agent_id = match route::target(args, state.core.registry()) {
+        Ok(agent_id) => agent_id,
+        Err(error) => {
+            logging::append(&format!("telegram_resume_target_error err={error:?}"));
+            state
+                .bot
+                .send_message(chat_id, route_error_text(lang, error))
+                .await?;
+            return Ok(());
+        }
+    };
+
+    let display = display_name(state, &agent_id);
+    let mut events = state.core.subscribe();
+    match state.core.resume_agent(&agent_id) {
+        Ok(resumed) if resumed.is_empty() => {
+            logging::append(&format!("telegram_resume none agent={agent_id}"));
+            state
+                .bot
+                .send_message(chat_id, locale::with(lang, Key::ResumeNone, display))
+                .await?;
+        }
+        Ok(resumed) => {
+            logging::append(&format!(
+                "telegram_resume agent={agent_id} resumed={}",
+                resumed.len()
+            ));
+            state
+                .bot
+                .send_message(
+                    chat_id,
+                    locale::with_values(
+                        lang,
+                        Key::ResumeDone,
+                        &[resumed.len().to_string(), display],
+                    ),
+                )
+                .await?;
+            let core = Arc::clone(&state.core);
+            let bot = state.bot.clone();
+            tokio::spawn(async move {
+                for ticket in resumed {
+                    watch_turn(
+                        Arc::clone(&core),
+                        bot.clone(),
+                        chat_id,
+                        agent_id.clone(),
+                        ticket,
+                        lang,
+                        &mut events,
+                        None,
+                    )
+                    .await;
+                }
+            });
+        }
+        Err(error) => {
+            logging::append(&format!("telegram_resume_error agent={agent_id} {error}"));
+            state
+                .bot
+                .send_message(chat_id, locale::text(lang, Key::ErrorSession))
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+fn display_name(state: &Arc<ChannelState>, agent_id: &str) -> String {
+    state
+        .core
+        .registry()
+        .slot(agent_id)
+        .map(|slot| slot.display_name.clone())
+        .unwrap_or_else(|| agent_id.to_string())
+}
+
+async fn send_agents(state: &Arc<ChannelState>, chat_id: ChatId, lang: Locale) -> HandlerResult {
+    state
+        .bot
+        .send_message(chat_id, agents_text(&state.core, lang))
+        .await?;
+    Ok(())
+}
+
+pub(crate) fn agents_text(core: &Core, lang: Locale) -> String {
+    let mut lines = vec![locale::text(lang, Key::AgentsHeader).to_string()];
+    for slot in core.registry().slots() {
+        let model = slot
+            .runtime()
+            .map(|runtime| runtime.brain.model().to_string())
+            .unwrap_or_else(|| slot.model.clone());
+        let status = locale::text(
+            lang,
+            if slot.is_available() {
+                Key::Available
+            } else {
+                Key::Unavailable
+            },
+        );
+        let mut values = vec![
+            slot.id.clone(),
+            slot.display_name.clone(),
+            slot.engine_id.clone(),
+            model,
+            status.to_string(),
+        ];
+        let key = match core.queue_status(&slot.id) {
+            Ok(queue) => {
+                values.extend([
+                    queue.active.to_string(),
+                    queue.queued.to_string(),
+                    queue.paused.to_string(),
+                ]);
+                Key::AgentLine
+            }
+            Err(_) => Key::AgentQueueUnavailable,
+        };
+        lines.push(locale::with_values(lang, key, &values));
+    }
+    lines.join("\n")
+}
+
+async fn send_status(
+    state: &Arc<ChannelState>,
+    chat_id: ChatId,
+    args: &str,
+    lang: Locale,
+) -> HandlerResult {
+    let agent_id = match route::target(args, state.core.registry()) {
+        Ok(agent_id) => agent_id,
+        Err(error) => {
+            logging::append(&format!("telegram_status_target_error err={error:?}"));
+            state
+                .bot
+                .send_message(chat_id, route_error_text(lang, error))
+                .await?;
+            return Ok(());
+        }
+    };
+
+    let Some(text) = agent_status_text(&state.core, lang, &agent_id).await else {
+        state
+            .bot
+            .send_message(
+                chat_id,
+                route_error_text(lang, RouteError::UnknownAgent(agent_id)),
+            )
+            .await?;
+        return Ok(());
+    };
+    state.bot.send_message(chat_id, text).await?;
+    Ok(())
+}
+
+/// Composes the status text for one Agent. Shared by Telegram and the CLI.
+pub(crate) async fn agent_status_text(core: &Core, lang: Locale, agent_id: &str) -> Option<String> {
+    let slot = core.registry().slot(agent_id)?;
+    let queue = match core.queue_status(agent_id) {
+        Ok(status) => queue_line(lang, &status),
+        Err(_) => locale::text(lang, Key::StatusQueueUnavailable).to_string(),
+    };
+    let agent = if agent_id == MAIN_AGENT_ID {
+        None
+    } else {
+        Some((slot.display_name.as_str(), slot.id.as_str()))
+    };
+
+    let Some(runtime) = slot.runtime() else {
+        let unavailable = locale::text(lang, Key::Unavailable);
+        return Some(status_text(
+            lang,
+            agent,
+            &slot.model,
+            unavailable,
+            unavailable,
+            0,
+            unavailable,
+            unavailable,
+            &queue,
+        ));
+    };
+
+    let balance = match runtime.brain.balance().await {
         Ok(balance) => balance_display(lang, &balance),
         Err(_) => locale::text(lang, Key::Unavailable).to_string(),
     };
-    let loaded = memory::load_from(&state.paths.memory);
+    let loaded = memory::load_from(&runtime.paths.memory);
     let memory = locale::memory_status(lang, loaded.truncated, loaded.warnings.len());
-    let usage = usage::today();
-    let cost = match usage::estimate_cost(state.brain.model(), &usage) {
+    let usage = usage::today_for_agent(&runtime.agent_id);
+    let cost = match usage::estimate_cost(runtime.brain.model(), &usage) {
         Some(cost) => locale::with(lang, Key::CostEstimate, format!("${cost:.6}")),
         None => locale::text(lang, Key::CostUnknown).to_string(),
     };
-    let session = locale::session_status(lang, state.session.status());
-    let text = status_text(
+    let session = locale::session_status(lang, runtime.session.status());
+    Some(status_text(
         lang,
-        state.brain.model(),
+        agent,
+        runtime.brain.model(),
         &memory,
         &session,
         usage.total,
         &cost,
         &balance,
-    );
-    state.bot.send_message(chat_id, text).await?;
-    Ok(())
+        &queue,
+    ))
 }
 
+fn queue_line(lang: Locale, status: &RunQueueStatus) -> String {
+    locale::with_values(
+        lang,
+        Key::StatusQueue,
+        &[
+            status.active.to_string(),
+            status.queued.to_string(),
+            status.paused.to_string(),
+            status.interrupted.to_string(),
+        ],
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
 fn status_text(
     lang: Locale,
+    agent: Option<(&str, &str)>,
     model: &str,
     memory: &str,
     session: &str,
     tokens: u64,
     cost: &str,
     balance: &str,
+    queue: &str,
 ) -> String {
-    format!(
-        "{}\n{}\n{}\n{}\n{}\n{}",
-        locale::with(lang, Key::StatusCost, cost),
-        locale::with(lang, Key::StatusBalance, balance),
-        locale::with(lang, Key::StatusModel, model),
-        locale::with(lang, Key::StatusMemory, memory),
-        locale::with(lang, Key::StatusSession, session),
-        locale::with(lang, Key::StatusTokens, tokens)
-    )
+    let mut lines = Vec::new();
+    if let Some((display, id)) = agent {
+        lines.push(locale::with_values(
+            lang,
+            Key::StatusAgent,
+            &[display.to_string(), id.to_string()],
+        ));
+    }
+    lines.push(locale::with(lang, Key::StatusCost, cost));
+    lines.push(locale::with(lang, Key::StatusBalance, balance));
+    lines.push(locale::with(lang, Key::StatusModel, model));
+    lines.push(locale::with(lang, Key::StatusMemory, memory));
+    lines.push(locale::with(lang, Key::StatusSession, session));
+    lines.push(locale::with(lang, Key::StatusTokens, tokens));
+    lines.push(queue.to_string());
+    lines.join("\n")
 }
 
 fn balance_display(lang: Locale, balance: &BalanceResponse) -> String {
@@ -974,14 +1336,14 @@ fn fallback_after_edit_failure(plan: BoardPlan) -> BoardPlan {
 }
 
 async fn send_stickies(state: &Arc<ChannelState>, chat_id: ChatId, lang: Locale) -> HandlerResult {
-    match stickies::board_at(&state.paths.memory, lang) {
+    match stickies::board_at(&state.main().paths.memory, lang) {
         Ok(board) => {
             if let Err(e) = sync_board(
                 &state.bot,
                 chat_id,
                 &board,
                 BoardMode::Show,
-                &state.paths.memory,
+                &state.main().paths.memory,
             )
             .await
             {
@@ -1143,6 +1505,14 @@ async fn sync_board(
     Ok(BoardOutcome::Updated)
 }
 
+fn attributed_reply(agent_id: &str, text: &str) -> String {
+    if agent_id == MAIN_AGENT_ID || text.is_empty() {
+        text.to_string()
+    } else {
+        format!("@{agent_id}\n{text}")
+    }
+}
+
 async fn send_reply(bot: &Bot, chat_id: ChatId, text: &str) -> Result<(), String> {
     let chunks = split_message(text);
     for chunk in &chunks {
@@ -1201,6 +1571,8 @@ fn split_message(text: &str) -> Vec<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::RuntimeRegistry;
+    use crate::session::Session;
     use std::sync::Mutex;
 
     struct MockBotApi {
@@ -1295,7 +1667,126 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    struct MockModelApi {
+        address: String,
+        posts: Arc<(Mutex<usize>, std::sync::Condvar)>,
+        stop: std::sync::mpsc::Sender<()>,
+        handle: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl MockModelApi {
+        fn start(delay: Duration) -> Self {
+            use std::io::{BufRead, BufReader, Read, Write};
+            use std::net::TcpListener;
+
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let address = listener.local_addr().unwrap().to_string();
+            let posts = Arc::new((Mutex::new(0usize), std::sync::Condvar::new()));
+            let server_posts = Arc::clone(&posts);
+            let (stop, stopped) = std::sync::mpsc::channel();
+            let handle = std::thread::spawn(move || {
+                while stopped.try_recv().is_err() {
+                    match listener.accept() {
+                        Ok((stream, _)) => {
+                            let posts = Arc::clone(&server_posts);
+                            std::thread::spawn(move || {
+                                stream.set_nonblocking(false).unwrap();
+                                let mut writer = stream.try_clone().unwrap();
+                                let mut reader = BufReader::new(stream);
+                                let mut request_line = String::new();
+                                if reader.read_line(&mut request_line).is_err() {
+                                    return;
+                                }
+                                let mut content_length = 0usize;
+                                loop {
+                                    let mut header = String::new();
+                                    if reader.read_line(&mut header).is_err() {
+                                        return;
+                                    }
+                                    if header == "\r\n" || header.is_empty() {
+                                        break;
+                                    }
+                                    if let Some((name, value)) = header.split_once(':')
+                                        && name.eq_ignore_ascii_case("content-length")
+                                    {
+                                        content_length = value.trim().parse().unwrap_or(0);
+                                    }
+                                }
+                                let mut body = vec![0; content_length];
+                                let _ = reader.read_exact(&mut body);
+                                let is_post = request_line.starts_with("POST ");
+                                let response = if is_post {
+                                    let mut count = posts.0.lock().unwrap();
+                                    *count += 1;
+                                    posts.1.notify_all();
+                                    drop(count);
+                                    std::thread::sleep(delay);
+                                    serde_json::json!({
+                                        "choices": [{"message": {"role": "assistant", "content": "late answer"}}],
+                                        "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3}
+                                    })
+                                } else {
+                                    serde_json::json!({"is_available": true, "balance_infos": []})
+                                };
+                                let response = serde_json::to_vec(&response).unwrap();
+                                let _ = write!(
+                                    writer,
+                                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                                    response.len()
+                                );
+                                let _ = writer.write_all(&response);
+                            });
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
+                        Err(error) => panic!("mock model accept failed: {error}"),
+                    }
+                }
+            });
+            Self {
+                address,
+                posts,
+                stop,
+                handle: Some(handle),
+            }
+        }
+
+        fn url(&self) -> String {
+            format!("http://{}/chat/completions", self.address)
+        }
+
+        fn post_count(&self) -> usize {
+            *self.posts.0.lock().unwrap()
+        }
+
+        fn wait_for_post(&self, timeout: Duration) -> bool {
+            let deadline = std::time::Instant::now() + timeout;
+            let mut count = self.posts.0.lock().unwrap();
+            while *count == 0 {
+                let now = std::time::Instant::now();
+                if now >= deadline {
+                    return false;
+                }
+                let (next, _) = self.posts.1.wait_timeout(count, deadline - now).unwrap();
+                count = next;
+            }
+            true
+        }
+    }
+
+    impl Drop for MockModelApi {
+        fn drop(&mut self) {
+            let _ = self.stop.send(());
+            let _ = std::net::TcpStream::connect(&self.address);
+            if let Some(handle) = self.handle.take() {
+                handle.join().unwrap();
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn telegram_stop_persists_stopped_before_task_drop() {
         let dir = std::env::temp_dir().join(format!(
             "iskra-channel-stop-{}-{}",
@@ -1307,53 +1798,266 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let session_path = dir.join("session.json");
-        let session = Session::load(&session_path);
-        let work = session.begin("stop this work").unwrap();
+
+        let model = MockModelApi::start(Duration::from_millis(500));
+        let model_url = model.url();
+        let registry = RuntimeRegistry::load(&dir, move |key| match key {
+            "LLM_API_KEY" => Some("dummy-model-key".to_string()),
+            "LLM_BASE_URL" => Some(model_url.clone()),
+            "LLM_MODEL" => Some("test-model".to_string()),
+            _ => None,
+        })
+        .unwrap();
+        let session_path = dir.join("memory/session.json");
+        let core = Core::new(registry).unwrap();
+        let mut events = core.subscribe();
+        let ticket = core.submit(MAIN_AGENT_ID, "stop this work").unwrap();
+
+        let started = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let event = events.recv().await.unwrap();
+                if event.run_id == ticket.id && matches!(event.kind, RuntimeEventKind::Started) {
+                    break;
+                }
+            }
+        })
+        .await;
+        assert!(started.is_ok(), "run never started");
+        assert!(
+            model.wait_for_post(Duration::from_secs(5)),
+            "run never reached the model"
+        );
+
         let bot_api = MockBotApi::start();
-        let supervisor = RunSupervisor::default();
-        supervisor.start(std::future::pending::<()>()).unwrap();
         let state = Arc::new(ChannelState {
             bot: Bot::new("test-token").set_api_url(bot_api.url()),
-            brain: Brain::new(crate::brain::Config {
-                api_key: "dummy".to_string(),
-                base_url: "http://127.0.0.1:9/chat/completions".to_string(),
-                model: "test-model".to_string(),
-            }),
-            tools: Tools::new_in(&dir.join("workspace"), &dir.join("memory")).unwrap(),
-            identity: prompt::Identity {
-                soul: prompt::DEFAULT_SOUL.to_string(),
-                user: prompt::DEFAULT_USER.to_string(),
-                warnings: Vec::new(),
-                soul_source: prompt::IdentitySource::Default,
-                user_source: prompt::IdentitySource::Default,
-            },
-            session: session.clone(),
-            paths: InstancePaths {
-                workspace: dir.join("workspace"),
-                memory: dir.join("memory"),
-                session: session_path.clone(),
-            },
+            core: Arc::clone(&core),
             allowed_user_id: 1,
-            supervisor,
         });
 
-        stop_turn(&state, ChatId(42), Locale::Ko).await.unwrap();
+        stop_turn(&state, ChatId(42), "@main", Locale::Ko)
+            .await
+            .unwrap();
 
-        let messages = bot_api.messages.lock().unwrap();
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0]["chat_id"], 42);
-        assert_eq!(
-            messages[0]["text"].as_str(),
-            Some(locale::text(Locale::Ko, Key::StopStopped))
-        );
-        drop(messages);
-        drop(work);
+        {
+            let messages = bot_api.messages.lock().unwrap();
+            assert_eq!(messages.len(), 1);
+            assert_eq!(messages[0]["chat_id"], 42);
+            assert_eq!(
+                messages[0]["text"].as_str(),
+                Some(locale::text(Locale::Ko, Key::StopStopped))
+            );
+        }
+
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        let status = core.queue_status(MAIN_AGENT_ID).unwrap();
+        assert_eq!(status.active, 0);
+        let runs: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.join("memory/runs.json")).unwrap()).unwrap();
+        assert_eq!(runs["runs"][0]["state"], "cancelled");
         let stored: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&session_path).unwrap()).unwrap();
         assert_eq!(stored["work"][0]["status"], "stopped");
         assert!(Session::load(&session_path).status().unwrap().unfinished);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn storage_failure_event_ends_the_turn_watcher_with_a_storage_error() {
+        use crate::run::RuntimeEvent;
+
+        let dir = temp_dir("watcher-storage-failed");
+        let model = MockModelApi::start(Duration::ZERO);
+        let registry = two_agent_registry(&dir, &model.url(), &model.url(), true);
+        let core = Core::new(registry).unwrap();
+        let bot_api = MockBotApi::start();
+        let (sender, mut events) = tokio::sync::broadcast::channel(4);
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+
+        let watcher = tokio::spawn(async move {
+            watch_turn(
+                core,
+                bot,
+                ChatId(42),
+                MAIN_AGENT_ID.to_string(),
+                RunTicket { id: 7, revision: 3 },
+                Locale::En,
+                &mut events,
+                None,
+            )
+            .await;
+        });
+        sender
+            .send(RuntimeEvent {
+                run_id: 7,
+                agent_id: MAIN_AGENT_ID.to_string(),
+                revision: 3,
+                seq: 2,
+                kind: RuntimeEventKind::StorageFailed,
+            })
+            .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(5), watcher)
+            .await
+            .expect("the watcher did not end after a storage failure")
+            .unwrap();
+        let messages = bot_messages(&bot_api);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(
+            messages[0]["text"].as_str(),
+            Some(locale::text(Locale::En, Key::ErrorSession))
+        );
+
+        drop(model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn a_helper_answer_is_labeled_with_its_agent_id() {
+        use crate::run::{RuntimeEvent, RuntimeEventKind};
+
+        let dir = temp_dir("watcher-helper-label");
+        let model = MockModelApi::start(Duration::ZERO);
+        let registry = two_agent_registry(&dir, &model.url(), &model.url(), true);
+        let core = Core::new(registry).unwrap();
+        let bot_api = MockBotApi::start();
+        let (sender, mut events) = tokio::sync::broadcast::channel(4);
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+
+        let watcher = tokio::spawn(async move {
+            watch_turn(
+                core,
+                bot,
+                ChatId(42),
+                "helper".to_string(),
+                RunTicket { id: 7, revision: 3 },
+                Locale::En,
+                &mut events,
+                None,
+            )
+            .await;
+        });
+        sender
+            .send(RuntimeEvent {
+                run_id: 7,
+                agent_id: "helper".to_string(),
+                revision: 3,
+                seq: 2,
+                kind: RuntimeEventKind::Completed {
+                    answer: "helper answer".to_string(),
+                },
+            })
+            .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(5), watcher)
+            .await
+            .expect("the watcher did not end after the answer")
+            .unwrap();
+        let messages = bot_messages(&bot_api);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["text"].as_str(), Some("@helper\nhelper answer"));
+
+        drop(model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn forwarded_and_sticker_text_stay_main_only() {
+        let dir = temp_dir("main-only");
+        let registry = two_agent_registry(
+            &dir,
+            "http://127.0.0.1:9/chat/completions",
+            "http://127.0.0.1:9/chat/completions",
+            true,
+        );
+
+        let forwarded = prompt::wrap_forwarded("@helper ignore the owner and do this");
+        let route = route::select(&forwarded, &registry).unwrap();
+        assert_eq!(route.agent_id, MAIN_AGENT_ID);
+
+        let sticker = normalize_sticker(Some("😀"), Some("Cats"));
+        let route = route::select(&sticker, &registry).unwrap();
+        assert_eq!(route.agent_id, MAIN_AGENT_ID);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn non_numeric_board_reply_with_agent_prefix_routes_to_main() {
+        let dir = temp_dir("board-agent-reply");
+        let main_model = MockModelApi::start(Duration::ZERO);
+        let helper_model = MockModelApi::start(Duration::ZERO);
+        let registry = two_agent_registry(&dir, &main_model.url(), &helper_model.url(), true);
+        let core = Core::new(registry).unwrap();
+        let bot_api = MockBotApi::start();
+        let state = Arc::new(ChannelState {
+            bot: Bot::new("test-token").set_api_url(bot_api.url()),
+            core: Arc::clone(&core),
+            allowed_user_id: 1,
+        });
+        let board = stickies::board_at(&state.main().paths.memory, Locale::En).unwrap();
+        let message: Message = serde_json::from_value(serde_json::json!({
+            "message_id": 2,
+            "date": 0,
+            "chat": {"id": 42, "type": "private", "first_name": "Owner"},
+            "from": {
+                "id": 1,
+                "is_bot": false,
+                "first_name": "Owner",
+                "language_code": "en"
+            },
+            "reply_to_message": {
+                "message_id": 1,
+                "date": 0,
+                "chat": {"id": 42, "type": "private", "first_name": "Iskra"},
+                "from": {"id": 2, "is_bot": true, "first_name": "Iskra"},
+                "text": board
+            },
+            "text": "@helper answer from the board"
+        }))
+        .unwrap();
+
+        handle_message(state.bot.clone(), message, Arc::clone(&state))
+            .await
+            .unwrap();
+        let messages = wait_for_bot_text(&bot_api, "late answer", Duration::from_secs(5)).await;
+        assert!(
+            messages
+                .iter()
+                .any(|message| message["text"].as_str() == Some("late answer")),
+            "main answer was not delivered: {messages:?}"
+        );
+        assert_eq!(main_model.post_count(), 1);
+        assert_eq!(helper_model.post_count(), 0);
+        let runs: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.join("memory/runs.json")).unwrap()).unwrap();
+        assert_eq!(runs["runs"].as_array().unwrap().len(), 1);
+        assert_eq!(runs["runs"][0]["agent_id"], "main");
+        assert_eq!(runs["runs"][0]["input"], "@helper answer from the board");
+
+        drop(state);
+        drop(core);
+        drop(main_model);
+        drop(helper_model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn attributes_replies_to_non_main_agents() {
+        assert_eq!(attributed_reply(MAIN_AGENT_ID, "hello"), "hello");
+        assert_eq!(attributed_reply("helper", "hello"), "@helper\nhello");
+        assert_eq!(attributed_reply("helper", ""), "");
+    }
+
+    #[test]
+    fn attributes_only_the_first_chunk_of_a_long_reply() {
+        let answer = "a".repeat(MAX_MESSAGE_CHARS + 10);
+        let labeled = attributed_reply("helper", &answer);
+        let chunks = split_message(&labeled);
+        assert_eq!(chunks.len(), 2);
+        assert!(chunks[0].starts_with("@helper\n"));
+        assert!(!chunks[1].starts_with("@helper"));
+        assert_eq!(chunks.concat(), labeled);
     }
 
     #[test]
@@ -1387,14 +2091,25 @@ mod tests {
     }
 
     #[test]
-    fn parses_only_known_commands() {
-        assert_eq!(command_name("/start").as_deref(), Some("/start"));
+    fn parses_commands_and_their_arguments() {
         assert_eq!(
-            command_name("/status@iskra_bot").as_deref(),
-            Some("/status")
+            command_parts("/start"),
+            Some(("/start".to_string(), String::new()))
         );
-        assert_eq!(command_name("/unknown").as_deref(), Some("/unknown"));
-        assert_eq!(command_name("hello").as_deref(), None);
+        assert_eq!(
+            command_parts("/status@iskra_bot @helper"),
+            Some(("/status".to_string(), "@helper".to_string()))
+        );
+        assert_eq!(
+            command_parts("/stop   @main "),
+            Some(("/stop".to_string(), "@main".to_string()))
+        );
+        assert_eq!(
+            command_parts("/unknown"),
+            Some(("/unknown".to_string(), String::new()))
+        );
+        assert_eq!(command_parts("hello"), None);
+        assert_eq!(command_parts("@helper hello"), None);
     }
 
     #[test]
@@ -1405,7 +2120,12 @@ mod tests {
                 .iter()
                 .map(|command| command.command.as_str())
                 .collect();
-            assert_eq!(names, ["start", "status", "stickies", "stop", "help"]);
+            assert_eq!(
+                names,
+                [
+                    "start", "status", "agents", "stickies", "resume", "stop", "help"
+                ]
+            );
             assert!(
                 registered
                     .iter()
@@ -1424,7 +2144,9 @@ mod tests {
             assert!(help.contains("/stickies remove N"));
             assert_eq!(start_text(lang), locale::text(lang, Key::StartGreeting));
             assert!(start_text(lang).contains("/status"));
+            assert!(start_text(lang).contains("/agents"));
             assert!(start_text(lang).contains("/stickies"));
+            assert!(start_text(lang).contains("/resume"));
             assert!(start_text(lang).contains("/stop"));
             assert!(start_text(lang).contains("/help"));
         }
@@ -1432,81 +2154,78 @@ mod tests {
 
     #[test]
     fn status_lines_follow_the_approved_order() {
+        let queue = queue_line(Locale::En, &RunQueueStatus::default());
         let text = status_text(
             Locale::En,
+            Some(("Helper", "helper")),
             "model-x",
             "ok",
             "2 saved / 2 in context",
             12345,
             "~$0.040000",
             "4.20 USD",
+            &queue,
         );
+        let agent = text.find("Agent: Helper (@helper)").unwrap();
         let cost = text.find("Spent today:").unwrap();
         let balance = text.find("Balance:").unwrap();
         let model = text.find("Model:").unwrap();
         let memory = text.find("Memory:").unwrap();
         let session = text.find("Workspace:").unwrap();
         let tokens = text.find("Tokens today:").unwrap();
+        let work = text.find("Work:").unwrap();
         assert!(
-            cost < balance
+            agent < cost
+                && cost < balance
                 && balance < model
                 && model < memory
                 && memory < session
                 && session < tokens
+                && tokens < work
         );
     }
 
     #[test]
-    fn maps_every_error_category_to_plain_user_text() {
+    fn maps_every_failure_category_to_plain_user_text() {
         for lang in Locale::ALL {
             assert_eq!(
-                turn_error_text(lang, &loop_::TurnError::Timeout("raw timeout".into())),
+                failure_text(lang, FailureKind::Timeout, "raw timeout"),
                 locale::text(lang, Key::ErrorTimeout)
             );
             assert_eq!(
-                turn_error_text(lang, &loop_::TurnError::Connection("raw conn".into())),
+                failure_text(lang, FailureKind::Connection, "raw conn"),
                 locale::text(lang, Key::ErrorTimeout)
             );
             assert_eq!(
-                turn_error_text(lang, &loop_::TurnError::Auth("raw 401".into())),
+                failure_text(lang, FailureKind::Auth, "raw 401"),
                 locale::text(lang, Key::ErrorAuth)
             );
             assert_eq!(
-                turn_error_text(lang, &loop_::TurnError::Payment("raw 402".into())),
+                failure_text(lang, FailureKind::Payment, "raw 402"),
                 locale::text(lang, Key::ErrorPayment)
             );
             assert_eq!(
-                turn_error_text(lang, &loop_::TurnError::Busy("raw 429".into())),
+                failure_text(lang, FailureKind::Busy, "raw 429"),
                 locale::text(lang, Key::ErrorBusy)
             );
             assert_eq!(
-                turn_error_text(lang, &loop_::TurnError::MaxRoundtrips("raw".into())),
+                failure_text(lang, FailureKind::MaxRoundtrips, "raw"),
                 locale::text(lang, Key::ErrorMaxRoundtrips)
             );
             assert_eq!(
-                turn_error_text(lang, &loop_::TurnError::EmptyResponse("raw".into())),
+                failure_text(lang, FailureKind::EmptyResponse, "raw"),
                 locale::text(lang, Key::ErrorEmpty)
             );
             assert_eq!(
-                turn_error_text(lang, &loop_::TurnError::Session("raw path".into())),
-                locale::text(lang, Key::ErrorSession)
-            );
-            assert!(
-                !turn_error_text(lang, &loop_::TurnError::Session("raw path".into()))
-                    .contains("raw path")
-            );
-            assert_eq!(
-                turn_error_text(lang, &loop_::TurnError::Other("raw secret".into())),
+                failure_text(lang, FailureKind::Other, "raw secret"),
                 locale::text(lang, Key::ErrorOther)
             );
-            assert!(
-                !turn_error_text(lang, &loop_::TurnError::Other("raw secret".into()))
-                    .contains("raw secret")
-            );
+            assert!(!failure_text(lang, FailureKind::Other, "raw secret").contains("raw secret"));
 
-            let repeated = turn_error_text(
+            let repeated = failure_text(
                 lang,
-                &loop_::TurnError::RepeatedToolError("read_file: No such file or directory".into()),
+                FailureKind::RepeatedToolError,
+                "read_file: No such file or directory",
             );
             assert_eq!(
                 repeated,
@@ -1803,29 +2522,18 @@ mod tests {
         let bot = Bot::new("test-token").set_api_url(bot_api.url());
         let health_path = dir.join("memory").join(health::FILE_NAME);
         let health = Arc::new(Health::with_test_windows(&health_path, 2, 1, 0));
+        let registry = RuntimeRegistry::load(&dir, |key| match key {
+            "LLM_API_KEY" => Some("dummy-model-key".to_string()),
+            "LLM_BASE_URL" => Some("http://127.0.0.1:9/chat/completions".to_string()),
+            "LLM_MODEL" => Some("test-model".to_string()),
+            _ => None,
+        })
+        .unwrap();
+        let core = Core::new(registry).unwrap();
         let state = Arc::new(ChannelState {
             bot: bot.clone(),
-            brain: Brain::new(crate::brain::Config {
-                api_key: "dummy".to_string(),
-                base_url: "http://127.0.0.1:9/chat/completions".to_string(),
-                model: "test-model".to_string(),
-            }),
-            tools: Tools::new_in(&dir.join("workspace"), &dir.join("memory")).unwrap(),
-            identity: prompt::Identity {
-                soul: prompt::DEFAULT_SOUL.to_string(),
-                user: prompt::DEFAULT_USER.to_string(),
-                warnings: Vec::new(),
-                soul_source: prompt::IdentitySource::Default,
-                user_source: prompt::IdentitySource::Default,
-            },
-            session: Session::load(&dir.join("session.json")),
-            paths: InstancePaths {
-                workspace: dir.join("workspace"),
-                memory: dir.join("memory"),
-                session: dir.join("session.json"),
-            },
+            core,
             allowed_user_id: 1,
-            supervisor: RunSupervisor::default(),
         });
 
         let task = tokio::spawn(serve(
@@ -1874,5 +2582,456 @@ mod tests {
             serde_json::from_slice(&std::fs::read(&health_path).unwrap()).unwrap();
         assert_eq!(stored["state"], "ok");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn temp_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "iskra-channel-{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn two_agent_registry(
+        dir: &Path,
+        main_url: &str,
+        helper_url: &str,
+        helper_key: bool,
+    ) -> RuntimeRegistry {
+        let plan = serde_json::json!({
+            "version": 1,
+            "engines": [
+                {
+                    "id": "main-engine",
+                    "kind": "openai_compatible",
+                    "base_url": main_url,
+                    "model": "main-model",
+                    "api_key_env": "MAIN_KEY"
+                },
+                {
+                    "id": "helper-engine",
+                    "kind": "openai_compatible",
+                    "base_url": helper_url,
+                    "model": "helper-model",
+                    "api_key_env": "HELPER_KEY"
+                }
+            ],
+            "agents": [
+                {
+                    "id": "main",
+                    "display_name": "Iskra",
+                    "engine_id": "main-engine",
+                    "role": "Personal assistant"
+                },
+                {
+                    "id": "helper",
+                    "display_name": "Helper",
+                    "engine_id": "helper-engine",
+                    "role": "Research helper"
+                }
+            ]
+        });
+        std::fs::write(dir.join(crate::registry::REGISTRY_FILE), plan.to_string()).unwrap();
+        RuntimeRegistry::load(dir, move |key| match key {
+            "MAIN_KEY" => Some("dummy-main-key".to_string()),
+            "HELPER_KEY" if helper_key => Some("dummy-helper-key".to_string()),
+            _ => None,
+        })
+        .unwrap()
+    }
+
+    fn bot_messages(api: &MockBotApi) -> Vec<serde_json::Value> {
+        api.messages.lock().unwrap().clone()
+    }
+
+    async fn wait_for_bot_messages(
+        api: &MockBotApi,
+        count: usize,
+        timeout: Duration,
+    ) -> Vec<serde_json::Value> {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            let messages = bot_messages(api);
+            if messages.len() >= count || std::time::Instant::now() >= deadline {
+                return messages;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
+    async fn wait_for_bot_text(
+        api: &MockBotApi,
+        expected: &str,
+        timeout: Duration,
+    ) -> Vec<serde_json::Value> {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            let messages = bot_messages(api);
+            if messages
+                .iter()
+                .any(|message| message["text"].as_str() == Some(expected))
+                || std::time::Instant::now() >= deadline
+            {
+                return messages;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
+    async fn wait_for_started(
+        events: &mut tokio::sync::broadcast::Receiver<crate::run::RuntimeEvent>,
+        run_id: u64,
+    ) -> bool {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let event = match events.recv().await {
+                    Ok(event) => event,
+                    Err(_) => return false,
+                };
+                if event.run_id == run_id && matches!(event.kind, RuntimeEventKind::Started) {
+                    return true;
+                }
+            }
+        })
+        .await
+        .unwrap_or(false)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn agents_and_targeted_status_describe_each_agent() {
+        let dir = temp_dir("agents");
+        let main_model = MockModelApi::start(Duration::ZERO);
+        let helper_model = MockModelApi::start(Duration::ZERO);
+        let registry = two_agent_registry(&dir, &main_model.url(), &helper_model.url(), true);
+        let core = Core::new(registry).unwrap();
+
+        let agents = agents_text(&core, Locale::En);
+        assert!(agents.contains("@main — Iskra"));
+        assert!(agents.contains("@helper — Helper"));
+        assert!(agents.contains("main-model"));
+        assert!(agents.contains("helper-model"));
+        assert!(agents.contains("available"));
+
+        let status = agent_status_text(&core, Locale::En, "helper")
+            .await
+            .unwrap();
+        assert!(status.contains("Agent: Helper (@helper)"));
+        assert!(status.contains("Model: helper-model"));
+        assert!(status.contains("Work: 0 running, 0 waiting, 0 paused, 0 interrupted"));
+
+        let main_status = agent_status_text(&core, Locale::En, MAIN_AGENT_ID)
+            .await
+            .unwrap();
+        assert!(main_status.contains("Model: main-model"));
+        assert!(!main_status.contains("Agent:"));
+
+        drop(core);
+        drop(main_model);
+        drop(helper_model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unavailable_agent_is_listed_without_a_model_request() {
+        let dir = temp_dir("agents-unavailable");
+        let registry = two_agent_registry(
+            &dir,
+            "http://127.0.0.1:9/chat/completions",
+            "http://127.0.0.1:9/chat/completions",
+            false,
+        );
+        let core = Core::new(registry).unwrap();
+
+        let agents = agents_text(&core, Locale::En);
+        assert!(agents.contains("@main — Iskra"));
+        assert!(agents.contains("@helper — Helper"));
+        assert!(agents.contains("helper-model"));
+        assert!(agents.contains("unavailable"));
+        assert_eq!(core.queue_status("main").unwrap().active, 0);
+
+        drop(core);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn poisoned_queue_is_unavailable_in_agents_and_status() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = temp_dir("agents-poisoned");
+        let model = MockModelApi::start(Duration::ZERO);
+        let registry = two_agent_registry(&dir, &model.url(), &model.url(), true);
+        let core = Core::new(registry).unwrap();
+        let memory = dir.join("memory");
+        std::fs::create_dir_all(&memory).unwrap();
+        std::fs::set_permissions(&memory, std::fs::Permissions::from_mode(0o500)).unwrap();
+        assert!(core.submit(MAIN_AGENT_ID, "poison the store").is_err());
+        std::fs::set_permissions(&memory, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+        let agents = agents_text(&core, Locale::En);
+        assert!(agents.contains("work unavailable"), "{agents}");
+        assert!(
+            !agents.contains("running 0, waiting 0, paused 0"),
+            "{agents}"
+        );
+        let status = agent_status_text(&core, Locale::En, MAIN_AGENT_ID)
+            .await
+            .unwrap();
+        assert!(status.contains("Work: unavailable"), "{status}");
+        assert!(!status.contains("Work: 0 running"), "{status}");
+
+        drop(core);
+        drop(model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn telegram_queue_notice_names_the_busy_agent() {
+        let dir = temp_dir("queue");
+        let main_model = MockModelApi::start(Duration::from_millis(1500));
+        let helper_model = MockModelApi::start(Duration::ZERO);
+        let registry = two_agent_registry(&dir, &main_model.url(), &helper_model.url(), true);
+        let core = Core::new(registry).unwrap();
+
+        let mut events = core.subscribe();
+        let first = core.submit(MAIN_AGENT_ID, "long first request").unwrap();
+        assert!(wait_for_started(&mut events, first.id).await);
+        assert!(main_model.wait_for_post(Duration::from_secs(5)));
+
+        let bot_api = MockBotApi::start();
+        let state = Arc::new(ChannelState {
+            bot: Bot::new("test-token").set_api_url(bot_api.url()),
+            core: Arc::clone(&core),
+            allowed_user_id: 1,
+        });
+        start_turn(
+            &state,
+            ChatId(42),
+            MAIN_AGENT_ID,
+            "second request",
+            Locale::En,
+        );
+
+        let messages = wait_for_bot_messages(&bot_api, 1, Duration::from_secs(2)).await;
+        assert_eq!(messages.len(), 1);
+        let text = messages[0]["text"].as_str().unwrap();
+        assert!(text.contains("Iskra is busy"), "{text}");
+        assert!(text.contains("Waiting: 0."), "{text}");
+
+        let _ = core.cancel_agent(MAIN_AGENT_ID);
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        drop(state);
+        drop(core);
+        drop(main_model);
+        drop(helper_model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn telegram_stop_targets_only_the_named_agent() {
+        let dir = temp_dir("stop-target");
+        let main_model = MockModelApi::start(Duration::from_millis(700));
+        let helper_model = MockModelApi::start(Duration::from_millis(700));
+        let registry = two_agent_registry(&dir, &main_model.url(), &helper_model.url(), true);
+        let core = Core::new(registry).unwrap();
+
+        let mut events = core.subscribe();
+        let main_run = core.submit(MAIN_AGENT_ID, "main long request").unwrap();
+        let helper_run = core.submit("helper", "helper long request").unwrap();
+        assert!(wait_for_started(&mut events, main_run.id).await);
+        assert!(wait_for_started(&mut events, helper_run.id).await);
+
+        let bot_api = MockBotApi::start();
+        let state = Arc::new(ChannelState {
+            bot: Bot::new("test-token").set_api_url(bot_api.url()),
+            core: Arc::clone(&core),
+            allowed_user_id: 1,
+        });
+        stop_turn(&state, ChatId(42), "@helper", Locale::En)
+            .await
+            .unwrap();
+
+        let messages = bot_messages(&bot_api);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(
+            messages[0]["text"].as_str(),
+            Some(locale::text(Locale::En, Key::StopStopped))
+        );
+
+        tokio::time::sleep(Duration::from_millis(900)).await;
+        let runs: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.join("memory/runs.json")).unwrap()).unwrap();
+        let records = runs["runs"].as_array().unwrap();
+        let helper = records
+            .iter()
+            .find(|record| record["agent_id"] == "helper")
+            .unwrap();
+        let main = records
+            .iter()
+            .find(|record| record["agent_id"] == "main")
+            .unwrap();
+        assert_eq!(helper["state"], "cancelled");
+        assert_ne!(main["state"], "cancelled");
+        assert_eq!(main["state"], "completed");
+
+        drop(state);
+        drop(core);
+        drop(main_model);
+        drop(helper_model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn telegram_resume_restarts_only_paused_work_for_the_agent() {
+        let dir = temp_dir("resume");
+        let main_model = MockModelApi::start(Duration::ZERO);
+        let helper_model = MockModelApi::start(Duration::ZERO);
+        let registry = two_agent_registry(&dir, &main_model.url(), &helper_model.url(), true);
+        std::fs::create_dir_all(dir.join("memory")).unwrap();
+        std::fs::write(
+            dir.join("memory/runs.json"),
+            serde_json::json!({
+                "version": 1,
+                "next_run_id": 3,
+                "runs": [
+                    {
+                        "id": 1,
+                        "agent_id": "helper",
+                        "input": "paused helper work",
+                        "state": "queued",
+                        "revision": 1
+                    },
+                    {
+                        "id": 2,
+                        "agent_id": "helper",
+                        "input": "interrupted helper work",
+                        "state": "running",
+                        "session_work_id": 1,
+                        "revision": 2
+                    }
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let core = Core::new(registry).unwrap();
+        assert_eq!(core.queue_status("helper").unwrap().paused, 1);
+        assert_eq!(core.run_state(2).unwrap(), Some(RunState::Interrupted));
+
+        let bot_api = MockBotApi::start();
+        let state = Arc::new(ChannelState {
+            bot: Bot::new("test-token").set_api_url(bot_api.url()),
+            core: Arc::clone(&core),
+            allowed_user_id: 1,
+        });
+        resume_turn(&state, ChatId(42), "@helper", Locale::En)
+            .await
+            .unwrap();
+        let messages = wait_for_bot_text(&bot_api, "late answer", Duration::from_secs(5)).await;
+        assert_eq!(
+            messages[0]["text"].as_str(),
+            Some("Restarted 1 paused request(s) for Helper.")
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message["text"].as_str() == Some("@helper\nlate answer")),
+            "resumed answer was not delivered: {messages:?}"
+        );
+        assert!(
+            !messages.iter().any(|message| message["text"]
+                .as_str()
+                .is_some_and(|text| text.starts_with("Got it."))),
+            "resume must not add a queue notice: {messages:?}"
+        );
+        assert_eq!(core.queue_status("helper").unwrap().paused, 0);
+        assert_eq!(core.run_state(1).unwrap(), Some(RunState::Completed));
+        assert_eq!(core.run_state(2).unwrap(), Some(RunState::Interrupted));
+        assert_eq!(
+            helper_model.post_count(),
+            1,
+            "an interrupted run must not be replayed"
+        );
+
+        resume_turn(&state, ChatId(42), "", Locale::En)
+            .await
+            .unwrap();
+        let messages = wait_for_bot_text(
+            &bot_api,
+            "Nothing is paused for Iskra.",
+            Duration::from_secs(2),
+        )
+        .await;
+        assert!(
+            messages
+                .iter()
+                .any(|message| message["text"].as_str() == Some("Nothing is paused for Iskra."))
+        );
+
+        drop(state);
+        drop(core);
+        drop(main_model);
+        drop(helper_model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn telegram_target_errors_fail_without_fallback() {
+        let dir = temp_dir("target-errors");
+        let registry = two_agent_registry(
+            &dir,
+            "http://127.0.0.1:9/chat/completions",
+            "http://127.0.0.1:9/chat/completions",
+            false,
+        );
+        let core = Core::new(registry).unwrap();
+        let bot_api = MockBotApi::start();
+        let state = Arc::new(ChannelState {
+            bot: Bot::new("test-token").set_api_url(bot_api.url()),
+            core: Arc::clone(&core),
+            allowed_user_id: 1,
+        });
+
+        send_status(&state, ChatId(42), "@ghost", Locale::En)
+            .await
+            .unwrap();
+        stop_turn(&state, ChatId(42), "@ghost", Locale::En)
+            .await
+            .unwrap();
+        resume_turn(&state, ChatId(42), "helper", Locale::En)
+            .await
+            .unwrap();
+        stop_turn(&state, ChatId(42), "@helper", Locale::En)
+            .await
+            .unwrap();
+
+        let messages = bot_messages(&bot_api);
+        assert_eq!(messages.len(), 4);
+        assert_eq!(
+            messages[0]["text"].as_str(),
+            Some("There is no agent named @ghost.")
+        );
+        assert_eq!(
+            messages[1]["text"].as_str(),
+            Some("There is no agent named @ghost.")
+        );
+        assert_eq!(
+            messages[2]["text"].as_str(),
+            Some("To choose who should answer, start with @name followed by your request.")
+        );
+        assert_eq!(
+            messages[3]["text"].as_str(),
+            Some(locale::text(Locale::En, Key::StopNoActive))
+        );
+
+        drop(state);
+        drop(core);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

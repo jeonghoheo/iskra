@@ -47,6 +47,7 @@ and reassembled — swap the model, the channel, or the tools without touching t
 - [x] Telegram channel with sender allowlist
 - [x] Shell tool (`ls`, `cat`, `git`, `cargo`) with subcommand and argument policy, cleared environment and macOS sandbox (cargo is disabled where no OS sandbox exists) + a verified coding task
 - [x] Shell hardening (v1.1): 21 bypass paths closed and covered by tests
+- [x] Two-agent runtime (Stage 2): a local `iskra.json` registry (at most two agents), an isolated model, tools, memory, Session, workspace and usage record per agent, a durable run queue in `memory/runs.json`, explicit `@agent` routing, `/agents`, `/status [@agent]`, `/stop [@agent]`, `/resume [@agent]`, and `@name` attribution on replies from another agent
 
 ## Known limitations
 
@@ -62,6 +63,26 @@ and reassembled — swap the model, the channel, or the tools without touching t
   notification. Check the health file and the process state.
 - Proxy operation on a real Russian network is not covered by automated tests; verify it
   once with your own proxy before relying on it.
+- The two-agent flow is covered by automated tests (a mock Bot API plus two local
+  OpenAI-compatible servers). An owner-run Stage 2 checklist passed on 2026-11-24
+  (routing and isolation, global concurrency 2 and per-agent FIFO, targeted
+  status/stop/resume, restart recovery without replay). The post-remediation live
+  checklist passed on 2026-11-24 as well (board replies, restart `/resume` delivery,
+  targeted `/stop`, second-dispatcher refusal, Korean UI, and reply attribution;
+  en/ru rendering remains test-covered).
+  A plain message always goes to `main`; only a leading `@name` selects another agent.
+  Forwarded text, stickers and sticky-board replies stay on `main`. Replies from
+  another agent start with `@name`; `main` replies have no label.
+- One Iskra process may own a data directory at a time. A second process started in
+  the same working directory refuses to start before any model call or store write;
+  stop the first instance instead of running two.
+- Additional-agent roots are derived from the agent ID (`agent-workspaces/<id>/`,
+  `memory/agents/<id>/`) and must be real directories. A symlinked root, or one that
+  aliases `main`, another agent, or an outside path, is refused at startup; the
+  registry cannot point at arbitrary paths.
+- With a second agent, configure `iskra.json` locally in the working directory where
+  Iskra runs (it is Git-ignored). The exact registry shape is in
+  `docs/ARCHITECTURE.md` §12; a missing registry keeps the existing single-`main` setup.
 
 ## Roadmap
 
@@ -81,6 +102,11 @@ cd iskra
 cp .env.example .env   # add your model API key (LLM_API_KEY — any provider; DeepSeek is the default)
 cargo run
 ```
+
+To add a second agent, create a local `iskra.json` in the working directory where
+Iskra runs (see `docs/ARCHITECTURE.md` §12 for the shape) and put that engine's key in
+the environment variable named by `api_key_env`. Without `iskra.json`, Iskra runs the
+single `main` agent as before.
 
 ## License
 

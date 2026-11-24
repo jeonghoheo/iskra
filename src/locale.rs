@@ -71,7 +71,9 @@ macro_rules! define_keys {
 define_keys!(
     StartDescription,
     StatusDescription,
+    AgentsDescription,
     StickiesDescription,
+    ResumeDescription,
     StopDescription,
     HelpDescription,
     StartGreeting,
@@ -124,6 +126,22 @@ define_keys!(
     StickiesUsage,
     Unavailable,
     BalanceInsufficient,
+    AgentsHeader,
+    AgentLine,
+    AgentQueueUnavailable,
+    Available,
+    StatusAgent,
+    StatusQueue,
+    StatusQueueUnavailable,
+    QueueAccepted,
+    ResumeDone,
+    ResumeNone,
+    RouteUnknownAgent,
+    RouteUnavailable,
+    RouteMalformed,
+    RouteEmpty,
+    UnknownCommand,
+    InputTooLong,
 );
 
 pub fn text(locale: Locale, key: Key) -> &'static str {
@@ -143,6 +161,16 @@ pub fn text(locale: Locale, key: Key) -> &'static str {
             "스티키 보드 보기",
             "Показать доску стикеров",
         ),
+        Key::AgentsDescription => (
+            "List the agents",
+            "에이전트 목록 보기",
+            "Показать список агентов",
+        ),
+        Key::ResumeDescription => (
+            "Restart paused requests",
+            "멈춘 요청 다시 시작하기",
+            "Возобновить отложенные запросы",
+        ),
         Key::StopDescription => (
             "Stop the current task",
             "하던 일 멈추기",
@@ -154,9 +182,9 @@ pub fn text(locale: Locale, key: Key) -> &'static str {
             "Показать список команд",
         ),
         Key::StartGreeting => (
-            "Hi, I'm Iskra.\nWhat I can do:\n• Chat, and remember what you tell me (\"remember how I take my coffee\")\n• Create and read files in my work folder\n• Pin notes to the sticky board (\"stick this on the board\")\nEverything I remember and every file stays on this computer.\nCommands: /status · /stickies · /stop · /help",
-            "안녕하세요, 이스크라예요.\n할 수 있는 일:\n• 대화하고, 알려 준 것을 기억해요 (\"내 커피 취향 기억해 줘\")\n• 작업 폴더에서 파일을 만들고 읽어요\n• 스티키 보드에 메모를 붙여요 (\"이거 보드에 붙여 줘\")\n기억과 파일은 모두 이 컴퓨터에만 저장돼요.\n명령어: /status 상태 · /stickies 보드 · /stop 멈추기 · /help 도움말",
-            "Привет, я Искра.\nЧто я умею:\n• Общаться и запоминать то, что вы рассказываете («запомни, какой кофе я пью»)\n• Создавать и читать файлы в рабочей папке\n• Прикреплять заметки на доску стикеров («прикрепи это на доску»)\nВсё, что я помню, и все файлы хранятся только на этом компьютере.\nКоманды: /status · /stickies · /stop · /help",
+            "Hi, I'm Iskra.\nWhat I can do:\n• Chat, and remember what you tell me (\"remember how I take my coffee\")\n• Create and read files in my work folder\n• Pin notes to the sticky board (\"stick this on the board\")\nEverything I remember and every file stays on this computer.\nIf an extra agent is set up, start with @name to reach it.\nCommands: /status · /agents · /stickies · /resume · /stop · /help",
+            "안녕하세요, 이스크라예요.\n할 수 있는 일:\n• 대화하고, 알려 준 것을 기억해요 (\"내 커피 취향 기억해 줘\")\n• 작업 폴더에서 파일을 만들고 읽어요\n• 스티키 보드에 메모를 붙여요 (\"이거 보드에 붙여 줘\")\n기억과 파일은 모두 이 컴퓨터에만 저장돼요.\n추가 에이전트가 있으면 @이름으로 시작해 부를 수 있어요.\n명령어: /status 상태 · /agents 에이전트 · /stickies 보드 · /resume 재개 · /stop 멈추기 · /help 도움말",
+            "Привет, я Искра.\nЧто я умею:\n• Общаться и запоминать то, что вы рассказываете («запомни, какой кофе я пью»)\n• Создавать и читать файлы в рабочей папке\n• Прикреплять заметки на доску стикеров («прикрепи это на доску»)\nВсё, что я помню, и все файлы хранятся только на этом компьютере.\nЕсли настроен второй агент, начните с @имя, чтобы обратиться к нему.\nКоманды: /status · /agents · /stickies · /resume · /stop · /help",
         ),
         Key::HelpHeader => (
             "Available commands:",
@@ -355,6 +383,72 @@ pub fn text(locale: Locale, key: Key) -> &'static str {
             " (API 호출에 부족)",
             " (недостаточно для вызовов API)",
         ),
+        Key::AgentsHeader => ("Agents:", "에이전트:", "Агенты:"),
+        Key::AgentLine => (
+            "@{} — {} · {} / {} · {} · running {}, waiting {}, paused {}",
+            "@{} — {} · {} / {} · {} · 진행 {}, 대기 {}, 멈춤 {}",
+            "@{} — {} · {} / {} · {} · выполняется {}, в ожидании {}, на паузе {}",
+        ),
+        Key::AgentQueueUnavailable => (
+            "@{} — {} · {} / {} · {} · work unavailable",
+            "@{} — {} · {} / {} · {} · 작업 확인 불가",
+            "@{} — {} · {} / {} · {} · работа недоступна",
+        ),
+        Key::Available => ("available", "사용 가능", "доступен"),
+        Key::StatusAgent => ("Agent: {} (@{})", "에이전트: {} (@{})", "Агент: {} (@{})"),
+        Key::StatusQueue => (
+            "Work: {} running, {} waiting, {} paused, {} interrupted",
+            "작업: 진행 {}개, 대기 {}개, 멈춤 {}개, 중단 {}개",
+            "Работа: выполняется {}, в ожидании {}, на паузе {}, прервано {}",
+        ),
+        Key::StatusQueueUnavailable => {
+            ("Work: unavailable", "작업: 확인 불가", "Работа: недоступно")
+        }
+        Key::QueueAccepted => (
+            "Got it. {} is busy, so this will start when the current request finishes. Waiting: {}.",
+            "접수했어요. {}가 지금 일하는 중이라, 끝나면 시작할게요. 기다리는 요청: {}개.",
+            "Принято. {} сейчас работает над другой просьбой, поэтому начну после неё. В ожидании: {}.",
+        ),
+        Key::ResumeDone => (
+            "Restarted {} paused request(s) for {}.",
+            "멈춰 있던 요청 {}개를 {}에서 다시 시작했어요.",
+            "Возобновила отложенных запросов: {} ({}).",
+        ),
+        Key::ResumeNone => (
+            "Nothing is paused for {}.",
+            "{}에 멈춰 있는 요청이 없어요.",
+            "Для {} нет отложенных запросов.",
+        ),
+        Key::RouteUnknownAgent => (
+            "There is no agent named @{}.",
+            "@{}라는 에이전트가 없어요.",
+            "Агента @{} нет.",
+        ),
+        Key::RouteUnavailable => (
+            "@{} isn't available right now.",
+            "@{}는 지금 사용할 수 없어요.",
+            "@{} сейчас недоступен.",
+        ),
+        Key::RouteMalformed => (
+            "To choose who should answer, start with @name followed by your request.",
+            "누가 답할지 정하려면 @이름 뒤에 요청을 적어 주세요.",
+            "Чтобы выбрать, кто отвечает, начните с @имя и дальше напишите запрос.",
+        ),
+        Key::RouteEmpty => (
+            "Type your request after @name.",
+            "@이름 뒤에 요청을 적어 주세요.",
+            "Напишите запрос после @имя.",
+        ),
+        Key::UnknownCommand => (
+            "Unknown command. Try /help.",
+            "알 수 없는 명령어예요. /help를 확인해 주세요.",
+            "Неизвестная команда. Посмотрите /help.",
+        ),
+        Key::InputTooLong => (
+            "That request is too long. Please split it into smaller parts.",
+            "요청이 너무 길어요. 더 작게 나눠서 보내 주세요.",
+            "Запрос слишком длинный. Разбейте его на части поменьше.",
+        ),
     };
 
     match locale {
@@ -366,6 +460,15 @@ pub fn text(locale: Locale, key: Key) -> &'static str {
 
 pub fn with<T: std::fmt::Display>(locale: Locale, key: Key, value: T) -> String {
     text(locale, key).replace("{}", &value.to_string())
+}
+
+/// Fills the template's `{}` placeholders in order.
+pub fn with_values(locale: Locale, key: Key, values: &[String]) -> String {
+    let mut filled = text(locale, key).to_string();
+    for value in values {
+        filled = filled.replacen("{}", value, 1);
+    }
+    filled
 }
 
 fn with_pair<T: std::fmt::Display, U: std::fmt::Display>(

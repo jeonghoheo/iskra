@@ -20,7 +20,15 @@ const OUTPUT_READ_LIMIT_BYTES: usize = 80_000;
 // Argument policy for run_command (directive v1.1-A). Anything not explicitly
 // allowed here is refused before a process is spawned (fail-closed).
 const GIT_SUBCOMMANDS: [&str; 9] = [
-    "status", "diff", "log", "show", "add", "commit", "init", "rev-parse", "ls-files",
+    "status",
+    "diff",
+    "log",
+    "show",
+    "add",
+    "commit",
+    "init",
+    "rev-parse",
+    "ls-files",
 ];
 /// Long options refused on every git subcommand. A given `--name` is refused when
 /// it is a prefix of one of these, because git accepts unique abbreviations
@@ -354,7 +362,8 @@ impl Tools {
         };
 
         crate::logging::append(&command_log_line(program_name, &program_args, dir));
-        let outcome = run_process(command, program_name, Duration::from_secs(RUN_TIMEOUT_SECS)).await;
+        let outcome =
+            run_process(command, program_name, Duration::from_secs(RUN_TIMEOUT_SECS)).await;
 
         match &outcome {
             Ok(outcome) => crate::logging::append(&format!(
@@ -408,7 +417,9 @@ impl Tools {
         let resolved = self.resolve(dir)?;
         self.refuse_private(dir, &resolved)?;
         if !resolved.is_dir() {
-            return Err(format!("dir is not an existing folder inside workspace: {dir}"));
+            return Err(format!(
+                "dir is not an existing folder inside workspace: {dir}"
+            ));
         }
         Ok((resolved, dir))
     }
@@ -416,7 +427,12 @@ impl Tools {
     /// File operands of ls/cat go through the same path check as read_file
     /// (symlinks pointing outside workspace are refused). BSD ls/cat stop option
     /// parsing at the first operand, so every argument from there on is an operand.
-    fn check_file_operands(&self, program: Program, base: &str, args: &[String]) -> Result<(), String> {
+    fn check_file_operands(
+        &self,
+        program: Program,
+        base: &str,
+        args: &[String],
+    ) -> Result<(), String> {
         let mut after_double_dash = false;
         let mut seen_operand = false;
         for arg in args {
@@ -610,7 +626,10 @@ fn banned_long_option(arg: &str, banned: &[&'static str]) -> Option<&'static str
         return None;
     }
     let name = arg.split('=').next().unwrap_or(arg);
-    banned.iter().copied().find(|option| option.starts_with(name))
+    banned
+        .iter()
+        .copied()
+        .find(|option| option.starts_with(name))
 }
 
 fn check_git_args(args: &[String]) -> Result<(), String> {
@@ -638,7 +657,10 @@ fn check_git_args(args: &[String]) -> Result<(), String> {
         if arg.starts_with("-c") {
             return Err(format!("git -c (config override) is refused: {arg}"));
         }
-        if subcommand == "commit" && arg.starts_with('-') && !arg.starts_with("--") && arg.contains('S')
+        if subcommand == "commit"
+            && arg.starts_with('-')
+            && !arg.starts_with("--")
+            && arg.contains('S')
         {
             return Err(format!("git commit signing (-S) is refused: {arg}"));
         }
@@ -654,7 +676,9 @@ fn check_cargo_args(args: &[String]) -> Result<(), String> {
         ));
     };
     if subcommand.starts_with('+') {
-        return Err(format!("cargo toolchain overrides are refused: {subcommand}"));
+        return Err(format!(
+            "cargo toolchain overrides are refused: {subcommand}"
+        ));
     }
     if subcommand.starts_with('-') {
         return Err(format!(
@@ -687,12 +711,18 @@ fn check_short_flags(program: Program, args: &[String], allowed: &str) -> Result
             break;
         }
         if arg.starts_with("--") {
-            return Err(format!("{} long options are refused: {arg}", program.name()));
+            return Err(format!(
+                "{} long options are refused: {arg}",
+                program.name()
+            ));
         }
         if let Some(flags) = arg.strip_prefix('-')
             && let Some(flag) = flags.chars().find(|flag| !allowed.contains(*flag))
         {
-            return Err(format!("{} option -{flag} is not allowed: {arg}", program.name()));
+            return Err(format!(
+                "{} option -{flag} is not allowed: {arg}",
+                program.name()
+            ));
         }
     }
     Ok(())

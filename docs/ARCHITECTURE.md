@@ -1,7 +1,7 @@
 # Iskra Agent Workbench Architecture
 
-Status: **approved target design; not implemented as a multi-agent runtime yet**.
-Date: 2026-11-23.
+Status: **approved target design; the Stage 2 two-Agent slice is implemented in the working tree, Stage 3 and later are not started**.
+Date: 2026-11-24.
 
 This document defines the architecture for turning Iskra from one persistent personal agent into a model-neutral workbench for multiple agents. It preserves the existing Rust core, local data ownership, fail-closed tools, and single-binary distribution.
 
@@ -195,6 +195,7 @@ Rules:
 - Persist `preparing` before spawning an external engine and `running` before the first model or tool action.
 - A queue write failure means no model call and no tool execution.
 - A terminal-state write failure poisons the relevant runtime store against further work until it is writable and valid again.
+- A Session or RunStore stop-write failure is projected as `StorageFailed`: the requested work is still aborted for safety, further admission and dispatch are poisoned, and no clean, persisted cancellation is reported.
 - Only the expected current Run ID and event sequence may advance state; late duplicate events are harmless observations.
 - `completed` means the core received a valid final result. It does not guarantee Telegram or network delivery.
 - No state transition automatically authorizes a retry, payment, external send, or new Agent.
@@ -207,14 +208,15 @@ pending -> failed
 pending -> unknown
 ```
 
-`unknown` is not retried blindly. A future channel-specific reconciliation may resolve it without rerunning the Task.
+`unknown` is not retried blindly. A future channel-specific reconciliation may resolve it without rerunning the Task. An explicitly resumed Run delivers its result through the same projection as a fresh Run: the channel subscribes before resume admission and reuses the per-Run watcher, while the CLI prints every resumed terminal result in FIFO order. Resume never re-delivers an interrupted Run.
 
 ## 8. Queue, concurrency, and routing
 
 ### Queue semantics
 
+- One live dispatcher owns a data directory. Startup takes a non-blocking `flock` on the persistent private `memory/dispatcher.lock` before constructing Agent runtimes or loading the Run store; a second process fails closed before any model, Telegram, Session, or RunStore mutation.
 - Each Agent has one durable FIFO queue by default.
-- A Run is claimed atomically so a restart or a second dispatcher cannot dispatch the same queue item twice.
+- A Run is claimed atomically so a crash, restart, or second dispatcher cannot dispatch the same queue item twice. The kernel releases the dispatcher lock when its owner exits or is killed, so no stale-file heuristic exists.
 - Queue settlement is separate from dispatch. A failed or interrupted dispatch leaves an explicit state rather than losing the item.
 - The first multi-agent slice does not coalesce messages. Later coalescing requires identical owner, route, mode, and reply context, plus tests proving no words are hidden from the executing Agent.
 - Owner-interactive work has priority over future scheduled/routine work.
@@ -250,6 +252,7 @@ memory/
   MEMORY.md                        # existing main long-term memory
   session.json                     # existing main session/v1
   runs.json                        # versioned Run/queue state (when implemented)
+  dispatcher.lock                  # persistent private single-dispatcher flock target
   agents/<agent-id>/
     MEMORY.md
     SOUL.md
@@ -322,6 +325,123 @@ Start with deterministic routing and fixed model profiles. An automatic router i
 - Add localized `en/ko/ru` run/queue/status/cancellation text.
 - Do not enable free-form agent-to-agent messaging, automatic delegation, or automatic retries.
 
+The implementation is split into three sequential, machine-verifiable goals: registry/runtime isolation, durable Run/Queue execution, then channel routing and localization. The following contracts are part of the approved Stage 2 design.
+
+#### Registry and isolated AgentRuntime
+
+The local `iskra.json` registry is strict `version: 1` JSON with only `engines` and `agents`. The public `iskra.example.json` contains credential-free examples only.
+
+```json
+{
+  "version": 1,
+  "engines": [
+    {
+      "id": "main-engine",
+      "kind": "openai_compatible",
+      "base_url": "https://api.deepseek.com/chat/completions",
+      "model": "deepseek-flash",
+      "api_key_env": "LLM_API_KEY"
+    }
+  ],
+  "agents": [
+    {
+      "id": "main",
+      "display_name": "Iskra",
+      "engine_id": "main-engine",
+      "role": "Personal assistant"
+    }
+  ]
+}
+```
+
+- A missing registry synthesizes only `main` from the existing `LLM_*` / `DEEPSEEK_API_KEY` configuration. Read-only `/agents` never creates a registry.
+- A present registry contains exactly one `main` and, during this slice, at most one additional Agent. Agents may reference the same Engine profile, but their runtime instances remain independent.
+- Agent IDs start with a lowercase ASCII letter, contain only `a-z`, digits, and hyphens, and are at most 32 characters. Duplicate IDs, unknown fields/versions/Engine references, invalid URLs, empty models, and path collisions invalidate the registry and stop runtime construction.
+- `api_key_env` stores an environment-variable name, never a credential. URL userinfo is refused. A missing `main` credential retains the existing startup error. A missing additional-Agent credential makes only that Agent `unavailable`; it never selects another model or provider as a silent fallback.
+- Additional-Agent workspace and memory paths are derived by the core from validated IDs rather than accepted as arbitrary registry paths. During Stage 2 they are `agent-workspaces/<agent-id>/` and `memory/agents/<agent-id>/`: every component is created without following symlinks, each root is canonicalized, and a symlink, an existing non-directory, a target outside the approved derived location, or a root that equals or nests with another Agent root stops startup before any Session recovery write. Stage 2 keeps the existing core tool policy for both Agents. External roots and custom per-Agent tool policies remain later gates.
+- An `AgentRuntime` owns its Agent/Engine IDs, `Brain`, `Tools`, `Identity`, `Session`, and `InstancePaths`. A `RuntimeRegistry` owns `main` and the optional additional Agent. CLI and channel composition use this registry instead of independently assembling authority-bearing parts.
+- `loop_::run_turn` receives the selected Agent identity and core-issued Run ID rather than hard-coding `main`.
+
+The independent state layout is:
+
+```text
+iskra.json                         # ignored, no secrets
+iskra.example.json                 # public template
+workspace/                         # existing main only
+agent-workspaces/<agent-id>/       # additional Agent only
+memory/
+  MEMORY.md                        # existing main long-term memory
+  session.json                     # existing main session/v1, unchanged
+  stickies.md / board_state.json   # existing main only
+  runs.json                        # global Run/Queue authority, version 1
+  dispatcher.lock                  # persistent private single-dispatcher flock target
+  agents/<agent-id>/
+    SOUL.md                        # registry role is the missing-file fallback
+    MEMORY.md
+    session.json                   # new Agent, existing session/v1 format
+    stickies.md / board_state.json
+```
+
+`main` keeps its current SOUL/USER/memory/session/board paths and formats. An additional Agent reads its own SOUL plus the shared owner `USER.md`; it does not copy the main SOUL or MEMORY. `/iskra.json` and `/agent-workspaces/` are Git-ignored. Existing session data is not migrated or merged.
+
+Every `model_call` metadata log includes `agent`, `run`, `engine`, and `model`. Legacy lines without an Agent field count as `main`. Usage accounting supports both the existing global total and `today_for_agent(agent_id)`. Agent self-state and targeted status use only the selected Agent's usage. Failure metadata follows the same rule: `model_error`, `balance_error`, and `tool_error` record Agent/Run/Engine/model where available, an error category and HTTP status where available, and the tool name, but never a provider body, prompt, response, tool argument, raw tool error, tool output, or credential.
+
+#### RunStore authority and Session projection
+
+`memory/runs.json` is the sole execution-state authority. Each Agent's `session.json` remains the conversation-replay and work-result projection; queue fields are not added to `session/v1`.
+
+The strict, atomically written Run store contains:
+
+- `version: 1`, a globally monotonic `next_run_id`, and a bounded `runs` list.
+- Per Run: `id`, `agent_id`, redacted `input`, `state`, optional structured `failure`, optional `session_work_id`, and a `revision` for stale-event rejection.
+- No final answer, reasoning, tool call, or tool output duplication; those conversation artifacts stay in Session according to its existing rules.
+
+Credential substitution happens at admission. The resulting canonical input is used for both execution and Session persistence, so a restarted queued Run cannot change meaning. Inputs over 8,000 characters are refused rather than silently truncated. Each Agent has at most 20 unfinished queued Runs, and the store retains at most 100 Runs, pruning oldest terminal records first and never pruning queued, active, or paused records. Invalid UTF-8/JSON, unknown versions/fields, impossible transitions, and invalid Agent references preserve the original file and stop the runtime.
+
+Stage 2 uses this reachable state machine:
+
+```text
+queued -> preparing -> running -> completed
+    |         |           |-----> failed
+    |         |           |-----> cancelled
+    |         |-----------------> cancelled
+    |         +-----------------> interrupted (restart recovery)
+    |----------------------------> interrupted (restart recovery)
+    +-> cancelled
+    +-> queued_paused              (restart recovery)
+queued_paused -> queued            (explicit /resume only)
+```
+
+`waiting_approval` remains inactive until an Approval Broker exists. There is no automatic-retry transition.
+
+- **Enqueue:** persist `queued` before acknowledging acceptance or publishing an event. A write failure refuses the request before model/tool execution.
+- **Claim:** under the Supervisor lock, persist the oldest eligible Agent queue head as `preparing` and reserve its global and per-Agent slots. No execution occurs before the write succeeds.
+- **Dispatch:** create the Session work with `session.begin`, persist `preparing -> running`, and only then permit the first model/tool action.
+- **Completion:** persist the Session result first, then the Run terminal state, then publish the terminal event. Any later write failure poisons the Run store against further dispatch and never triggers an automatic retry.
+- **Events:** Core validates `run_id + revision` and emits monotonic per-Run sequence numbers. Late events after cancellation cannot reopen or complete a Run. Channels project `RuntimeEvent` values and do not persist completion themselves. Response text exists only in the in-memory event, not in the Run log.
+
+#### FIFO, admission, recovery, and cancellation
+
+- Per-Agent active concurrency is 1; global `preparing/running` concurrency is 2.
+- The dispatcher considers only the oldest runnable head for each Agent and chooses the eligible head with the lowest global Run ID. Later work for the same Agent cannot overtake its head.
+- Startup reads and validates the registry first, then acquires the dispatcher lock, and only then constructs Agent runtimes and opens the Run store. Lock-before-recovery matters because `Session::load` and `Core::open` perform recovery writes; a lock conflict performs none of them. A lock conflict exits nonzero with a clear English error and no model, Telegram, Session, or RunStore mutation.
+- After the lock is held, startup changes `queued` to `queued_paused` and `preparing/running` to `interrupted`, with no automatic dispatch. Sessions retain their existing `running -> interrupted` recovery.
+- A paused head blocks later work for that Agent. `/resume @agent` changes all of that Agent's paused queue entries back to `queued` in their original order. An interrupted Run itself is never re-executed.
+- `/stop` targets `main`; `/stop @agent` targets the named Agent. One Run-store write cancels that Agent's active, queued, and paused work before Session stop is persisted and the active handle is aborted.
+- If cancellation persistence fails, report the error and poison the runtime. Requested work is still stopped for safety, no replacement work is dispatched, affected watchers terminate with `StorageFailed`, and the channel does not claim a clean persisted stop. A Session or RunStore stop-write failure projects the same failure; later admission is refused until the store is valid again.
+- Queue overflow returns localized backpressure before acceptance; it never silently drops a request.
+
+#### Channel and command contract
+
+- Only a leading `@agent ` in directly entered text selects an Agent. Plain text goes to `main`; `@main` is valid. Unknown, unavailable, malformed, or empty routes fail before a model call and never fall back as a security bypass.
+- Forwarded text, stickers, and sticky-board replies keep their existing main-only behavior. Every non-numeric board reply, including one that begins with `@agent`, goes to `main`; a numeric reply removes a sticky. An `@agent` string inside forwarded material is not a route.
+- Replies from a non-`main` Agent start with `@<agent_id>` on the first line; `main` replies stay unlabeled. The label is presentation-only, is added before Telegram's 4,096-character split, and leaves CLI output and stored Session/Run text unchanged.
+- `/agents` lists Agent ID/display name, Engine/model, availability, and active/queued/paused counts without external balance or model requests.
+- `/status` retains main status and adds Run/Queue information. `/status @agent` shows only the selected Agent's model, memory, Session, usage/cost, balance, and Run/Queue state.
+- `/stop [@agent]` implements the cancellation contract. `/resume [@agent]` defaults to `main` and resumes only paused queued work. Resumed work delivers every terminal result to the requesting channel: Telegram subscribes before resume admission and reuses the per-Run watcher without a duplicate queue notice, and the CLI prints each resumed answer in FIFO order.
+- `/start`, `/help`, the Telegram command menu, and queue acceptance/start/completion/failure/cancellation messages include the new behavior in `en/ko/ru`.
+- CLI uses the same Core Agent-selection API and supports `@agent`, `/agents`, `/status [@agent]`, `/stop [@agent]`, and `/resume [@agent]` so real-process tests can exercise the vertical slice.
+
 ### Stage 3 — ACP and bounded delegation
 
 - Implement one validated ACP path behind core approval and sandbox boundaries.
@@ -343,11 +463,13 @@ Stage 2 must additionally prove:
 
 - Every allowed and forbidden Run transition.
 - FIFO order, atomic claim/settle, concurrency limits, and cancellation races.
+- A single live dispatcher per data directory: a second real process exits before any model call or store write, and a later process acquires the lock after normal exit or owner kill.
 - No model/tool request after restart until the owner explicitly resumes.
 - Different Agents use their configured model and isolated memory/session/workspace.
 - One Agent cannot read, write, advertise tools for, or charge usage to another Agent.
 - Corrupt registry/state fails closed without resetting data.
-- Logs and status distinguish Agent/Run/Engine/model and do not contain secrets or prompt contents.
+- Logs and status distinguish Agent/Run/Engine/model and do not contain secrets or prompt contents. Provider- and tool-failure canary tests assert that unique prompt, provider-body, and tool-argument strings from a real CLI process never appear in `logs/agent.log`.
+- Existing `session/v1` data replays as `main` history, legacy `model_call` usage is attributed to `main`, new Runs carry their own Agent attribution, and no history is merged into another Agent.
 - Real owner-run Telegram and configured-provider checks pass before the feature is presented as live-verified.
 
 The ACP gate must prove approval allow/deny, unsupported-capability refusal, process-group cleanup, external file/network restrictions, and no automatic side-effect replay with both a mock ACP process and one real installed CLI.

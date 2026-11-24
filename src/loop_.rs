@@ -1,8 +1,8 @@
-use crate::brain::{Brain, ChatError, Message};
+use crate::brain::{ChatError, ChatErrorKind, Message};
 use crate::logging;
-use crate::run_context::{MAIN_AGENT_ID, RunContext};
-use crate::session::{FailureKind, Session};
-use crate::tools::Tools;
+use crate::run_context::RunContext;
+use crate::runtime::AgentRuntime;
+use crate::session::FailureKind;
 
 pub const MAX_TOOL_ROUNDTRIPS: usize = 10;
 pub const MAX_CONSECUTIVE_SAME_ERROR: usize = 2;
@@ -17,7 +17,6 @@ pub enum TurnError {
     RepeatedToolError(String),
     MaxRoundtrips(String),
     EmptyResponse(String),
-    Session(String),
     Other(String),
 }
 
@@ -32,7 +31,6 @@ impl std::fmt::Display for TurnError {
             | Self::RepeatedToolError(detail)
             | Self::MaxRoundtrips(detail)
             | Self::EmptyResponse(detail)
-            | Self::Session(detail)
             | Self::Other(detail) => detail,
         };
         f.write_str(detail)
@@ -40,7 +38,7 @@ impl std::fmt::Display for TurnError {
 }
 
 impl TurnError {
-    fn failure_kind(&self) -> FailureKind {
+    pub(crate) fn failure_kind(&self) -> FailureKind {
         match self {
             Self::Timeout(_) => FailureKind::Timeout,
             Self::Connection(_) => FailureKind::Connection,
@@ -50,59 +48,55 @@ impl TurnError {
             Self::RepeatedToolError(_) => FailureKind::RepeatedToolError,
             Self::MaxRoundtrips(_) => FailureKind::MaxRoundtrips,
             Self::EmptyResponse(_) => FailureKind::EmptyResponse,
-            Self::Session(_) | Self::Other(_) => FailureKind::Other,
+            Self::Other(_) => FailureKind::Other,
         }
     }
 }
 
 fn from_chat_error(error: ChatError) -> TurnError {
-    match error {
-        ChatError::Timeout(detail) => TurnError::Timeout(detail),
-        ChatError::Connection(detail) => TurnError::Connection(detail),
-        ChatError::Auth(detail) => TurnError::Auth(detail),
-        ChatError::Payment(detail) => TurnError::Payment(detail),
-        ChatError::Busy(detail) => TurnError::Busy(detail),
-        ChatError::Other(detail) => TurnError::Other(detail),
+    let kind = error.kind();
+    let detail = error.into_detail();
+    match kind {
+        ChatErrorKind::Timeout => TurnError::Timeout(detail),
+        ChatErrorKind::Connection => TurnError::Connection(detail),
+        ChatErrorKind::Auth => TurnError::Auth(detail),
+        ChatErrorKind::Payment => TurnError::Payment(detail),
+        ChatErrorKind::Busy => TurnError::Busy(detail),
+        ChatErrorKind::Other => TurnError::Other(detail),
     }
 }
 
-pub async fn run_turn(
-    brain: &Brain,
-    tools: &Tools,
-    session: &Session,
+/// Runs one model/tool turn that the caller already owns.
+///
+/// Session begin, Session completion, and Run-store settlement stay with the
+/// caller so the core can persist each authority in the required order.
+pub async fn run_work(
+    runtime: &AgentRuntime,
+    run_id: u64,
+    history: Vec<Message>,
+    omitted: usize,
     system_prompt: &str,
     user_input: &str,
 ) -> Result<String, TurnError> {
-    let mut work = session.begin(user_input).map_err(|error| {
-        logging::append(&format!("session_error {error}"));
-        TurnError::Session(error)
-    })?;
-    let history = std::mem::take(&mut work.history);
-    let omitted = work.omitted;
-    let context = RunContext::new(work.id(), MAIN_AGENT_ID, tools);
-    let result =
-        run_active_turn(brain, &context, system_prompt, user_input, history, omitted).await;
-
-    match result {
-        Ok(answer) => {
-            if let Err(error) = work.complete(&answer) {
-                logging::append(&format!("session_error {error}"));
-                return Err(TurnError::Session(error));
-            }
-            Ok(answer)
-        }
-        Err(error) => {
-            if let Err(session_error) = work.fail(error.failure_kind()) {
-                logging::append(&format!("session_error {session_error}"));
-                return Err(TurnError::Session(session_error));
-            }
-            Err(error)
-        }
-    }
+    let context = RunContext::new(
+        run_id,
+        &runtime.agent_id,
+        &runtime.engine_id,
+        &runtime.tools,
+    );
+    run_active_turn(
+        runtime,
+        &context,
+        system_prompt,
+        user_input,
+        history,
+        omitted,
+    )
+    .await
 }
 
 async fn run_active_turn(
-    brain: &Brain,
+    runtime: &AgentRuntime,
     context: &RunContext<'_>,
     system_prompt: &str,
     user_input: &str,
@@ -110,18 +104,23 @@ async fn run_active_turn(
     omitted: usize,
 ) -> Result<String, TurnError> {
     logging::append(&format!(
-        "turn_start run_id={} agent={}",
+        "turn_start run_id={} agent={} engine={}",
         context.run_id(),
-        context.agent_id()
+        context.agent_id(),
+        context.engine_id()
     ));
 
-    let daily_usage = crate::usage::today();
-    let balance = match brain.balance_cached().await {
+    let daily_usage = crate::usage::today_for_agent(context.agent_id());
+    let balance = match runtime.brain.balance_cached().await {
         Ok(balance) => balance.display(),
         Err(_) => "unavailable".to_string(),
     };
-    let self_state =
-        crate::usage::self_state_block(brain.model(), brain.base_url(), &daily_usage, &balance);
+    let self_state = crate::usage::self_state_block(
+        runtime.brain.model(),
+        runtime.brain.base_url(),
+        &daily_usage,
+        &balance,
+    );
     let system_prompt = format!(
         "{system_prompt}\n\n{}\n\n{self_state}",
         crate::session::prompt_note(omitted)
@@ -136,8 +135,18 @@ async fn run_active_turn(
     let mut empty_retried = false;
 
     loop {
-        let reply = brain.chat(context, &messages).await.map_err(|e| {
-            logging::append(&format!("model_error err={e}"));
+        let reply = runtime.brain.chat(context, &messages).await.map_err(|e| {
+            logging::append(&format!(
+                "model_error agent={} run_id={} engine={} model={} category={} status={}",
+                context.agent_id(),
+                context.run_id(),
+                context.engine_id(),
+                runtime.brain.model(),
+                e.category(),
+                e.status()
+                    .map(|code| code.to_string())
+                    .unwrap_or_else(|| "none".to_string())
+            ));
             from_chat_error(e)
         })?;
 
@@ -157,8 +166,11 @@ async fn run_active_turn(
             _ => "none".to_string(),
         };
         logging::append(&format!(
-            "model_call model={} tools=[{tool_names}] usage={usage}",
-            brain.model()
+            "model_call agent={} run_id={} engine={} model={} tools=[{tool_names}] usage={usage}",
+            context.agent_id(),
+            context.run_id(),
+            context.engine_id(),
+            runtime.brain.model()
         ));
 
         let has_tools = reply
@@ -212,7 +224,12 @@ async fn run_active_turn(
                     messages.push(Message::tool(&call.id, &output));
                 }
                 Err(err) => {
-                    logging::append(&format!("tool_error name={name} err={err}"));
+                    logging::append(&format!(
+                        "tool_error agent={} run_id={} engine={} name={name}",
+                        context.agent_id(),
+                        context.run_id(),
+                        context.engine_id()
+                    ));
                     let stop = register_error(&mut last_error, &mut same_error_count, &name, &err);
                     if stop {
                         logging::append("stop repeated_tool_error");

@@ -675,3 +675,327 @@ Live: do not perform Telegram or real-provider checks inside this goal.
 - Budgets: stripped binary **6,394,384 bytes = 6.10 MiB**; direct dependencies **7**; CLI idle RSS **4,032 KB = 3.94 MiB** (dummy config, isolated temporary directory). All hard limits pass.
 - Owner-run Telegram verification passed on 2026-11-23 for `/stop`, busy notice, typing, final reply, tool round trip, usage, and restart recovery; log evidence is in `SESSION-LOG.md`. Durable queues and multi-agent execution remain later stages. Committed and pushed as `2ce77dc`.
 - Next: owner-run Stage 1 Telegram verification in normal mode, then a commit decision.
+
+
+---
+
+## Stage 2 — two-Agent vertical slice design (2026-11-24)
+
+Status: **Goals 1–2 implemented and automatically verified; Goal 3 next; no commit, push, or owner-run live verification.** The source of truth is `docs/ARCHITECTURE.md` §12 Stage 2. Execution is split into the three sequential Goal sessions below, following `docs/WORKFLOW.md` §11.
+
+Baseline: `master` at `c4bf7e0`, clean before this documentation change. The latest recorded verification is `cargo test` **136 passed, 0 failed**, release build successful, 7 direct dependencies, stripped binary 6.21 MiB, and dummy-config CLI idle RSS 3.89 MiB. These are prior measurements, not checks rerun for this design entry.
+
+All three implementation sessions use the currently connected DeepSeek Flash without changing model or reasoning level. None may commit or push. A new dependency, a contract contradiction, required owner input, or two failed approaches stops the Goal with a recorded blocker rather than triggering a model change. Each following session preserves and builds on the previous session's uncommitted changes.
+
+### Stage 2 Goal 1 — Registry and isolated AgentRuntime
+
+- **Outcome**: A missing registry preserves the existing synthesized `main`; a valid registry constructs at most two independent AgentRuntime values with their own Brain, Tools, identity, memory, Session, workspace, and usage attribution. Queueing and `@agent` routing remain disabled.
+- **Spec**: `docs/ARCHITECTURE.md` §12 Stage 2, "Registry and isolated AgentRuntime" and the independent state layout; `docs/WORKFLOW.md` §11.
+- **Allowed files**: new `src/registry.rs` and `src/runtime.rs`; `src/instance.rs`, `src/prompt.rs`, `src/run_context.rs`, `src/loop_.rs`, `src/usage.rs`, `src/main.rs`, `src/channel.rs` only for runtime wiring, related existing/new Rust tests, `.gitignore`, and new `iskra.example.json`.
+- **Forbidden**: `memory/runs.json`, queue/dispatcher implementation, new routing commands, automatic routing, external workspace roots, per-Agent custom tool policy, session schema changes, dependencies, registry secrets, and real provider/Telegram calls.
+- **Proof**: focused tests cover missing-registry compatibility, strict schema/ID/URL/reference validation, missing additional-Agent credentials without fallback, independent model/tool advertisement/memory/session/workspace/usage, and legacy log attribution to main. Existing `tests/session_cli.rs` passes unchanged in behavior. Full `cargo test` exits 0 with 0 failed; changed files pass `rustfmt --check`; clippy has no new warnings; release build has zero Iskra warnings; hard budgets pass.
+- **Stop**: stop if arbitrary authority paths, session migration, a new dependency, or user-visible routing becomes necessary. Do not add a partial queue to keep moving.
+- **Live**: no owner or real-provider verification in this Goal.
+
+Goal-mode contract:
+
+```text
+Implement Stage 2 Goal 1 from docs/ARCHITECTURE.md §12 Stage 2 and docs/WORKFLOW.md §11.
+Use the currently connected DeepSeek Flash and current reasoning level; do not change either.
+Done when:
+- Missing iskra.json synthesizes the compatible main Agent from existing LLM configuration.
+- A strict version-1 registry constructs at most two isolated AgentRuntime instances, and missing additional-Agent credentials never silently fall back.
+- Agent model/tool schemas, memory, session, workspace, identity, and usage attribution are independent; main paths and session/v1 remain unchanged.
+- cargo test exits 0 with 0 failed, including existing real CLI process tests and new registry/isolation coverage.
+- Changed files pass rustfmt --check; clippy adds no warnings; cargo build --release has zero Iskra warnings; all hard budgets pass.
+Scope: registry and runtime isolation only. Do not add runs.json, queues, @agent routing, new commands, external roots, custom tool policies, dependencies, or real provider calls.
+Loop: run focused tests after each change; run full milestone checks once at the end.
+Stop: on a required migration/dependency/authority-path change, contract contradiction, owner-input need, or two failed approaches, record the blocker and stop without changing model.
+Live: do not perform Telegram or real-provider checks inside this goal. Do not commit or push.
+```
+
+### Result (2026-11-24)
+
+Status: **completed; automated verification passed; not committed.**
+
+- Changed: new `src/registry.rs`, `src/runtime.rs`, and `iskra.example.json`; `src/instance.rs`, `src/prompt.rs`, `src/run_context.rs`, `src/loop_.rs`, `src/usage.rs`, `src/main.rs`, `src/channel.rs`, `.gitignore`.
+- `src/registry.rs` validates strict version-1 `iskra.json` (`engines`/`agents` only), Agent ID/URL/reference/API-key-env rules, duplicate IDs, and the two-Agent bound. A missing file synthesizes the compatibility `main`; an invalid file stops construction without rewriting it.
+- `src/runtime.rs` builds `RuntimeRegistry` with `main` plus an optional additional Agent. Each available Agent owns its own `Brain`, `Tools`, `Identity`, `Session`, and `InstancePaths`; a missing additional-Agent credential marks only that slot unavailable and never falls back.
+- `InstancePaths::for_agent` derives `agent-workspaces/<id>/` and `memory/agents/<id>/`; `main` keeps `workspace/` and `memory/session.json`. Additional Agent identity reads its own SOUL plus the shared owner `USER.md`, with the registry role as the missing-file fallback.
+- `RunContext` now carries `agent_id` and `engine_id`; `loop_::run_turn` takes the selected `AgentRuntime` and records `agent`, `run_id`, `engine`, and `model` in `model_call`. `usage::today_for_agent` filters by Agent and treats legacy lines without an Agent field as `main`; the global `today()` remains available.
+- CLI and Telegram now compose from `RuntimeRegistry` and execute `main` only. No queue, `runs.json`, `@agent`, `/agents`, routing command, new dependency, or `session/v1` change was added.
+- `cargo test`: **157 unit + 2 real CLI process tests = 159 passed, 0 failed**.
+- Changed files pass `rustfmt --check`; `cargo clippy --all-targets` reports the same 5 pre-existing warnings in `channel.rs`, `locale.rs`, and `memory.rs`, none in new code.
+- `cargo build --release`: zero Iskra warnings; the existing transitive `proc-macro-error2 v2.0.1` future-incompatibility note remains.
+- Budgets: stripped binary **6,528,712 bytes = 6.23 MiB**; direct dependencies **7**; dummy-config CLI idle RSS **4,032 KB = 3.94 MiB** in an isolated temporary directory.
+- Unverified: owner-run Telegram/provider behavior, routing to an additional Agent, Run/Queue behavior, and live usage attribution across turns. No commit or push was performed.
+- Next: Stage 2 Goal 2 — durable RunStore, FIFO, and Core Supervisor.
+
+### Stage 2 Goal 2 — Durable RunStore, FIFO and Core Supervisor
+
+- **Outcome**: Core persists and executes Runs through one RunStore authority, enforces per-Agent FIFO and global concurrency 2, recovers without replay, and owns cancellation. Main CLI/Telegram execution uses the new Core, but additional-Agent routing UI remains disabled.
+- **Spec**: `docs/ARCHITECTURE.md` §12 Stage 2, "RunStore authority and Session projection" plus "FIFO, admission, recovery, and cancellation"; Goal 1 result in `SESSION-LOG.md`.
+- **Allowed files**: new `src/run.rs` or `src/run_store.rs`; `src/supervisor.rs`, `src/runtime.rs`, `src/session.rs`, `src/loop_.rs`, `src/main.rs`, `src/channel.rs` only for main Core execution, related Rust tests, and `tests/session_cli.rs`.
+- **Forbidden**: `@agent`, `/agents`, automatic retry/delegation, approval UI, per-Run NDJSON, dependencies, session/v1 field changes, response/tool-output duplication in runs.json, and real provider/Telegram calls.
+- **Proof**: tests cover every allowed/forbidden transition, atomic claim/settle, per-Agent FIFO, global admission 2, queue bound 20, paused resume, cancellation races/late events, store poisoning on write failure, and restart with zero new model/tool calls. Existing main `/stop` mock and two-process real CLI restart checks pass. Full suite, formatting, clippy, release build, and budgets meet the Goal 1 criteria.
+- **Stop**: stop if Session and RunStore would both remain execution authorities, crash-safe write ordering cannot be proven, or cancellation can reopen a Run.
+- **Live**: no owner or real-provider verification in this Goal.
+
+Goal-mode contract:
+
+```text
+Implement Stage 2 Goal 2 from docs/ARCHITECTURE.md §12 Stage 2 and the Goal 1 result.
+Use the currently connected DeepSeek Flash and current reasoning level; do not change either.
+Done when:
+- memory/runs.json is the sole bounded, strict, atomic execution-state authority and session/v1 remains the conversation projection.
+- Per-Agent FIFO and per-Agent/global active limits 1/2 are enforced by atomic claim/settle; no later same-Agent Run overtakes its head.
+- queued/preparing/running recovery, explicit paused resume, cancellation, late-event folding, and write-failure poisoning follow the approved transitions without automatic retry.
+- Main CLI/Telegram execution uses Core Run events without channel-owned completion state.
+- Tests prove transition, concurrency, queue, race, failure, and restart behavior; restart makes zero model/tool requests until explicit owner action.
+- cargo test exits 0 with 0 failed, changed files pass rustfmt --check, clippy adds no warnings, release build has zero Iskra warnings, and budgets pass.
+Scope: durable Run/Queue Core and main integration only. Do not add @agent, /agents, delegation, approval UI, per-Run NDJSON, dependencies, or session/v1 fields.
+Loop: run focused tests after each change; run full milestone checks once at the end.
+Stop: if execution authority remains duplicated, crash safety is unproven, owner input is needed, or two approaches fail, record the blocker and stop without changing model.
+Live: do not perform Telegram or real-provider checks inside this goal. Do not commit or push.
+```
+
+### Result (2026-11-24)
+
+Status: **completed; automated verification passed; not committed.**
+
+- Changed: new `src/run.rs` (`RunStore`, `Core`, `RuntimeEvent`); `src/supervisor.rs` (multi-Run handle ownership), `src/loop_.rs` (`run_work` separated from Session begin/settle), `src/runtime.rs` (per-Agent `slot`/`runtime` lookup), `src/main.rs` (Core composition and CLI event wait), `src/channel.rs` (Core submission, event projection, Core-owned `/stop`), `src/session.rs` (`FailureKind::as_str` visibility), `tests/session_cli.rs` (Run-store restart assertions).
+- `memory/runs.json` is the sole bounded, strict, atomically written execution authority (`version: 1`, monotonic `next_run_id`, 100-record retention, 20 unfinished queued per Agent, 8,000-character input refusal, credential redaction at admission). `session/v1` remains the conversation projection with no queue fields and no answer duplication in the Run log.
+- Atomic admission: enqueue persists `queued` before acknowledgement; claim persists `preparing` under one dispatch lock; dispatch persists Session work and `preparing -> running` before the first model/tool action; completion persists Session first, then the Run terminal state, then emits the event. Per-Agent FIFO, per-Agent active 1, global active 2, paused-head blocking, explicit resume, one-write Agent cancellation, late-event rejection, and write-failure poisoning are implemented.
+- Startup recovery maps `queued -> queued_paused` and `preparing/running -> interrupted` with no automatic model/tool call. Unknown Agent references stop Core construction without rewriting `runs.json`.
+- CLI and Telegram now execute `main` through `Core`; the channel holds no completion state and sends replies from `RuntimeEvent` values. `/stop` calls Core cancellation, which persists the Run cancellation, stops the Session, then aborts the handle. Queue/route commands remain disabled.
+- `cargo test`: **176 unit + 2 real CLI process tests = 178 passed, 0 failed** (baseline 159; +19 new tests).
+- New coverage: every implemented and forbidden Run transition; atomic claim/settle; per-Agent FIFO; global concurrency 2; queue bound 20; paused resume; cancellation of active/queued/paused work; late `started`/`settle` after cancellation; cancellation persistence failure; store poisoning and reload; 100-record retention; redaction and input limits; invalid JSON/version/field fail-closed; startup no-replay; Core execution and event sequence numbers; two-Agent FIFO/concurrency with a local OpenAI-compatible mock; real CLI two-process restart and killed-work recovery.
+- `cargo build --release`: passed with zero Iskra warnings; only the existing transitive `proc-macro-error2 v2.0.1` future-incompatibility note remains.
+- `rustfmt --check` (edition 2024): `run.rs`, `supervisor.rs`, `loop_.rs`, `runtime.rs`, `main.rs`, `channel.rs`, `session.rs`, `tests/session_cli.rs` clean. `cargo clippy --all-targets` keeps the same 5 pre-existing warnings in `channel.rs`, `locale.rs`, and `memory.rs`; no new warnings.
+- Budgets: stripped binary **6,545,424 bytes = 6.24 MiB**; direct dependencies **7**; dummy-config CLI idle RSS **4,128 KB = 4.03 MiB** in an isolated temporary directory. All hard limits pass.
+- Unverified: owner-run Telegram/provider behavior, live routing to the additional Agent, live queue/stop/resume messages, and `/status` queue reporting. `Core::resume_agent` exists and is tested, but the user-facing `/resume` command is Goal 3 scope; until then, work paused by a restart blocks later work for that Agent. No commit or push was performed.
+- Next: Stage 2 Goal 3 — explicit routing, localized commands, and end-to-end proof.
+
+### Stage 2 Goal 3 — Explicit routing, localized commands and end-to-end proof
+
+- **Outcome**: Both Agents work through explicit `@agent` in Telegram and CLI, with `/agents`, targeted `/status`, `/stop`, `/resume`, and complete en/ko/ru run/queue text. Plain and forwarded inputs retain their main-only rules.
+- **Spec**: `docs/ARCHITECTURE.md` §12 Stage 2, "Channel and command contract"; Goal 1–2 results in `SESSION-LOG.md`.
+- **Allowed files**: `src/channel.rs`, `src/locale.rs`, `src/main.rs`, one small shared input-parser module if needed, Goal 2 files only for integration fixes, related Rust tests, `tests/session_cli.rs`, and README files only for behavior actually verified by the end of the Goal.
+- **Forbidden**: automatic model routing, Agent-to-Agent messaging/delegation, groups/multi-user behavior, ACP, hosted mode, automatic restart replay, dependencies, and claims of owner-run live verification.
+- **Proof**: tests cover plain-to-main, explicit selection, unknown/unavailable/empty routes, forwarded isolation, per-Agent usage/model/status, mock Bot API queue/stop/resume behavior, and locale completeness. Real CLI processes using two mock OpenAI-compatible servers prove distinct models and isolated memory/session/workspace. Full suite, formatting, clippy, release build, and budgets meet the prior Goal criteria.
+- **Stop**: finish automated work and stop if real Telegram input or account setup is required. Do not leave an autonomous Goal waiting for the owner.
+- **Live**: the owner-run checklist below remains outside this Goal.
+
+Goal-mode contract:
+
+```text
+Implement Stage 2 Goal 3 from docs/ARCHITECTURE.md §12 Stage 2 and the Goal 1–2 results.
+Use the currently connected DeepSeek Flash and current reasoning level; do not change either.
+Done when:
+- Plain text routes to main and only direct leading @agent selects another available Agent; malformed/unknown/unavailable routes fail before model calls.
+- /agents, /status [@agent], /stop [@agent], and /resume [@agent] follow the Core contract in Telegram and CLI with en/ko/ru text.
+- Forwarded material, stickers, and sticky-board replies keep their main-only behavior.
+- Mock Bot API tests cover queue/stop/resume and real CLI processes with two mock OpenAI-compatible servers prove model and memory/session/workspace isolation.
+- cargo test exits 0 with 0 failed, changed files pass rustfmt --check, clippy adds no warnings, release build has zero Iskra warnings, and budgets pass.
+Scope: explicit routing, localized channels, and automated end-to-end proof only. Do not add automatic routing/delegation, ACP, groups, hosted mode, dependencies, or automatic replay.
+Loop: run focused tests after each change; run full milestone checks once at the end.
+Stop: when owner interaction is required or after two failed approaches, record the actual blocker and stop without changing model.
+Live: do not claim Telegram/provider live verification from automated results. Do not commit or push.
+```
+
+### Result (2026-11-24)
+
+Status: **completed; automated verification passed; not committed.**
+
+- Changed: new `src/route.rs`; `src/channel.rs`, `src/locale.rs`, `src/main.rs`, `src/run.rs` (read-only `run_state` accessor and removal of the unused `resume_agent` annotation), `src/route.rs` tests, `src/channel.rs` tests, `tests/session_cli.rs`, `README.md`/`README.ko.md`/`README.ru.md`.
+- `src/route.rs` is the shared input parser. `select` sends plain text to `main` and treats only a leading `@name` as a route; `@main` is valid. Unknown, malformed, unavailable, and empty routes fail before any model call. Command targets (`/status`, `/stop`, `/resume`) accept a known Agent even while unavailable, so paused work can still be inspected or cancelled; conversation routing still requires availability.
+- Telegram: `handle_message` keeps forwarded text, stickers, and board replies on `main`; commands gained `/agents`, targeted `/status`, `/stop`, and `/resume`; the command menu and `/help` now list seven commands. Queue acceptance sends a localized notice naming the busy Agent and the number of waiting requests. Status composition is shared with the CLI and adds a Work line (running/waiting/paused/interrupted).
+- CLI: `--cli` supports `@agent` routing, `/agents`, `/status [@agent]`, `/stop [@agent]`, `/resume [@agent]`, `/help`; every request goes through the same Core submission and event path.
+- Locale: new en/ko/ru keys for the command descriptions, agent lines, targeted status, queue acceptance, resume results, route errors, unknown commands, and oversized input; templates fill multiple placeholders in order. Start greeting names `@name` routing and the new commands.
+- `cargo test`: **188 unit + 4 real CLI process tests = 192 passed, 0 failed** (Goal 2 baseline 178; +14).
+- New coverage: plain/explicit/inside-text/forwarded/sticker routing; unknown, malformed, unavailable, empty routes; command targets; agent listing and unavailable agents; targeted status for both Agents; mock Bot API queue notice, targeted stop, and paused resume; CLI two-agent run with distinct mock models and isolated workspace, Session, Run records, and memory files; CLI invalid routes making zero model calls. Locale table completeness and jargon checks cover every new key.
+- `cargo build --release`: zero Iskra warnings; only the existing transitive `proc-macro-error2 v2.0.1` future-incompatibility note remains.
+- `rustfmt --check` (edition 2024): `route.rs`, `channel.rs`, `locale.rs`, `main.rs`, `run.rs`, `tests/session_cli.rs` clean.
+- `cargo clippy --all-targets`: the same 5 pre-existing warnings in `channel.rs`, `locale.rs`, and `memory.rs`; no new warnings.
+- Budgets: stripped binary **6,628,272 bytes = 6.32 MiB**; direct dependencies **7**; dummy-config CLI idle RSS **4,160 KB = 4.06 MiB**. All hard limits pass.
+- At Goal 3 completion, owner-run Telegram/provider behavior, live queue/stop/resume messages, live en/ko/ru rendering, and the Stage 2 owner-run checklist were unverified. The later owner-run result below supersedes this status; no commit or push was performed.
+
+### Stage 2 owner-run checklist — normal mode after Goals 1–3
+
+Use the existing `LLM_MODEL=deepseek-flash` and current reasoning configuration without changing them. The owner configures the additional Agent's OpenAI-compatible profile in local `iskra.json`; the executor does not open `.env` or read real keys.
+
+1. Start one instance and verify `/agents` shows both Agents with the expected Engine/model and availability.
+2. Send a plain request and `@second ...`; verify distinct Agent/Run/Engine/model logs and isolated files, memory, and Sessions.
+3. Send long work to both Agents and a follow-up to one; verify global concurrency 2, same-Agent FIFO, and queue acknowledgement.
+4. Check `/status @second`, `/stop @main`, `/resume @second`, and the applicable en/ko/ru strings.
+5. Restart with queued and running work; verify no new model/tool call. Resume only queued work explicitly and confirm interrupted work does not rerun.
+6. Remove only generated live-test artifacts. Record actual results and unverified limits in English in `SESSION-LOG.md`; do not call the feature live-verified before these checks pass.
+
+### Result (2026-11-24)
+
+Status: **passed in normal mode; Stage 2 code remains uncommitted.**
+
+- `/agents` showed both Agents on `main-engine / deepseek-flash`, available.
+- Plain and `@second` work produced separate workspace files, memory markers, Sessions, and attributed Run/model logs.
+- Global concurrency 2 and same-Agent FIFO were observed; a queued request received the localized acceptance notice.
+- `/status @second`, `/stop @main`, and an empty `/resume @second` behaved as designed.
+- A restart mapped two running Runs to `interrupted` and one queued Run to `queued_paused`, with no model call before explicit action. `/resume @second` re-ran only the queued Run; both interrupted Runs remained terminal.
+- Live rendering was checked in Korean; en/ru registration was logged but their rendered messages were not exercised. Both Agents used the same Engine/model, so distinct-model routing remains automated-only.
+- Actual evidence, cleanup, and limits are in `SESSION-LOG.md`. No commit or push was performed.
+
+---
+
+## Stage 2 review remediation (2026-11-24)
+
+Status: **R1–R3 and the post-live reply-attribution patch completed; full milestone passed; owner-run post-R3 checklist passed on 2026-11-24; Stage 2 remains uncommitted.** A read-only review found five commit blockers: sticky-board reply routing bypass, missing resumed-run result delivery, false success after Session-stop write failure, no protection against a second dispatcher, and raw provider/tool details in logs. Coupled fixes are the claim/begin cancellation race, poisoned-store status, active event-sequence retention, canonical Agent-root isolation, and stale documentation.
+
+Run these three cards in separate sequential Goal sessions. Preserve the existing working tree; do not use worktrees or revert unrelated changes. Keep the currently connected DeepSeek Flash and reasoning level unchanged. At each handoff run only the focused checks named in the card; run the full milestone checks once after Goal R3. Do not commit or push without separate owner approval. No Goal may wait for Telegram input.
+
+### Stage 2 Remediation Goal R1 — Core/channel correctness
+
+- **Outcome**: Sticky-board replies always reach `main`; resumed Runs deliver their answers in Telegram and CLI; cancellation has deterministic Session/Run/event behavior; poisoned queue state and active Run event sequences remain truthful.
+- **Spec**: `docs/ARCHITECTURE.md` §7, §12 "RunStore authority", "FIFO, admission, recovery, and cancellation", and "Channel and command contract"; `docs/WORKFLOW.md` §4, §7, §11.
+- **Implementation**:
+  - Keep every sticky-board reply on `main`, including non-numeric replies beginning with `@agent`. Preserve numeric board removal, forwarded text, stickers, and existing unknown-slash compatibility.
+  - Make resume admission return resumed Run tickets/IDs. Subscribe before resume and reuse the per-Run Telegram watcher without duplicate queue notices. CLI resume must print every resumed terminal result in FIFO order. Real restart/resume delivery is required.
+  - Serialize claim validation (`run_id + revision + preparing`), `session.begin`, and `preparing -> running` under the Core admission lock. A cancelled task must not create Session work or publish a spurious terminal event.
+  - Return Session-stop failures from cancellation. Always abort requested work, but poison further admission/dispatch, return an error, and terminate affected watchers with `StorageFailed` on either Session or RunStore cancellation failure. Do not dispatch replacement work or report a clean stop.
+  - Render `/agents` and `/status` queue state as unavailable when `queue_status` fails. Never substitute zero counts.
+  - Never evict active Runs from the event-sequence map; prune only terminal entries that can no longer emit.
+- **Files**: `src/run.rs`, `src/channel.rs`, `src/main.rs`, `src/locale.rs` only for a genuinely new user-facing state, `tests/session_cli.rs`, related existing Rust tests, and the R1 records in `SESSION.md`/`SESSION-LOG.md`.
+- **Forbidden**: Goal R2/R3 work, persistent delivery history, schema changes, dependencies, worktrees, commits, pushes, release/clippy/full-suite checks, personal-memory edits, or claims of owner-run verification.
+- **Proof**: Done when focused `run`/`channel` tests and `tests/session_cli.rs` exit 0 with 0 failed and cover: non-numeric board reply to main with zero helper calls; Telegram and real two-process CLI resume answer delivery with interrupted Runs untouched; deterministic cancel-before-begin and cancel-after-begin; Session/RunStore stop write failures with abort, watcher termination, no replacement dispatch and later admission refusal; poisoned status unavailable; active sequence monotonic after more than 256 other Run IDs. Record actual commands and counts in `SESSION-LOG.md`.
+- **Current**: Stage 2 automated baseline is 192 passed, 0 failed, with owner-run checks previously passed; those results do not cover the blockers above. The working tree already contains uncommitted Stage 2 work and may contain partial R1 edits from an interrupted session. Inspect `git status` and `git diff` first, preserve valid partial work, and do not reset.
+- **Stop**: Stop and record the actual blocker if resumed delivery requires persistent delivery history, a schema change, or a new dependency; after two failed approaches; or if a contract contradiction requires owner input.
+- **Live**: Owner-run Telegram/provider checks remain outside this Goal.
+
+#### Result (2026-11-24)
+
+Status: **completed; focused checks passed; not committed.**
+
+- Changed in this session: `src/channel.rs` for two coverage points only — the turn watcher ending on `StorageFailed` with the storage-error reply, and a Telegram resume delivering the paused answer while leaving interrupted work terminal with no queue notice. The rest of R1 was already present in the working tree at session start (partial edits from an interrupted session); it was checked against each card item and preserved.
+- Board replies stay on `main` (numeric replies still remove a sticky); forwarding, stickers, and unknown-slash handling are unchanged. Resume returns tickets, subscribes before resuming, reuses `watch_turn` without a queue notice, and prints every resumed CLI answer in FIFO order. Claim validation, `session.begin`, and `preparing -> running` are serialized under the admission lock. Session/RunStore stop-write failures abort, poison admission, return the error, and emit `StorageFailed` with no replacement dispatch. Failed queue status renders unavailable rather than zero. Sequence pruning drops only terminal entries.
+- `cargo test --bin iskra run::tests`: **23 passed, 0 failed** (172 filtered out).
+- `cargo test --bin iskra channel::tests`: **26 passed, 0 failed** (169 filtered out; 25 before this session's additions).
+- `cargo test --test session_cli`: **5 passed, 0 failed**.
+- `rustfmt --edition 2024 --check src/channel.rs src/run.rs src/main.rs src/locale.rs tests/session_cli.rs`: clean.
+- Not run in this Goal, as the card forbids them: full suite, clippy, release build, budget measurement. No commit or push.
+- Unverified: owner-run Telegram restart/resume delivery and the remaining R3 live checklist. Next: Stage 2 Remediation Goal R2.
+
+### Stage 2 Remediation Goal R2 — Single dispatcher and canonical Agent isolation
+
+- **Outcome**: Only one live dispatcher may own a data directory; a second fails closed before Session/RunStore recovery writes. Additional Agent roots cannot alias main, another Agent, or an outside directory through symlinks.
+- **Spec**: `docs/ARCHITECTURE.md` §5 "Workspace", §8 "Queue semantics", §12 "Registry and isolated AgentRuntime" and "FIFO, admission, recovery, and cancellation"; R1 result.
+- **Implementation**:
+  - Add a small lifetime `DispatcherLock` using `libc::flock` on a persistent private `memory/dispatcher.lock`; hold the descriptor until Core and run handles close. Do not unlink the lock file on normal release. Kernel cleanup covers crashes without stale-file heuristics.
+  - Validate the registry first, then acquire the lock before constructing Agent runtimes, because `Session::load` performs recovery writes. A lock conflict exits nonzero with a clear English log/error and performs no model, Telegram, Session, or RunStore mutation.
+  - Route production and real-process test composition through the lock-aware constructor; leave no unguarded production path. Preserve the existing `queued -> queued_paused` and `preparing/running -> interrupted` recovery and no-replay behavior after the lock is held.
+  - Create and canonicalize additional-Agent workspace/memory roots. Reject symlinks or canonical targets outside approved derived locations, equal to main/another root, or nested with another Agent root. Keep main’s existing `workspace/` and `memory/` compatibility and accept no arbitrary registry paths.
+- **Files**: new `src/run_lock.rs` or equivalent small lock module; `src/main.rs`, `src/run.rs`, `src/runtime.rs`, `src/instance.rs`, `src/registry.rs` only if validation errors are needed, `tests/session_cli.rs`, related existing tests, and R2 records.
+- **Forbidden**: cooperative multi-process scheduling, leases, distributed recovery, schema changes, dependencies, commits, pushes, release/clippy/full-suite checks, personal-memory edits, or Goal R3 work.
+- **Proof**: Done when focused `run`/`runtime`/real-CLI tests exit 0 with 0 failed and prove: while one delayed-work process is live, a second process fails before model calls and without changing either JSON store; the first continues; after normal exit or owner kill, a new process acquires the lock and performs no-replay recovery; additional workspace/memory symlinks aliasing main, another Agent, or outside paths are rejected without rewriting existing state. Record actual commands and counts.
+- **Current**: R1 result and working tree. Stage 2 currently has no cross-process dispatcher guard and tests prove only one shared in-process `RunStore`.
+- **Stop**: Stop if cooperative multi-process recovery, a new dependency, or a schema change becomes necessary; do not expand into a distributed queue. After two failed approaches, record the blocker and stop.
+- **Live**: Owner-run second-process refusal remains outside this Goal and is checked once after R3.
+
+#### Result (2026-11-24)
+
+Status: **completed; focused checks passed; not committed.**
+
+- Changed: new `src/run_lock.rs`; `src/main.rs` (read-only plan load, dispatcher lock, then runtime construction and `Core::open`); `src/runtime.rs` (plan loading split from construction, pre-pass root preparation with cross-root isolation checks); `src/instance.rs` (canonical derived-root preparation); `src/run.rs` (`Core::open` retains the lock; `Core::new` is test-only); `tests/session_cli.rs`.
+- `DispatcherLock` opens `memory/dispatcher.lock` with `O_NOFOLLOW`, mode `0600`, and `flock(LOCK_EX | LOCK_NB)`. The descriptor is held by `Core` and every run handle holding an `Arc<Core>`; normal release only unlocks and never unlinks the file, so the kernel covers owner kills without stale-file heuristics.
+- Startup order is now: read-only registry validation → acquire the lock → construct Agent runtimes (Session recovery) → `Core::open` (RunStore recovery). A conflict logs `dispatcher_lock_error`, prints an English `Another Iskra dispatcher already owns this data directory` message, exits 1, and performs no model, Telegram, Session, or RunStore mutation. `queued -> queued_paused` and `preparing/running -> interrupted` recovery and no-replay behavior are unchanged after the lock is held.
+- Additional-Agent roots are created one component at a time with `symlink_metadata`, so no symlink is followed; each root is canonicalized and must equal the approved derived location, and cross-root equality or nesting with main/another Agent root is refused. All roots are prepared before any Session load, so a rejected root cannot trigger recovery writes. Main keeps its existing `workspace/` and `memory/` compatibility, and the registry still accepts no arbitrary paths.
+- `cargo test --bin iskra run_lock::tests`: **2 passed, 0 failed**.
+- `cargo test --bin iskra instance::tests`: **8 passed, 0 failed**.
+- `cargo test --bin iskra runtime::tests`: **7 passed, 0 failed** (6 before this session's addition).
+- `cargo test --bin iskra run::tests`: **23 passed, 0 failed**.
+- `cargo test --bin iskra channel::tests`: **26 passed, 0 failed**.
+- `cargo test --test session_cli`: **6 passed, 0 failed** (5 before this session's addition).
+- New coverage: second same-process lock conflict and reacquire after drop; never-unlinked lock file; symlinked lock file refused; derived-root creation, symlinked root/parent/file rejection, and unchanged main Session after rejection; real two-process CLI where a second process exits 1 with no model call and byte-identical `runs.json`/`session.json` while the first continues and answers, then a normal-exit restart acquires the lock with zero model calls. Existing owner-kill restart and no-replay tests still pass under the lock.
+- `rustfmt --edition 2024 --check` on all changed files: clean. Not run, as the card forbids them: full suite, clippy, release build, budget measurement.
+- Unverified: owner-run second-process refusal remains in the R3 live checklist. No commit or push was performed. Next: Stage 2 Remediation Goal R3.
+
+### Stage 2 Remediation Goal R3 — Log privacy, compatibility proof, docs, and milestone
+
+- **Outcome**: Logs contain structured metadata but never prompts, responses, tool output, or credentials; legacy `session/v1` compatibility is directly proven; documentation matches verified behavior; the full Stage 2 milestone runs exactly once.
+- **Spec**: `docs/ARCHITECTURE.md` §7, §9 "Session migration rules", §12 logging, §13 "Verification requirements"; `docs/WORKFLOW.md` §7, §10, §11; R1–R2 results.
+- **Implementation**:
+  - Replace raw `model_error`, `balance_error`, and `tool_error` details with Agent/Run/Engine/model where available, error category/status, and tool name. Do not log provider bodies, raw tool arguments/errors, prompts, responses, tool output, or credentials. Keep detailed errors only in the existing allowed in-memory/user-facing path.
+  - Add provider and tool failure canary tests proving unique prompt/secret strings do not appear in `logs/agent.log`. Preserve successful `model_call` attribution and per-Agent usage.
+  - Add a real CLI compatibility test starting with an existing `session/v1` file, no `runs.json`, and legacy `model_call` lines without an Agent field. Prove main replay, legacy usage assigned to main, new Run attribution, and no history merge into another Agent.
+  - Update `docs/ARCHITECTURE.md` for the single lifetime dispatcher, lock-before-recovery, cancellation failure projection, and resumed-result delivery. Add a Stage 2 remediation subsection to `docs/WORKFLOW.md`: SESSION.md cards are the source of truth, focused checks at handoffs, one full milestone after R3. Correct stale README claims and record single-instance and canonical-root limits.
+  - Append compact R3 results to `SESSION.md`/`SESSION-LOG.md`; do not rewrite historical records. DeepSeek sessions must not edit personal memory. The main agent updates personal `NOW.md`/`DECISIONS.md` only after the result is confirmed.
+- **Files**: `src/loop_.rs`, `src/brain.rs`, `src/tools.rs` only for error categorization, `src/usage.rs` only for a confirmed compatibility defect, `tests/session_cli.rs`, related existing tests, `docs/ARCHITECTURE.md`, `docs/WORKFLOW.md`, `SESSION.md`, `SESSION-LOG.md`, and README files only for verified behavior.
+- **Forbidden**: ACP, delegation, automatic routing, persistent delivery receipts, multi-user behavior, dependencies, commits, pushes, owner-run claims before the separate check, or unrelated refactoring.
+- **Proof**: Done when the full `cargo test` exits 0 with 0 failed and actual unit/real-process counts are recorded; changed files pass `rustfmt --check`; `cargo clippy --all-targets` adds no warnings; `cargo build --release` has zero Iskra warnings; stripped binary ≤20 MB, dummy-config idle RSS ≤30 MB, direct dependencies ≤15 with no new dependency. Canary and legacy compatibility tests must be included.
+- **Current**: R2 result and working tree. The previous 192-pass baseline did not include these blockers and is not sufficient for completion.
+- **Stop**: Stop and record the blocker on a required schema/dependency change, newly discovered architectural contradiction, owner input, or two failed approaches. Do not claim live verification.
+- **Live**: After R3, run one short owner-run normal-mode checklist for board replies, restart `/resume` answer delivery, normal targeted `/stop`, second-dispatcher refusal, and touched Korean strings. Use automated tests for en/ru completeness and storage fault injection. Record evidence and limits before any live-verified claim.
+
+#### Result (2026-11-24)
+
+Status: **completed; full milestone checks passed; not committed.** R1 and R2 remain complete.
+
+- Changed: `src/brain.rs` (structured `ChatError` with category/status and owner-only detail; structured `balance_error`), `src/loop_.rs` (`model_error` and `tool_error` carry Agent/Run/Engine metadata and no raw strings), `tests/session_cli.rs` (provider canary, tool canary, legacy `session/v1` compatibility), `src/instance.rs` and `src/run_lock.rs` (test-only `.expect_err` warning cleanup), `docs/ARCHITECTURE.md`, `docs/WORKFLOW.md` §11, README `en/ko/ru`, this record, and `SESSION-LOG.md`.
+- Logs now include `model_error agent=… run_id=… engine=… model=… category=… status=…`, `balance_error model=… category=… status=…`, and `tool_error agent=… run_id=… engine=… name=…`. Provider bodies, prompts, responses, tool arguments, raw tool errors, tool output, and credentials do not appear; the detailed error stays only in the in-memory/owner-facing path.
+- Canary tests: a real CLI process against a 401 provider/balance server logged the structured entries and still surfaced the provider detail to the owner, with neither prompt nor body canary in `logs/agent.log`; a failing `read_file` logged only `tool_error … name=read_file` with no prompt, path, or tool-error text in the log.
+- Legacy proof: a real CLI run seeded with an existing `session/v1`, no `runs.json`, and an Agent-less `model_call` line replayed main's history, reported the legacy 12 tokens as main usage, created attributed main/assistant Runs, and left the assistant Session free of main history.
+- `cargo test`: **203 unit + 9 real CLI = 212 passed, 0 failed**.
+- `rustfmt --edition 2024 --check` on `src/brain.rs`, `src/loop_.rs`, `src/instance.rs`, `src/run_lock.rs`, `tests/session_cli.rs`: clean.
+- `cargo clippy --all-targets`: **4 pre-existing warnings** (`channel.rs`, `locale.rs`, `memory.rs` ×2); none in R3 files after removing five R2 test-helper warnings.
+- `cargo build --release`: zero Iskra warnings; only the existing `proc-macro-error2 v2.0.1` future-incompatibility note.
+- Budgets: stripped binary **6,694,568 bytes = 6.38 MiB**; direct dependencies **7**; dummy-config CLI idle RSS **4,224 KB = 4.13 MiB**. All hard limits pass.
+- Unverified: the owner-run post-R3 checklist (board replies, restart `/resume` delivery, targeted `/stop`, second-dispatcher refusal, touched Korean strings) and live en/ru rendering. No commit or push was performed.
+
+### Owner-run post-R3 checklist result (2026-11-24)
+
+Status: **passed with one product gap found; no commit or push.** Results were observed in `logs/agent.log` after a live Telegram run with the local `main` + `second` registry.
+
+- Board reply attribution: a non-numeric reply to the live board that began with `@second` was executed by `main` (Run 13, `run_claimed … agent=main`), and no `second` Run existed in that window. The board stayed live until the numeric removal.
+- Numeric board removal: replying `1` to the board produced `telegram_sticky_remove number=1` and `telegram_board_torn_down`.
+- Restart/resume delivery: the long `main` request (Run 14) and the follow-up (Run 15) produced `telegram_run_queued run_id=15 agent=main`. After the restart, `run_store_loaded runs=15 paused=1 interrupted=1` and `run_queue … paused=1 interrupted=2`; `/resume @main` produced `run_resumed count=1`, `telegram_resume agent=main resumed=1`, `run_claimed id=15`, and `telegram_reply_sent`. Run 14 stayed `interrupted` and was never re-claimed.
+- Targeted stop: `/stop @second` during Run 16 produced `run_cancelled id=16 agent=second`, `telegram_stop aborted agent=second cancelled=1 active=1`, and a later `telegram_stop idle agent=second`.
+- Second dispatcher: while the lock-aware debug instance held `memory/dispatcher.lock`, `./target/release/iskra --cli` exited 1 with `Dispatcher error: Another Iskra dispatcher already owns this data directory`; `dispatcher_lock_error` was logged and `runs.json`/`session.json` hashes were unchanged.
+- Korean UI: the owner confirmed `/start`, `/help`, `/agents`, `/status @second`, and `/stickies` rendered in Korean. en/ru rendering was not exercised.
+- Environment finding: a stale pre-lock debug process (PID 4237, started 10:01) was still polling the same bot. `telegram_poll_error … kind=api` began exactly when the lock-aware instance started (13:45:20) and stopped after the stale process was terminated; `telegram_health` returned to `ok` with zero consecutive failures.
+- Product gap found in live use: both Agents answer through the same bot account with no attribution, so the owner cannot tell `main` from `second`. Patch below.
+- Measurement limit: running `cargo test` after the live check appends test events to the real `logs/agent.log` (the logger uses a process-global path) with Run ids resetting to 1. Those entries are excluded from the live evidence above.
+
+## Stage 2 post-live patch — Reply attribution (2026-11-24)
+
+Status: **completed; automated and owner-run live checks passed; not committed.**
+
+### Background
+
+The post-R3 live checklist exposed a presentation gap: `watch_turn` sent every final answer through `send_reply` unchanged, and both Agents use the same Telegram bot, so replies carried no Agent identity. Only `/agents`, `/status`, and queue notices named the Agent.
+
+### Scope
+
+1. Non-main Telegram replies start with a first-line `@<agent_id>` label (`@second` in the current registry). `main` replies stay unchanged.
+2. The label applies to completed answers, structured failure text, and the storage-failure notice. Resumed answers use the same watcher, so they are labeled too.
+3. Labeling happens before the 4,096-character split, so only the first chunk carries the label. Stored Session/Run text is unchanged; the label is presentation only.
+4. CLI output is unchanged.
+
+### Out of scope
+
+- Display names or avatars instead of `@<id>`; per-agent bot identities.
+- CLI labels and approval buttons.
+- Changing the routing prefix or the board-reply rules.
+
+### Acceptance criteria
+
+1. Unit tests prove `main` is unchanged, `helper` is labeled, an empty answer stays empty, and only the first chunk of a long labeled reply carries the label.
+2. The existing resume mock test proves a resumed helper answer arrives as `@helper\n…`.
+3. Full `cargo test`, `rustfmt --check`, clippy, release build, and budgets pass as in R3.
+4. Live: after restart, one `@second` request shows `@second` at the top of the reply; one `main` request shows no label.
+
+### Result (2026-11-24)
+
+- Changed: `src/channel.rs` (`attributed_reply`, applied in `watch_turn` for completed, failed, and storage-failed events) and its tests.
+- `cargo test`: **206 unit + 9 real CLI = 215 passed, 0 failed** (R3 baseline 212; +3 channel tests). The resume mock assertion was updated to expect the labeled helper answer.
+- `rustfmt --edition 2024 --check src/channel.rs`: clean.
+- `cargo clippy --all-targets`: the same **4 pre-existing warnings** (`channel.rs:354`, `locale.rs:19`, `memory.rs:108`, `memory.rs:133`); none in the new code.
+- `cargo build --release`: zero Iskra warnings; only the existing `proc-macro-error2 v2.0.1` future-incompatibility note.
+- Budgets: stripped binary **6,711,104 bytes = 6.40 MiB**; direct dependencies **7**; dummy-config CLI idle RSS **4,160 KB = 4.06 MiB**. All hard limits pass.
+- Live check: the patched debug binary was restarted at 14:23. Run 17 (`second`) and Run 18 (`main`) each delivered a one-chunk reply; the owner confirmed the `second` answer began with `@second` and the plain `main` answer had no label. No commit or push was performed.

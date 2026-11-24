@@ -1,6 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::logging;
+use crate::run_context::MAIN_AGENT_ID;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DailyUsage {
@@ -18,14 +19,24 @@ const PEAK_PRICES: [(&str, f64, f64); 2] = [
 ];
 
 pub fn today() -> DailyUsage {
+    daily_usage(None)
+}
+
+/// Usage attributed to one Agent. Legacy `model_call` lines without an Agent
+/// field count as `main` so existing logs keep their meaning.
+pub fn today_for_agent(agent_id: &str) -> DailyUsage {
+    daily_usage(Some(agent_id))
+}
+
+fn daily_usage(agent: Option<&str>) -> DailyUsage {
     let Ok(log) = std::fs::read_to_string(logging::LOG_PATH) else {
         return DailyUsage::default();
     };
     let since = local_midnight_secs().unwrap_or_else(utc_midnight_secs);
-    sum_usage_since(&log, since)
+    sum_usage_since(&log, since, agent)
 }
 
-fn sum_usage_since(log: &str, since: i64) -> DailyUsage {
+fn sum_usage_since(log: &str, since: i64, agent: Option<&str>) -> DailyUsage {
     let mut usage = DailyUsage::default();
     for line in log.lines() {
         let Some(ts) = line
@@ -38,6 +49,9 @@ fn sum_usage_since(log: &str, since: i64) -> DailyUsage {
         if ts < since || !line.contains(" model_call ") {
             continue;
         }
+        if agent.is_some_and(|agent_id| logged_agent(line) != agent_id) {
+            continue;
+        }
         let prompt = extract_value(line, "prompt=").unwrap_or(0);
         let completion = extract_value(line, "completion=").unwrap_or(0);
         let total = extract_value(line, "total=").unwrap_or(prompt + completion);
@@ -46,6 +60,13 @@ fn sum_usage_since(log: &str, since: i64) -> DailyUsage {
         usage.total += total;
     }
     usage
+}
+
+fn logged_agent(line: &str) -> &str {
+    line.split_once(" agent=")
+        .and_then(|(_, tail)| tail.split_whitespace().next())
+        .filter(|value| !value.is_empty())
+        .unwrap_or(MAIN_AGENT_ID)
 }
 
 fn extract_value(line: &str, key: &str) -> Option<u64> {
@@ -144,11 +165,45 @@ ts=300 turn_end answer
 ts=400 model_error err=timeout
 ";
         assert_eq!(
-            sum_usage_since(log, 100),
+            sum_usage_since(log, 100, None),
             DailyUsage {
                 prompt: 30,
                 completion: 5,
                 total: 35,
+            }
+        );
+    }
+
+    #[test]
+    fn attributes_usage_to_agents_and_treats_legacy_lines_as_main() {
+        let log = "\
+ts=100 model_call agent=main run_id=1 engine=e model=m tools=[none] usage=prompt=10 completion=2 total=12
+ts=200 model_call agent=helper run_id=2 engine=e model=m tools=[none] usage=prompt=20 completion=3 total=23
+ts=300 model_call tools=[none] usage=prompt=5 completion=1 total=6
+ts=400 model_call agent=helper run_id=3 engine=e model=m tools=[none] usage=prompt=7 completion=1 total=8
+";
+        assert_eq!(
+            sum_usage_since(log, 0, Some("main")),
+            DailyUsage {
+                prompt: 15,
+                completion: 3,
+                total: 18,
+            }
+        );
+        assert_eq!(
+            sum_usage_since(log, 0, Some("helper")),
+            DailyUsage {
+                prompt: 27,
+                completion: 4,
+                total: 31,
+            }
+        );
+        assert_eq!(
+            sum_usage_since(log, 0, None),
+            DailyUsage {
+                prompt: 42,
+                completion: 7,
+                total: 49,
             }
         );
     }

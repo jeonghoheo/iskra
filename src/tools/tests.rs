@@ -281,12 +281,16 @@ fn refuses_absolute_parent_and_home_arguments() {
         "HEAD:../x",
         ":/message-search",
     ] {
-        assert!(
-            check_path_argument(arg).is_err(),
-            "{arg} must be refused"
-        );
+        assert!(check_path_argument(arg).is_err(), "{arg} must be refused");
     }
-    for arg in ["src/lib.rs", "HEAD~3..HEAD", "main..feature", "--format=%H %s", "-la", "HEAD:src/lib.rs"] {
+    for arg in [
+        "src/lib.rs",
+        "HEAD~3..HEAD",
+        "main..feature",
+        "--format=%H %s",
+        "-la",
+        "HEAD:src/lib.rs",
+    ] {
         assert!(check_path_argument(arg).is_ok(), "{arg} must be allowed");
     }
 
@@ -315,7 +319,9 @@ fn git_refuses_global_options_before_subcommand() {
         let args = strings(&[global, "status"]);
         let result = check_program_args(Program::Git, &args);
         assert!(
-            result.as_ref().is_err_and(|e| e.contains("before the subcommand")),
+            result
+                .as_ref()
+                .is_err_and(|e| e.contains("before the subcommand")),
             "{global} must be refused: {result:?}"
         );
     }
@@ -327,9 +333,28 @@ fn git_refuses_global_options_before_subcommand() {
 #[test]
 fn git_refuses_subcommands_outside_allowlist() {
     for subcommand in [
-        "push", "fetch", "pull", "clone", "ls-remote", "remote", "submodule", "config", "clean",
-        "reset", "checkout", "restore", "apply", "am", "archive", "bundle", "daemon", "instaweb",
-        "filter-branch", "credential", "stash", "x",
+        "push",
+        "fetch",
+        "pull",
+        "clone",
+        "ls-remote",
+        "remote",
+        "submodule",
+        "config",
+        "clean",
+        "reset",
+        "checkout",
+        "restore",
+        "apply",
+        "am",
+        "archive",
+        "bundle",
+        "daemon",
+        "instaweb",
+        "filter-branch",
+        "credential",
+        "stash",
+        "x",
     ] {
         let args = strings(&[subcommand]);
         let result = check_program_args(Program::Git, &args);
@@ -411,7 +436,10 @@ fn git_command_forces_hook_and_config_isolation() {
         assert_eq!(command.as_std().get_program(), git.as_os_str());
         0
     };
-    assert_eq!(&args[start..start + 8], &GIT_FORCED_CONFIG.map(String::from));
+    assert_eq!(
+        &args[start..start + 8],
+        &GIT_FORCED_CONFIG.map(String::from)
+    );
     assert_eq!(args[start + 8], "status");
 
     let envs = command_envs(&command);
@@ -452,11 +480,18 @@ async fn git_does_not_discover_parent_repository() {
 
     // A repository inside workspace still works through `dir`.
     fs::create_dir_all(root.join("repo")).unwrap();
-    let init = run_in(&tools, "git", &["init", "-q"], Some("repo")).await.unwrap();
+    let init = run_in(&tools, "git", &["init", "-q"], Some("repo"))
+        .await
+        .unwrap();
     assert!(init.starts_with("exit=0"), "{init}");
     fs::write(root.join("repo/a.txt"), "a").unwrap();
-    let status = run_in(&tools, "git", &["status", "--short"], Some("repo")).await.unwrap();
-    assert!(status.starts_with("exit=0") && status.contains("a.txt"), "{status}");
+    let status = run_in(&tools, "git", &["status", "--short"], Some("repo"))
+        .await
+        .unwrap();
+    assert!(
+        status.starts_with("exit=0") && status.contains("a.txt"),
+        "{status}"
+    );
 
     fs::remove_dir_all(&base).unwrap();
 }
@@ -582,14 +617,28 @@ async fn file_tools_refuse_private_iskra_dirs() {
     let tools = tools_for(root.clone()); // creates .iskra-home/ and .iskra-tmp/
     fs::write(root.join(".iskra-tmp/probe.txt"), "x").unwrap();
 
-    for path in [".iskra-home/cargo/config.toml", ".ISKRA-TMP/probe.txt", ".iſkra-home/x"] {
+    for path in [
+        ".iskra-home/cargo/config.toml",
+        ".ISKRA-TMP/probe.txt",
+        ".iſkra-home/x",
+    ] {
         let write = serde_json::json!({"path": path, "content": "x"});
-        assert!(tools.execute("write_file", &write).await.is_err(), "write {path}");
+        assert!(
+            tools.execute("write_file", &write).await.is_err(),
+            "write {path}"
+        );
         let read = serde_json::json!({"path": path});
-        assert!(tools.execute("read_file", &read).await.is_err(), "read {path}");
+        assert!(
+            tools.execute("read_file", &read).await.is_err(),
+            "read {path}"
+        );
     }
     assert!(run(&tools, "cat", &[".iskra-tmp/probe.txt"]).await.is_err());
-    assert!(run_in(&tools, "ls", &[], Some(".iskra-home")).await.is_err());
+    assert!(
+        run_in(&tools, "ls", &[], Some(".iskra-home"))
+            .await
+            .is_err()
+    );
 
     fs::remove_dir_all(&root).unwrap();
 }
@@ -615,9 +664,20 @@ async fn child_environment_does_not_inherit_parent_secrets() {
         .unwrap();
 
     assert!(outcome.text.starts_with("exit=0"), "{}", outcome.text);
-    for name in ["ISKRA_TEST_SECRET", "OPENAI_API_KEY", "SSH_AUTH_SOCK", "DEEPSEEK_API_KEY", "TELEGRAM_BOT_TOKEN", "LLM_API_KEY", "USER"] {
+    for name in [
+        "ISKRA_TEST_SECRET",
+        "OPENAI_API_KEY",
+        "SSH_AUTH_SOCK",
+        "DEEPSEEK_API_KEY",
+        "TELEGRAM_BOT_TOKEN",
+        "LLM_API_KEY",
+        "USER",
+    ] {
         assert!(
-            !outcome.text.lines().any(|line| line.starts_with(&format!("{name}="))),
+            !outcome
+                .text
+                .lines()
+                .any(|line| line.starts_with(&format!("{name}="))),
             "{name} leaked into the child: {}",
             outcome.text
         );
@@ -669,7 +729,10 @@ async fn programs_are_pinned_and_never_resolved_from_workspace() {
     let _ = run(&tools, "ls", &[]).await;
     let _ = run(&tools, "cat", &["git"]).await;
     for name in ["git", "ls", "cat"] {
-        assert!(!root.join(format!("pwned-{name}")).exists(), "workspace/{name} was executed");
+        assert!(
+            !root.join(format!("pwned-{name}")).exists(),
+            "workspace/{name} was executed"
+        );
     }
 
     fs::remove_dir_all(&root).unwrap();
@@ -692,7 +755,10 @@ async fn timeout_kills_whole_process_group() {
         .lines()
         .find_map(|line| line.trim().parse().ok())
         .expect("grandchild pid in output");
-    assert!(wait_until_gone(pid).await, "grandchild {pid} survived the timeout");
+    assert!(
+        wait_until_gone(pid).await,
+        "grandchild {pid} survived the timeout"
+    );
 
     fs::remove_dir_all(&root).unwrap();
 }
@@ -702,8 +768,13 @@ async fn abort_kills_whole_process_group() {
     let root = temp_root("group-abort");
     let tools = tools_for(root.clone());
 
-    let command = plain_command(&tools, "/bin/sh", &["-c", "sleep 60 & echo $! > gc.pid; wait"]);
-    let handle = tokio::spawn(async move { run_process(command, "sh", Duration::from_secs(60)).await });
+    let command = plain_command(
+        &tools,
+        "/bin/sh",
+        &["-c", "sleep 60 & echo $! > gc.pid; wait"],
+    );
+    let handle =
+        tokio::spawn(async move { run_process(command, "sh", Duration::from_secs(60)).await });
     let pid_file = root.join("gc.pid");
     let mut pid: Option<libc::pid_t> = None;
     for _ in 0..60 {
@@ -720,7 +791,10 @@ async fn abort_kills_whole_process_group() {
 
     handle.abort(); // what /stop does to the running turn
     let _ = handle.await;
-    assert!(wait_until_gone(pid).await, "grandchild {pid} survived the abort");
+    assert!(
+        wait_until_gone(pid).await,
+        "grandchild {pid} survived the abort"
+    );
 
     fs::remove_dir_all(&root).unwrap();
 }
@@ -749,7 +823,10 @@ async fn read_file_refuses_hard_links_and_final_symlinks() {
     assert!(run(&tools, "cat", &["hard.txt"]).await.is_err());
     let write = serde_json::json!({"path": "hard.txt", "content": "overwrite"});
     assert!(tools.execute("write_file", &write).await.is_err());
-    assert_eq!(fs::read_to_string(outside.join("secret.txt")).unwrap(), "outside-secret");
+    assert_eq!(
+        fs::read_to_string(outside.join("secret.txt")).unwrap(),
+        "outside-secret"
+    );
 
     assert!(open_regular_nofollow(&root.join("final-link")).is_err());
     let plain = tools
@@ -781,7 +858,10 @@ async fn ls_and_cat_refuse_escaping_operands_and_flags() {
     assert!(run_in(&tools, "ls", &[], Some("../")).await.is_err());
 
     let listing = run(&tools, "ls", &["-la"]).await.unwrap();
-    assert!(listing.starts_with("exit=0") && listing.contains("a.txt"), "{listing}");
+    assert!(
+        listing.starts_with("exit=0") && listing.contains("a.txt"),
+        "{listing}"
+    );
 
     fs::remove_dir_all(&root).unwrap();
     fs::remove_dir_all(&outside).unwrap();
@@ -793,8 +873,12 @@ async fn ls_and_cat_refuse_escaping_operands_and_flags() {
 async fn cargo_disabled_without_os_sandbox() {
     let root = temp_root("no-sandbox");
     let home = std::env::var_os("HOME").map(PathBuf::from);
-    let runtime =
-        Runtime::detect_with(&root, Path::new("/nonexistent/sandbox-exec"), home.as_deref()).unwrap();
+    let runtime = Runtime::detect_with(
+        &root,
+        Path::new("/nonexistent/sandbox-exec"),
+        home.as_deref(),
+    )
+    .unwrap();
     assert!(!runtime.sandboxed());
     let reason = runtime.pinned(Program::Cargo).unwrap_err();
     assert!(reason.contains("sandbox"), "{reason}");
@@ -911,7 +995,16 @@ fn schema_lists_all_tools_when_every_program_is_available() {
         .iter()
         .map(|tool| tool["function"]["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["read_file", "write_file", "memory_save", "run_command", "sticky_note"]);
+    assert_eq!(
+        names,
+        [
+            "read_file",
+            "write_file",
+            "memory_save",
+            "run_command",
+            "sticky_note"
+        ]
+    );
     assert!(schemas_for(&[], false).as_array().unwrap().len() == 4);
 }
 
@@ -958,7 +1051,10 @@ impl SandboxLab {
         let root = fs::canonicalize(root).unwrap();
         let runtime = Runtime::detect_with(&root, Path::new(SANDBOX_EXEC), Some(&home)).unwrap();
         assert!(runtime.sandboxed(), "Seatbelt must be available on macOS");
-        assert!(runtime.pinned(Program::Cargo).is_ok(), "cargo must be available");
+        assert!(
+            runtime.pinned(Program::Cargo).is_ok(),
+            "cargo must be available"
+        );
         let tools = Tools::from_parts(root, runtime, base.join("memory"));
         Self {
             base,
@@ -1050,7 +1146,10 @@ async fn sandbox_blocks_build_script_network() {
     let outcome = lab.build_probe("probe_net", &body).await;
     assert!(!outcome.starts_with("exit=0"), "{outcome}");
     assert!(outcome.contains("tcp connect"), "{outcome}");
-    assert!(listener.accept().is_err(), "the build script reached the listener");
+    assert!(
+        listener.accept().is_err(),
+        "the build script reached the listener"
+    );
 }
 
 #[cfg(target_os = "macos")]
@@ -1094,16 +1193,30 @@ async fn sandboxed_cargo_and_git_still_work_inside_workspace() {
         "#[test]\nfn adds() { assert_eq!(1 + 1, 2); }\n",
     )
     .unwrap();
-    let test = run_in(&lab.tools, "cargo", &["test"], Some("probe_ok")).await.unwrap();
-    assert!(test.starts_with("exit=0") && test.contains("1 passed"), "{test}");
-
-    let init = run_in(&lab.tools, "git", &["init", "-q"], Some("probe_ok")).await.unwrap();
-    assert!(init.starts_with("exit=0"), "{init}");
-    let add = run_in(&lab.tools, "git", &["add", "src"], Some("probe_ok")).await.unwrap();
-    assert!(add.starts_with("exit=0"), "{add}");
-    let commit = run_in(&lab.tools, "git", &["commit", "-qm", "init"], Some("probe_ok"))
+    let test = run_in(&lab.tools, "cargo", &["test"], Some("probe_ok"))
         .await
         .unwrap();
+    assert!(
+        test.starts_with("exit=0") && test.contains("1 passed"),
+        "{test}"
+    );
+
+    let init = run_in(&lab.tools, "git", &["init", "-q"], Some("probe_ok"))
+        .await
+        .unwrap();
+    assert!(init.starts_with("exit=0"), "{init}");
+    let add = run_in(&lab.tools, "git", &["add", "src"], Some("probe_ok"))
+        .await
+        .unwrap();
+    assert!(add.starts_with("exit=0"), "{add}");
+    let commit = run_in(
+        &lab.tools,
+        "git",
+        &["commit", "-qm", "init"],
+        Some("probe_ok"),
+    )
+    .await
+    .unwrap();
     assert!(commit.starts_with("exit=0"), "{commit}");
     let log = run_in(&lab.tools, "git", &["log", "--oneline"], Some("probe_ok"))
         .await

@@ -1,43 +1,74 @@
-use std::future::Future;
+use std::collections::HashMap;
 use std::sync::Mutex;
 
 use tokio::task::JoinHandle;
 
-/// Owns the active run task for one instance.
+/// Owns the active run tasks for one instance.
 ///
-/// Admission and handle ownership live here so channels cannot start or abort
-/// model work directly. Durable queues and multi-run admission are later stages.
+/// Admission (which run may start and when) is decided by the core RunStore and
+/// its single dispatch lock. This type only holds the resulting handles so the
+/// core can cancel them. The store, not this map, is the execution authority.
 #[derive(Default)]
 pub struct RunSupervisor {
-    active: Mutex<Option<JoinHandle<()>>>,
+    active: Mutex<HashMap<u64, ActiveRun>>,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct Busy;
+struct ActiveRun {
+    agent_id: String,
+    handle: JoinHandle<()>,
+}
 
 impl RunSupervisor {
-    /// Atomically admits one run: reject while the stored handle is running,
-    /// otherwise spawn and store the new handle.
-    pub fn start<F>(&self, task: F) -> Result<(), Busy>
-    where
-        F: Future<Output = ()> + Send + 'static,
-    {
+    pub fn insert(&self, run_id: u64, agent_id: &str, handle: JoinHandle<()>) {
         let mut active = self.active.lock().unwrap();
-        if active.as_ref().is_some_and(|handle| !handle.is_finished()) {
-            return Err(Busy);
+        if handle.is_finished() {
+            return;
         }
-        *active = Some(tokio::spawn(task));
-        Ok(())
+        active.insert(
+            run_id,
+            ActiveRun {
+                agent_id: agent_id.to_string(),
+                handle,
+            },
+        );
+        if active
+            .get(&run_id)
+            .is_some_and(|run| run.handle.is_finished())
+        {
+            active.remove(&run_id);
+        }
     }
 
-    /// Removes the handle only when the run is still active. A finished task is
-    /// cleared and reported as no active run.
-    pub fn take_running(&self) -> Option<JoinHandle<()>> {
+    /// Removes one handle without aborting it. Used by the task when it finishes.
+    pub fn remove(&self, run_id: u64) -> Option<JoinHandle<()>> {
+        self.active
+            .lock()
+            .unwrap()
+            .remove(&run_id)
+            .map(|run| run.handle)
+    }
+
+    /// Removes every handle for one Agent so the caller can stop them in order.
+    pub fn take_agent(&self, agent_id: &str) -> Vec<JoinHandle<()>> {
         let mut active = self.active.lock().unwrap();
-        match active.take() {
-            Some(handle) if !handle.is_finished() => Some(handle),
-            _ => None,
-        }
+        let ids: Vec<u64> = active
+            .iter()
+            .filter(|(_, run)| run.agent_id == agent_id)
+            .map(|(id, _)| *id)
+            .collect();
+        ids.into_iter()
+            .filter_map(|id| active.remove(&id).map(|run| run.handle))
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub fn active_count(&self) -> usize {
+        self.active.lock().unwrap().len()
+    }
+
+    #[cfg(test)]
+    pub fn contains(&self, run_id: u64) -> bool {
+        self.active.lock().unwrap().contains_key(&run_id)
     }
 }
 
@@ -45,49 +76,46 @@ impl RunSupervisor {
 mod tests {
     use super::*;
 
-    async fn wait_finished(supervisor: &RunSupervisor) {
-        for _ in 0..100 {
-            if supervisor
-                .active
-                .lock()
-                .unwrap()
-                .as_ref()
-                .is_some_and(|handle| handle.is_finished())
-            {
-                return;
-            }
-            tokio::task::yield_now().await;
+    #[tokio::test]
+    async fn holds_and_removes_multiple_runs() {
+        let supervisor = RunSupervisor::default();
+        supervisor.insert(1, "main", tokio::spawn(std::future::pending::<()>()));
+        supervisor.insert(2, "helper", tokio::spawn(std::future::pending::<()>()));
+
+        assert_eq!(supervisor.active_count(), 2);
+        assert!(supervisor.contains(1));
+        assert!(supervisor.contains(2));
+
+        let removed = supervisor.remove(1).expect("run 1 handle");
+        removed.abort();
+        assert_eq!(supervisor.active_count(), 1);
+        assert!(!supervisor.contains(1));
+    }
+
+    #[tokio::test]
+    async fn takes_only_the_named_agents_handles() {
+        let supervisor = RunSupervisor::default();
+        supervisor.insert(1, "main", tokio::spawn(std::future::pending::<()>()));
+        supervisor.insert(2, "main", tokio::spawn(std::future::pending::<()>()));
+        supervisor.insert(3, "helper", tokio::spawn(std::future::pending::<()>()));
+
+        let main = supervisor.take_agent("main");
+        assert_eq!(main.len(), 2);
+        for handle in main {
+            handle.abort();
         }
-        panic!("run did not finish");
+        assert_eq!(supervisor.active_count(), 1);
+        assert!(supervisor.contains(3));
     }
 
     #[tokio::test]
-    async fn rejects_a_second_start_while_the_first_is_running() {
+    async fn finished_handles_are_removed_once() {
         let supervisor = RunSupervisor::default();
-        supervisor.start(std::future::pending::<()>()).unwrap();
-        assert_eq!(supervisor.start(async {}), Err(Busy));
+        let handle = tokio::spawn(async {});
+        let _ = handle.await;
+        supervisor.insert(7, "main", tokio::spawn(async {}));
 
-        let handle = supervisor.take_running().expect("active run");
-        handle.abort();
-        supervisor.start(async {}).unwrap();
-    }
-
-    #[tokio::test]
-    async fn take_running_clears_the_slot_exactly_once() {
-        let supervisor = RunSupervisor::default();
-        supervisor.start(std::future::pending::<()>()).unwrap();
-
-        assert!(supervisor.take_running().is_some());
-        assert!(supervisor.take_running().is_none());
-    }
-
-    #[tokio::test]
-    async fn finished_runs_are_not_treated_as_active() {
-        let supervisor = RunSupervisor::default();
-        supervisor.start(async {}).unwrap();
-        wait_finished(&supervisor).await;
-
-        assert!(supervisor.take_running().is_none());
-        supervisor.start(async {}).unwrap();
+        assert!(supervisor.remove(7).is_some());
+        assert!(supervisor.remove(7).is_none());
     }
 }

@@ -176,3 +176,30 @@ At the end of each goal record only:
 Do not commit or push automatically per goal. The owner approves commits at a Stage or another meaningful review checkpoint.
 
 The workflow is successful when it reduces waiting turns, repeated reads, repeated passing checks, and rework—not merely when it uses a cheaper model.
+
+## 11. Current example: Stage 2 decomposition
+
+Stage 2 uses three **sequential** Goal sessions. Do not implement them concurrently in separate worktrees: the Run/Queue contract depends on the runtime registry, and channel integration depends on both.
+
+All three sessions use the currently connected DeepSeek Flash without changing the selected model or reasoning level. If a goal requires a new dependency, an unresolved architectural choice, owner input, or a third attempt after two failed approaches, stop and record the blocker instead of switching to a stronger model. Do not commit or push automatically; the next session inherits the previous session's working tree without reverting it.
+
+| Session | Implementation topic | Automated finish line |
+|---|---|---|
+| 1 | Registry and isolated `AgentRuntime` | Strict registry validation and two-Agent model/memory/session/workspace/usage isolation, with existing main behavior preserved |
+| 2 | Durable RunStore and Core Supervisor | Run transitions, atomic FIFO claim/settle, global concurrency 2, cancellation races, restart no-replay, and real CLI process checks |
+| 3 | Explicit routing and localized channel | `@agent`, `/agents`, targeted status/stop/resume, en/ko/ru coverage, mock Bot API and two-provider real CLI checks |
+
+The normative contracts are in `docs/ARCHITECTURE.md` §12 Stage 2. Exact task cards are in `SESSION.md`; they are the source of truth for scope, files, focused proof, current state, stop conditions, and owner-run items. Each goal reads the required personal/repository state documents once, then the current card, the previous goal result, and targeted source ranges. Do not repeat broad architecture planning unless an actual contradiction appears.
+
+Run focused tests while iterating. At each handoff run only the focused checks named in the card. Run the full suite, real CLI process tests, changed-file rustfmt, clippy, release build, and resource measurements once at the milestone after the final remediation goal (R3), unless a new failure requires another pass. Record changed files, actual commands and counts, unverified items, and the single next goal.
+
+After Goal 3, perform one owner-run Telegram/configured-provider checklist in normal mode with DeepSeek Flash and its current reasoning configuration unchanged. No Goal may wait for Telegram input, account setup, or manual restarts.
+
+### Stage 2 remediation
+
+A read-only review after the Stage 2 milestone found five commit blockers: sticky-board reply routing, resumed-result delivery, false success after a Session-stop write failure, a second dispatcher, and raw provider/tool details in logs. The remediation uses three sequential cards, R1–R3, in `SESSION.md`, run in separate Goal sessions on the same working tree without worktrees or reverts.
+
+- `SESSION.md` cards are the source of truth; a Goal reads its own card and the previous result rather than restating the architecture.
+- Run only the focused checks named in each card at a handoff.
+- Run the full milestone verification once after R3, not at every handoff.
+- Do not commit or push without separate owner approval, and do not claim live verification before the owner-run checklist.
