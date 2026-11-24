@@ -48,6 +48,21 @@ and reassembled — swap the model, the channel, or the tools without touching t
 - [x] Shell tool (`ls`, `cat`, `git`, `cargo`) with subcommand and argument policy, cleared environment and macOS sandbox (cargo is disabled where no OS sandbox exists) + a verified coding task
 - [x] Shell hardening (v1.1): 21 bypass paths closed and covered by tests
 
+## Known limitations
+
+- The Telegram channel reaches the Bot API directly or through an HTTP proxy configured
+  with `HTTPS_PROXY` / `ALL_PROXY` (and `NO_PROXY` for exclusions). SOCKS5 is supported;
+  prefer `socks5h://` so the proxy resolves DNS. `TELOXIDE_PROXY` is not used, and proxy
+  settings from macOS System Settings are not read — export the environment variables
+  before starting Iskra.
+- If the Bot API is unreachable at startup, Iskra retries for up to about 20 seconds,
+  writes `telegram_fatal` to `logs/agent.log`, and exits with code 2. If connectivity
+  drops while running, it keeps retrying with exponential backoff (1 s to 64 s), stays
+  alive, and records the state in `memory/telegram_health.json`; it does not push a
+  notification. Check the health file and the process state.
+- Proxy operation on a real Russian network is not covered by automated tests; verify it
+  once with your own proxy before relying on it.
+
 ## Roadmap
 
 | Version | Direction |

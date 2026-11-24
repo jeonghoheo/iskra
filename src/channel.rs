@@ -1,4 +1,5 @@
 use crate::brain::{BalanceResponse, Brain};
+use crate::health::{self, Health};
 use crate::instance::InstancePaths;
 use crate::locale::{self, Key, Locale};
 use crate::logging;
@@ -21,10 +22,14 @@ use teloxide::types::{
     BotCommand, Chat, ChatAction, MediaKind, MessageId, MessageKind, MessageReactionUpdated,
     ParseMode,
 };
+use teloxide::update_listeners::polling_default;
 use teloxide::{ApiError, RequestError};
 
 const MAX_MESSAGE_CHARS: usize = 4096;
 const TYPING_REFRESH_SECS: u64 = 4;
+const STARTUP_WINDOW_SECS: u64 = 20;
+const STARTUP_ATTEMPT_TIMEOUT_SECS: u64 = 5;
+const HEALTH_INTERVAL_SECS: u64 = 30;
 const COMMAND_KEYS: [(&str, Key); 5] = [
     ("start", Key::StartDescription),
     ("status", Key::StatusDescription),
@@ -93,6 +98,19 @@ pub async fn run(
         allowed_user_id,
     } = config;
     let bot = Bot::new(token);
+
+    let health = Arc::new(Health::new(paths.memory.join(health::FILE_NAME)));
+    let now = health::now_unix();
+    if let Err(e) = health.write_force(now) {
+        logging::append(&format!("health_write_error {e}"));
+    }
+
+    if let Err(reason) = wait_for_telegram(&bot, &health).await {
+        logging::append(&format!("telegram_fatal reason={reason}"));
+        return Err(format!("Telegram startup failed: {reason}").into());
+    }
+
+    logging::append("telegram_start");
     register_commands(&bot).await;
 
     let state = Arc::new(ChannelState {
@@ -106,18 +124,187 @@ pub async fn run(
         supervisor: RunSupervisor::default(),
     });
 
-    logging::append("telegram_start");
+    if let Err(error) = serve(
+        bot,
+        state,
+        health.clone(),
+        Duration::from_secs(HEALTH_INTERVAL_SECS),
+    )
+    .await
+    {
+        let kind = request_error_kind(&error);
+        logging::append(&format!("telegram_fatal reason=dispatch kind={kind}"));
+        let now = health::now_unix();
+        let _ = health.record_api_error(now, kind);
+        if let Err(e) = health.write_force(now) {
+            logging::append(&format!("health_write_error {e}"));
+        }
+        return Err(format!("Telegram dispatch failed: {kind}").into());
+    }
 
+    Ok(())
+}
+
+async fn serve(
+    bot: Bot,
+    state: Arc<ChannelState>,
+    health: Arc<Health>,
+    watchdog_interval: Duration,
+) -> Result<(), RequestError> {
     let handler = dptree::entry()
         .branch(Update::filter_message().endpoint(handle_message))
         .branch(Update::filter_message_reaction_updated().endpoint(handle_reaction));
-    Dispatcher::builder(bot, handler)
+    let mut dispatcher = Dispatcher::builder(bot.clone(), handler)
         .dependencies(dptree::deps![state])
-        .build()
-        .dispatch()
-        .await;
+        .build();
 
-    Ok(())
+    let listener = polling_default(bot.clone()).await;
+    let watchdog = spawn_health_watchdog(bot, health.clone(), watchdog_interval);
+
+    let error_health = health.clone();
+    let error_handler = Arc::new(move |error: RequestError| {
+        let health = error_health.clone();
+        async move {
+            let now = health::now_unix();
+            let kind = request_error_kind(&error);
+            let update = health.record_poll_error(now, kind);
+            if update.state_changed {
+                logging::append(&format!("telegram_health state={}", update.state.as_str()));
+            }
+            if update.failures <= 3 || update.failures.is_multiple_of(10) {
+                logging::append(&format!(
+                    "telegram_poll_error attempt={} kind={kind} state={}",
+                    update.failures,
+                    update.state.as_str()
+                ));
+            }
+            if let Err(e) = health.write_if_due(now) {
+                logging::append(&format!("health_write_error {e}"));
+            }
+        }
+    });
+
+    let result = dispatcher
+        .try_dispatch_with_listener(listener, error_handler)
+        .await;
+    watchdog.abort();
+    result
+}
+
+async fn wait_for_telegram(bot: &Bot, health: &Health) -> Result<(), &'static str> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(STARTUP_WINDOW_SECS);
+    let mut delay = Duration::ZERO;
+    let mut attempt = 0u32;
+    let mut last_kind = "startup_exhausted";
+
+    loop {
+        if !delay.is_zero() {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            tokio::time::sleep(delay.min(remaining)).await;
+        }
+        if std::time::Instant::now() >= deadline {
+            break;
+        }
+
+        attempt = attempt.saturating_add(1);
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        let attempt_timeout = remaining.min(Duration::from_secs(STARTUP_ATTEMPT_TIMEOUT_SECS));
+        let started = health::now_unix();
+
+        match tokio::time::timeout(attempt_timeout, bot.get_me().send()).await {
+            Ok(Ok(_)) => {
+                let now = health::now_unix();
+                health.record_api_ok(now);
+                if let Err(e) = health.write_if_due(now) {
+                    logging::append(&format!("health_write_error {e}"));
+                }
+                return Ok(());
+            }
+            Ok(Err(error)) => {
+                last_kind = request_error_kind(&error);
+            }
+            Err(_) => {
+                last_kind = "timeout";
+            }
+        }
+
+        let update = health.record_api_error(started, last_kind);
+        logging::append(&format!(
+            "telegram_start_retry attempt={attempt} delay_s={} kind={last_kind} state={}",
+            delay.as_secs(),
+            update.state.as_str()
+        ));
+        if let Err(e) = health.write_if_due(started) {
+            logging::append(&format!("health_write_error {e}"));
+        }
+        if last_kind == "auth" {
+            break;
+        }
+        delay = next_startup_delay(delay);
+    }
+
+    let now = health::now_unix();
+    health.record_api_error(now, last_kind);
+    if let Err(e) = health.write_force(now) {
+        logging::append(&format!("health_write_error {e}"));
+    }
+    Err(last_kind)
+}
+
+fn next_startup_delay(current: Duration) -> Duration {
+    if current.is_zero() {
+        Duration::from_secs(1)
+    } else {
+        (current * 2).min(Duration::from_secs(8))
+    }
+}
+
+fn spawn_health_watchdog(
+    bot: Bot,
+    health: Arc<Health>,
+    interval: Duration,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(interval);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+        loop {
+            interval.tick().await;
+            let now = health::now_unix();
+            let update = match bot.get_me().send().await {
+                Ok(_) => health.record_api_ok(now),
+                Err(error) => {
+                    let kind = request_error_kind(&error);
+                    health.record_api_error(now, kind)
+                }
+            };
+
+            if update.state_changed {
+                logging::append(&format!("telegram_health state={}", update.state.as_str()));
+            }
+            if let Err(e) = health.write_if_due(now) {
+                logging::append(&format!("health_write_error {e}"));
+            }
+        }
+    })
+}
+
+fn request_error_kind(error: &RequestError) -> &'static str {
+    match error {
+        RequestError::Api(ApiError::InvalidToken) => "auth",
+        RequestError::Api(_) => "api",
+        RequestError::Network(_) => "network",
+        RequestError::InvalidJson { .. } => "protocol",
+        RequestError::Io(_) => "io",
+        RequestError::RetryAfter(_) => "rate_limit",
+        RequestError::MigrateToChatId(_) => "chat_migrated",
+    }
 }
 
 async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> HandlerResult {
@@ -1433,5 +1620,259 @@ mod tests {
             fallback_after_edit_failure(BoardPlan::EmptyNoBoard),
             BoardPlan::EmptyNoBoard
         );
+    }
+
+    #[test]
+    fn startup_backoff_is_bounded() {
+        let mut delay = Duration::ZERO;
+        let mut delays = Vec::new();
+        for _ in 0..6 {
+            delays.push(delay.as_secs());
+            delay = next_startup_delay(delay);
+        }
+        assert_eq!(delays, [0, 1, 2, 4, 8, 8]);
+    }
+
+    #[test]
+    fn classifies_invalid_token_as_auth_for_health() {
+        let error = RequestError::Api(ApiError::InvalidToken);
+        assert_eq!(request_error_kind(&error), "auth");
+    }
+
+    struct MockPollBotApi {
+        address: String,
+        ok: Arc<std::sync::atomic::AtomicBool>,
+        stop: std::sync::mpsc::Sender<()>,
+        handle: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl MockPollBotApi {
+        fn start() -> Self {
+            use std::io::{BufRead, BufReader, Read, Write};
+            use std::net::TcpListener;
+            use std::sync::atomic::Ordering;
+
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let address = listener.local_addr().unwrap().to_string();
+            let ok = Arc::new(std::sync::atomic::AtomicBool::new(true));
+            let server_ok = Arc::clone(&ok);
+            let (stop, stopped) = std::sync::mpsc::channel();
+            let handle = std::thread::spawn(move || {
+                while stopped.try_recv().is_err() {
+                    match listener.accept() {
+                        Ok((stream, _)) => {
+                            stream.set_nonblocking(false).unwrap();
+                            let mut writer = stream.try_clone().unwrap();
+                            let mut reader = BufReader::new(stream);
+                            let mut request_line = String::new();
+                            if reader.read_line(&mut request_line).is_err() {
+                                continue;
+                            }
+                            let mut content_length = 0usize;
+                            loop {
+                                let mut header = String::new();
+                                if reader.read_line(&mut header).is_err() {
+                                    break;
+                                }
+                                if header == "\r\n" || header.is_empty() {
+                                    break;
+                                }
+                                if let Some((name, value)) = header.split_once(':')
+                                    && name.eq_ignore_ascii_case("content-length")
+                                {
+                                    content_length = value.trim().parse().unwrap_or(0);
+                                }
+                            }
+                            let mut body = vec![0; content_length];
+                            let _ = reader.read_exact(&mut body);
+
+                            let path = request_line
+                                .split_whitespace()
+                                .nth(1)
+                                .unwrap_or("")
+                                .to_ascii_lowercase();
+                            if !server_ok.load(Ordering::Relaxed)
+                                && (path.contains("getupdates") || path.contains("getme"))
+                            {
+                                continue;
+                            }
+
+                            let response = if path.contains("getme") {
+                                serde_json::json!({
+                                    "ok": true,
+                                    "result": {
+                                        "id": 1,
+                                        "is_bot": true,
+                                        "first_name": "Probe",
+                                        "username": "probe_bot",
+                                        "can_join_groups": false,
+                                        "can_read_all_group_messages": false,
+                                        "supports_inline_queries": false,
+                                        "has_main_web_app": false
+                                    }
+                                })
+                            } else if path.contains("getwebhookinfo") {
+                                serde_json::json!({
+                                    "ok": true,
+                                    "result": {
+                                        "url": "",
+                                        "has_custom_certificate": false,
+                                        "pending_update_count": 0
+                                    }
+                                })
+                            } else if path.contains("getupdates") {
+                                std::thread::sleep(Duration::from_millis(100));
+                                serde_json::json!({"ok": true, "result": []})
+                            } else {
+                                serde_json::json!({"ok": true, "result": true})
+                            };
+
+                            let bytes = serde_json::to_vec(&response).unwrap();
+                            let _ = write!(
+                                writer,
+                                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                                bytes.len()
+                            );
+                            let _ = writer.write_all(&bytes);
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
+                        Err(error) => panic!("mock poll Bot API accept failed: {error}"),
+                    }
+                }
+            });
+            Self {
+                address,
+                ok,
+                stop,
+                handle: Some(handle),
+            }
+        }
+
+        fn url(&self) -> reqwest::Url {
+            reqwest::Url::parse(&format!("http://{}", self.address)).unwrap()
+        }
+
+        fn set_ok(&self, ok: bool) {
+            self.ok.store(ok, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    impl Drop for MockPollBotApi {
+        fn drop(&mut self) {
+            let _ = self.stop.send(());
+            let _ = std::net::TcpStream::connect(&self.address);
+            if let Some(handle) = self.handle.take() {
+                handle.join().unwrap();
+            }
+        }
+    }
+
+    async fn wait_for_health(
+        health: &Health,
+        expected: health::HealthState,
+        timeout: Duration,
+    ) -> bool {
+        let deadline = std::time::Instant::now() + timeout;
+        while std::time::Instant::now() < deadline {
+            if health.state(health::now_unix()) == expected {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        false
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn runtime_polling_failure_updates_health_and_recovers() {
+        let dir = std::env::temp_dir().join(format!(
+            "iskra-channel-health-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("workspace")).unwrap();
+        std::fs::create_dir_all(dir.join("memory")).unwrap();
+
+        let bot_api = MockPollBotApi::start();
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+        let health_path = dir.join("memory").join(health::FILE_NAME);
+        let health = Arc::new(Health::with_test_windows(&health_path, 2, 1, 0));
+        let state = Arc::new(ChannelState {
+            bot: bot.clone(),
+            brain: Brain::new(crate::brain::Config {
+                api_key: "dummy".to_string(),
+                base_url: "http://127.0.0.1:9/chat/completions".to_string(),
+                model: "test-model".to_string(),
+            }),
+            tools: Tools::new_in(&dir.join("workspace"), &dir.join("memory")).unwrap(),
+            identity: prompt::Identity {
+                soul: prompt::DEFAULT_SOUL.to_string(),
+                user: prompt::DEFAULT_USER.to_string(),
+                warnings: Vec::new(),
+                soul_source: prompt::IdentitySource::Default,
+                user_source: prompt::IdentitySource::Default,
+            },
+            session: Session::load(&dir.join("session.json")),
+            paths: InstancePaths {
+                workspace: dir.join("workspace"),
+                memory: dir.join("memory"),
+                session: dir.join("session.json"),
+            },
+            allowed_user_id: 1,
+            supervisor: RunSupervisor::default(),
+        });
+
+        let task = tokio::spawn(serve(
+            bot,
+            state,
+            health.clone(),
+            Duration::from_millis(200),
+        ));
+
+        assert!(
+            wait_for_health(&health, health::HealthState::Ok, Duration::from_secs(5)).await,
+            "health never reached ok"
+        );
+
+        bot_api.set_ok(false);
+        assert!(
+            wait_for_health(
+                &health,
+                health::HealthState::Degraded,
+                Duration::from_secs(5)
+            )
+            .await,
+            "health never reached degraded"
+        );
+        assert!(
+            wait_for_health(
+                &health,
+                health::HealthState::Unreachable,
+                Duration::from_secs(8)
+            )
+            .await,
+            "health never reached unreachable"
+        );
+
+        bot_api.set_ok(true);
+        assert!(
+            wait_for_health(&health, health::HealthState::Ok, Duration::from_secs(8)).await,
+            "health never recovered to ok"
+        );
+
+        task.abort();
+        let _ = task.await;
+        drop(bot_api);
+
+        let stored: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&health_path).unwrap()).unwrap();
+        assert_eq!(stored["state"], "ok");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

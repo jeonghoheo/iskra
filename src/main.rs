@@ -1,5 +1,6 @@
 mod brain;
 mod channel;
+mod health;
 mod instance;
 mod locale;
 mod logging;
@@ -48,8 +49,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if std::env::args().any(|arg| arg == "--cli") {
         println!("iskra — file-tool conversation loop. Type exit to quit.");
         run_cli(&brain, &tools, &identity, &session, &paths).await?;
-    } else {
-        channel::run(brain, tools, identity, session, paths).await?;
+    } else if let Err(e) = channel::run(brain, tools, identity, session, paths).await {
+        eprintln!("Iskra stopped: {e}");
+        std::process::exit(2);
     }
 
     Ok(())
