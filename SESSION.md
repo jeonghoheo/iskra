@@ -999,3 +999,35 @@ The post-R3 live checklist exposed a presentation gap: `watch_turn` sent every f
 - `cargo build --release`: zero Iskra warnings; only the existing `proc-macro-error2 v2.0.1` future-incompatibility note.
 - Budgets: stripped binary **6,711,104 bytes = 6.40 MiB**; direct dependencies **7**; dummy-config CLI idle RSS **4,160 KB = 4.06 MiB**. All hard limits pass.
 - Live check: the patched debug binary was restarted at 14:23. Run 17 (`second`) and Run 18 (`main`) each delivered a one-chunk reply; the owner confirmed the `second` answer began with `@second` and the plain `main` answer had no label. No commit or push was performed.
+
+
+---
+
+## Stage 2.5 design — `delivery/v1` (2026-11-24)
+
+Status: **architecture approved and recorded; no Goal card committed, no implementation, and no new automated or live verification.**
+
+### Decision
+
+The owner approved Stage 2.5 before Stage 3: reliability must be established before ACP or delegation adds another indeterminate side-effect boundary. The first implementation slice is limited to `delivery/v1`; bounded context/resources and execution-outcome uncertainty remain later, separately approved cards.
+
+The authoritative contract is now `docs/ARCHITECTURE.md` §3 invariant 10, §7 "Delivery projection (`delivery/v1`)", §9 local data, §12 "Stage 2.5-A", and §13 verification. Key boundaries:
+
+- Core owns a versioned `memory/deliveries.json`; it references the redacted final answer in Session and does not duplicate answers into `runs.json`.
+- Delivery is separate from Run completion: `pending`, `sent`, `failed`, and `unknown`.
+- A pre-send record is persisted before Telegram is called. `sent` requires a message id.
+- Only a definitive Telegram Markdown rejection may receive one plain-text fallback. Timeout, reset, ambiguous HTTP failure, and restart produce no automatic second send.
+- Restart maps unresolved sends to `unknown`; `unknown` is retried only by explicit owner action or proven channel reconciliation.
+- `/status [@agent]` reports delivery state separately from Run state. `/result <run-id>` retrieves the stored redacted answer without a model/tool call.
+- Missing, lagged, or closed events are recovered from durable Run, Session, and delivery records without rerunning work or leaving typing/watchers stuck.
+- Existing `session/v1`, `runs.json`, and registry formats are unchanged. No dependency, permission, approval, context-budget, provider, or ACP change is included.
+
+### Current state and next step
+
+- `master` HEAD `7b281cb`; the tree was clean before this design record. Stage 2, including the reply-attribution patch, is committed as `3d3c98f`; `7b281cb` reflects v2 progress in architecture, README, and the site. The architecture, README/site roadmap, and Stage 2.5 records are now uncommitted documentation changes.
+- Latest recorded test baseline remains **215 passed, 0 failed** (206 unit + 9 real CLI process) from 2026-11-24. It was not rerun for this design record.
+- No Goal was created. The next step is to commit the compact Stage 2.5-A task card after owner review; implementation requires a separate explicit start command.
+
+### Record correction
+
+Earlier entries say the post-live patch was not committed. That was accurate when written; the Stage 2 work, including the patch, was later committed as `3d3c98f`, and documentation was committed as `7b281cb`. Historical entries are preserved rather than rewritten.

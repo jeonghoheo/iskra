@@ -1,11 +1,11 @@
 # Iskra Agent Workbench Architecture
 
-Status: **approved target design; the Stage 2 two-Agent slice is committed as `3d3c98f`, Stage 3 and later are not started**.
+Status: **approved target design; the Stage 2 two-Agent slice is committed as `3d3c98f`, and the Stage 2.5-A `delivery/v1` contract is approved but not implemented. Stage 3 and later are not started**.
 Date: 2026-11-24.
 
 This document defines the architecture for turning Iskra from one persistent personal agent into a model-neutral workbench for multiple agents. It preserves the existing Rust core, local data ownership, fail-closed tools, and single-binary distribution.
 
-The first implementation target is deliberately small: two built-in OpenAI-compatible agents, explicit `@agent` routing, independent state, per-agent FIFO execution, and bounded global concurrency. ACP, automatic model routing, agent-to-agent delegation, and hosted mode have separate gates.
+The compatibility runtime and first two-Agent slice are implemented. The next implementation target is delivery reliability (`delivery/v1`): a completed Run must not imply that its answer reached Telegram. ACP, automatic model routing, agent-to-agent delegation, and hosted mode remain behind separate gates.
 
 ## 1. Goals
 
@@ -35,6 +35,7 @@ The first implementation target is deliberately small: two built-in OpenAI-compa
 7. **Readable, bounded local data.** JSON, Markdown, and NDJSON use schema versions, atomic writes, private permissions, size limits, and retention limits.
 8. **Routing fallback is not security fallback.** Routing may fall back to `main`; a failed permission or policy check never falls back to allow.
 9. **Budgets are measured.** The existing core budgets remain: stripped binary at most 20 MB, idle core RSS at most 30 MB, and at most 15 direct dependencies. External engine resource use is reported separately rather than hidden inside or excluded silently from product measurements.
+10. **Delivery is not execution success.** A completed Run means the core received a valid final result. Whether that result reached a channel is a separate Core-owned delivery record, and an ambiguous external send is never blindly retried.
 
 ## 4. Current baseline and why a runtime is needed
 
@@ -200,15 +201,30 @@ Rules:
 - `completed` means the core received a valid final result. It does not guarantee Telegram or network delivery.
 - No state transition automatically authorizes a retry, payment, external send, or new Agent.
 
-Delivery is a separate projection:
+### Delivery projection (`delivery/v1`)
+
+Delivery is a separate Core-owned projection. `memory/deliveries.json` is versioned, strictly validated, atomically written, private (`0600` on Unix), and bounded. It records delivery identity, Run and Agent identity, channel and owner-facing target, per-chunk state, attempt count, optional Telegram message id, and revision. It references the Run's redacted final answer in Session; it does not duplicate that answer into `runs.json` or the delivery store. The store is global to the data directory because one owner-facing channel may display answers from several Agents.
 
 ```text
-pending -> sent
-pending -> failed
-pending -> unknown
+pending -> sent              only after the channel returns a message id
+pending -> failed            only when a rejection proves the message was not accepted
+pending -> unknown           timeout, connection loss, ambiguous provider/API failure, or restart with an unresolved attempt
+failed  -> pending           only as an explicit owner resend
+unknown -> sent | failed     only through channel-specific reconciliation that proves the outcome
 ```
 
-`unknown` is not retried blindly. A future channel-specific reconciliation may resolve it without rerunning the Task. An explicitly resumed Run delivers its result through the same projection as a fresh Run: the channel subscribes before resume admission and reuses the per-Run watcher, while the CLI prints every resumed terminal result in FIFO order. Resume never re-delivers an interrupted Run.
+Rules:
+
+- Persist `pending` before the external send. If that initial write fails, do not send.
+- Persist `sent` only with the returned message id. A later write failure never causes a resend or a second Task execution.
+- A Markdown parse rejection that the channel definitively refused may receive one plain-text fallback for the same logical delivery. Any other failure must not be retried automatically.
+- `unknown` is not retried blindly, including after restart. A restart maps every unresolved `pending` record to `unknown`; it never sends, settles, or reruns work automatically.
+- Each chunk is tracked. A partially sent answer is reported as partially sent plus the unresolved chunk count; it is not reported as fully delivered.
+- Delivery is retried only by an explicit owner action and as a new recorded attempt. A fresh or explicitly resumed Run uses the same projection; resume never re-delivers an interrupted Run.
+- `/status [@agent]` reports `pending`, `failed`, and `unknown` deliveries separately from Run execution state. `/result <run-id>` reads a completed Run's stored redacted answer without a model or tool call and, for Telegram, records its own explicit delivery. The existing private-chat and owner gates apply.
+- RuntimeEvents are hints, not delivery authority. Missing, lagged, or closed terminal events are recovered from the durable Run, Session, and delivery records without leaving a watcher or typing indicator stuck.
+- An invalid or unsupported delivery store is never reset or silently replaced. It fails closed for new sends and delivery-dependent admission, preserves the original file, and reports a localized storage error.
+- If bounded retention cannot make room without discarding unresolved `pending`, `failed`, or `unknown` state, refuse new sends and report the condition rather than silently deleting delivery history.
 
 ## 8. Queue, concurrency, and routing
 
@@ -252,6 +268,7 @@ memory/
   MEMORY.md                        # existing main long-term memory
   session.json                     # existing main session/v1
   runs.json                        # versioned Run/queue state (when implemented)
+  deliveries.json                  # global delivery/v1 projection, version 1
   dispatcher.lock                  # persistent private single-dispatcher flock target
   agents/<agent-id>/
     MEMORY.md
@@ -263,6 +280,8 @@ logs/
 ```
 
 All user-specific registry, workspace, memory, run, and log paths remain ignored by Git. Registry and Run stores use private atomic writes. A missing registry means the compatibility `main` Agent synthesized from the existing `LLM_*` configuration; no file is created merely to answer a read-only status request.
+
+A missing delivery store means no recorded deliveries and is created atomically on the first accepted send; its absence never creates work or sends a message. Delivery records are pruned only after bound and retention rules preserve unresolved `pending`, `failed`, and `unknown` records. No `session/v1` or `runs.json` schema change is part of Stage 2.5-A.
 
 Session migration rules:
 
@@ -374,6 +393,7 @@ memory/
   session.json                     # existing main session/v1, unchanged
   stickies.md / board_state.json   # existing main only
   runs.json                        # global Run/Queue authority, version 1
+  deliveries.json                  # global delivery/v1 projection, version 1
   dispatcher.lock                  # persistent private single-dispatcher flock target
   agents/<agent-id>/
     SOUL.md                        # registry role is the missing-file fallback
@@ -442,6 +462,22 @@ queued_paused -> queued            (explicit /resume only)
 - `/start`, `/help`, the Telegram command menu, and queue acceptance/start/completion/failure/cancellation messages include the new behavior in `en/ko/ru`.
 - CLI uses the same Core Agent-selection API and supports `@agent`, `/agents`, `/status [@agent]`, `/stop [@agent]`, and `/resume [@agent]` so real-process tests can exercise the vertical slice.
 
+### Stage 2.5 — delivery reliability before Stage 3
+
+Delivery reliability is a prerequisite for external engines because an ACP turn is another indeterminate side-effect boundary. The stage is sequenced as delivery, then bounded context/resources, then execution-outcome uncertainty. Only Stage 2.5-A is approved for implementation now; later slices require their own cards and measurements.
+
+#### Stage 2.5-A — `delivery/v1`
+
+- Add the Core-owned delivery projection from §7 and the local store from §9. Preserve the existing `session/v1`, `runs.json`, and registry formats.
+- Classify Telegram results without changing the Task: persist before send; require a message id for `sent`; allow one plain-text fallback only for a definitive Markdown parse rejection; persist ambiguous outcomes as `unknown`; never auto-retry.
+- Recover terminal and delivery state from durable records when events are missing or lagged, without rerunning work or leaving typing/watchers stuck.
+- Add `/status [@agent]` delivery counts and `/result <run-id>` as the owner-only, model-free way to read a completed Run's stored answer. Telegram explicitly sends a tracked delivery; CLI prints the stored answer.
+- Apply the existing en/ko/ru and Agent-attribution rules before chunk tracking.
+- Do not change dependencies, on-disk Session/Run schemas, provider selection, approvals, context budgets, tool policy, or ACP.
+- The delivery store is the authority for delivery, not Session or the channel. A missing file creates nothing by itself; corrupt/unsupported data fails closed without reset. Retention is bounded and never prunes unresolved records without an explicit owner action.
+
+Stage 2.5-A acceptance requires automated transition, failure, restart, event-lag, chunking, localization, and real CLI process coverage; zero secret/prompt/tool-argument leakage; full formatting, clippy, release-build, and budget gates; and a separate owner-run Telegram check. A passing mock Bot API test is not live proof.
+
 ### Stage 3 — ACP and bounded delegation
 
 - Implement one validated ACP path behind core approval and sandbox boundaries.
@@ -471,6 +507,17 @@ Stage 2 must additionally prove:
 - Logs and status distinguish Agent/Run/Engine/model and do not contain secrets or prompt contents. Provider- and tool-failure canary tests assert that unique prompt, provider-body, and tool-argument strings from a real CLI process never appear in `logs/agent.log`.
 - Existing `session/v1` data replays as `main` history, legacy `model_call` usage is attributed to `main`, new Runs carry their own Agent attribution, and no history is merged into another Agent.
 - Real owner-run Telegram and configured-provider checks pass before the feature is presented as live-verified.
+
+Stage 2.5-A must prove:
+
+- Every allowed and forbidden delivery transition, including `unknown` with no automatic retry and no automatic send after restart.
+- A persisted pre-send record; no Telegram call when the initial delivery write fails; `sent` only with a message id; one plain-text fallback only for a definitive Markdown rejection.
+- Chunk-level truthful state for partial sends, Agent labels, and `/status` counts.
+- Terminal recovery after missing, lagged, or closed RuntimeEvents without rerunning a Task, duplicating a send, or leaving typing active.
+- `/result <run-id>` returns a completed Run's stored redacted answer with zero model/tool calls, and explicit Telegram delivery is tracked.
+- Corrupt, invalid-UTF-8, unknown-version, and unknown-field delivery data fails closed while preserving the original file; private atomic writes and bounded retention hold.
+- No response text, prompt, tool argument, tool output, or credential is duplicated into the delivery store or logs; existing Session/Run data and schemas are unchanged.
+- Real CLI process tests, formatting, clippy, release build, and all resource budgets pass. Owner-run Telegram delivery and rendering remain a separate live gate.
 
 The ACP gate must prove approval allow/deny, unsupported-capability refusal, process-group cleanup, external file/network restrictions, and no automatic side-effect replay with both a mock ACP process and one real installed CLI.
 

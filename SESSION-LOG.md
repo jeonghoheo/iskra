@@ -1294,3 +1294,26 @@ dummy-config CLI idle RSS, isolated temp directory, after 3 s waiting on stdin
 ### Live label check (final, 2026-11-24)
 
 Status update: **complete.** The patched debug binary was restarted at 14:23. Run 17 (`second`) completed and sent one chunk at 14:23:45–46; Run 18 (`main`) completed and sent one chunk at 14:24:06. The owner confirmed that the `second` answer began with `@second` and the plain `main` answer had no label. This closes the only pending acceptance criterion for the reply-attribution patch. No commit or push was performed.
+
+
+## Stage 2.5 design promotion — delivery/v1 (2026-11-24)
+
+Status: **approved architecture recorded; no code, Goal, commit, push, or test run.**
+
+### What changed
+
+- `docs/ARCHITECTURE.md` now records Stage 2.5-A `delivery/v1` as the next approved implementation contract before Stage 3. The additions cover the Core-owned delivery projection, `memory/deliveries.json`, pre-send persistence, strict state semantics, no automatic retry of `unknown`, one plain-text fallback only for a definitive Markdown rejection, chunk/attribution truth, event-lag recovery, `/status` delivery counts, owner-only model-free `/result <run-id>`, fail-closed corrupt-store handling, bounded retention, and Stage 2.5-A verification requirements.
+- The architecture status and invariants now separate Run completion from delivery. Existing `session/v1`, `runs.json`, and registry formats are explicitly unchanged.
+- README (en/ko/ru) and the public site roadmap now say the approved next slice is delivery reliability, not Stage 3. They do not claim that it is implemented.
+- This record only promotes the already-approved design. It does not create a Goal or authorize code changes.
+
+### Baseline and verification
+
+- Repository: `master` HEAD `7b281cb`; the tree was clean before this documentation change and now contains the architecture, README/site, and Stage 2.5 record edits uncommitted. Stage 2 is committed as `3d3c98f`.
+- Last recorded baseline: **215 passed, 0 failed** (206 unit + 9 real CLI process, 2026-11-24). Tests, builds, clippy, and resource measurements were not rerun for this documentation change.
+- Recorded budgets remain historical: stripped binary 6.40 MiB, dummy-config CLI idle RSS 4.06 MiB, 7 direct dependencies.
+
+### Limits and next step
+
+- No implementation, real Telegram/provider call, owner-run verification, commit, or push was performed.
+- The next step is owner review of the compact Stage 2.5-A task card. A separate explicit instruction is required before creating a Goal or starting implementation.

@@ -49,7 +49,7 @@ and reassembled — swap the model, the channel, or the tools without touching t
 - [x] Shell tool (`ls`, `cat`, `git`, `cargo`) with subcommand and argument policy, cleared environment and macOS sandbox (cargo is disabled where no OS sandbox exists) + a verified coding task
 - [x] Shell hardening (v1.1): 21 bypass paths closed and covered by tests
 - [x] Two-agent runtime (Stage 2): a local `iskra.json` registry (at most two agents), an isolated model, tools, memory, Session, workspace and usage record per agent, a durable run queue in `memory/runs.json`, explicit `@agent` routing, `/agents`, `/status [@agent]`, `/stop [@agent]`, `/resume [@agent]`, and `@name` attribution on replies from another agent
-- [ ] Next up: one validated ACP engine path and bounded delegation (Stage 3); decision-model routing and product surfaces remain later stages
+- [ ] Next up: Stage 2.5 delivery reliability (`delivery/v1`) — approved, not implemented — then one validated ACP engine path and bounded delegation (Stage 3); decision-model routing and product surfaces remain later stages
 
 ## Known limitations
 
@@ -91,7 +91,7 @@ and reassembled — swap the model, the channel, or the tools without touching t
 | Version | Direction |
 |---|---|
 | v1 | A personal agent for one user (Telegram, one brain, five tools, Markdown memory) |
-| v2 (in progress) | Swappable parts — two-agent runtime, durable runs and explicit routing are done; ACP engines, bounded delegation and decision-model routing remain |
+| v2 (in progress) | Swappable parts — two-agent runtime, durable runs and explicit routing are done; delivery reliability (`delivery/v1`) is next, then ACP engines, bounded delegation and decision-model routing |
 | v3 | Delegated work — triggers, bot packages, identity spec (`identity/v1`) |
 | v4 | Desktop app (Tauri) — multi-bot, computer use behind approval gates |
 | v5 | Product — hosted mode, per-user memory + adapter serving, signed releases |
