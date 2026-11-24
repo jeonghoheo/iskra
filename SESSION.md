@@ -1031,3 +1031,121 @@ The authoritative contract is now `docs/ARCHITECTURE.md` §3 invariant 10, §7 "
 ### Record correction
 
 Earlier entries say the post-live patch was not committed. That was accurate when written; the Stage 2 work, including the patch, was later committed as `3d3c98f`, and documentation was committed as `7b281cb`. Historical entries are preserved rather than rewritten.
+
+
+---
+
+## Commercial validation P0 — paid Launch pilot (2026-11-24)
+
+Status: **business strategy approved and recorded; no productization implementation, payment flow, deployment, customer outreach, or external publication has been started by this entry.** Stage 2.5-A `delivery/v1` remains the current implementation target and is not replaced by this commercial track.
+
+### Decision and source of truth
+
+The recommended sequence is **paid Launch setup → retained workflow evidence → limited Managed Always-on → reusable verification/procedure assets → Team only after single-owner economics work**. `docs/BUSINESS.md` §0 and §6 are the authoritative business contract, including the beachhead customer, scenario comparisons, price hypotheses, phase gates, and unit-economics limits.
+
+The first paid offer is a fixed-scope **$300 Iskra Launch** hypothesis: assisted macOS setup, one provider, two isolated Agents, three owner-relevant verified workflows, recovery instructions, and 14 days of bounded support. The **$49/month Managed Always-on** founding-pilot price is tested only after measured operating cost and repeated owner use. Both are experiments, not final public prices or revenue claims.
+
+The first 90 days do not include a broad connector catalog, marketplace, voice, mobile/desktop rewrite, automatic model routing, self-serve multi-tenancy, or per-Agent pricing. ACP and delegation remain behind `delivery/v1` and paid-demand evidence. Private B2B deployment is considered only for a clear inbound lead.
+
+### Defensibility contract
+
+Features alone are not treated as an uncopyable moat. Build four reinforcing assets:
+
+1. Reproducible Task evaluations comparing verified success, total cost, wall time, human intervention, and recovery by Agent/model.
+2. Reusable Procedures containing verification and failure/recovery knowledge, not just persona prompts.
+3. Public reliability evidence from failure injection, no-replay recovery, delivery reconciliation, backup/restore, and secret-leak checks.
+4. Three real niche case studies with owner-approved inputs, artifacts, cost, limitations, and outcomes.
+
+Customer content and metrics require explicit consent and minimization. Local export and readable data remain product features; forced lock-in is not the moat.
+
+### P0-S — sales-package and customer-discovery card (normal mode)
+
+- **Outcome**: A truthful paid-pilot offer, a real intake/payment route, an interview outline, and a qualified-lead list are ready before broad product investment.
+- **Spec**: `docs/BUSINESS.md` §0 and §6 Phase B; the approved commercialization plan saved in the session plan file.
+- **Files**: `docs/BUSINESS.md`, `docs/index.html`, and existing README/site files only for verified behavior and the actual offer. No new framework or unverified pricing/checkout UI.
+- **Proof**: The page names the target customer, $300 experiment, included/excluded scope, BYOK/model charges, support and refund boundary, known limitations, and a working owner-approved intake route. Every product claim maps to current verified behavior or is labelled planned. The owner confirms payment/tax/refund feasibility.
+- **Current**: `master` HEAD `b5af990`; the latest recorded test baseline is 215 passed, 0 failed, not rerun for this documentation work. `delivery/v1` is designed but not implemented. The business-document changes in this commercialization entry are uncommitted.
+- **Stop**: Do not invent a payment link, create accounts, publish a customer story, send outreach, collect sensitive customer data, or promise Team/integrations/24-7 support. Missing payment or owner input pauses the affected sales step, not unrelated technical work.
+- **Live**: Owner performs account/payment setup, approves each external campaign or message, participates in customer calls, and records actual payment/refund results.
+
+### First 14-day commercial sequence
+
+| Timing | Work | Evidence |
+|---|---|---|
+| Day 1–2 | Finalize offer, exclusions, refund/support boundary, payment/tax path, and ten-question problem-interview outline | Owner-reviewable offer and a legal payment route |
+| Day 2–5 | Prepare three reproducible workflow demonstrations and the installation/diagnostic/export requirements; do not displace `delivery/v1` implementation | Real artifacts, expected checks, model/time/cost fields, and known limits |
+| Day 4–6 | Narrow the existing site message and add a real pilot CTA after intake is approved | No dead checkout or unsupported claim |
+| Day 5–14 | Select 30 qualified leads, request ten problem interviews, and offer at most three paid pilots | Contact/interview/payment outcomes, not free-interest counts |
+| On delivery | Measure time to first useful Task, Task success, manual repair, and support effort for 14 days | Customer-specific evidence with no private data in the repository |
+
+### Productization sequencing gate
+
+After Stage 2.5-A, write separate machine-verifiable cards for installation/diagnostics, export/restore, and the three workflow evaluations. Public self-serve distribution additionally requires a signed/notarized release path. Managed hosting requires its own security and operations design covering per-customer isolation, Linux tool limits, owner-entered secrets, encrypted backup/restore, health alerts, update/rollback, cancellation/export/deletion, and cost accounting.
+
+Do not start all productization slices as one autonomous Goal. Owner-only payment, Telegram, customer, and visual checks remain normal-mode verification.
+
+### Commercial stop and expansion rules
+
+- Ten qualified interviews with no paid pilot: change the customer/problem/offer rather than adding features.
+- Fewer than two of the first three owners active in week four: do not expand managed hosting; fix retention first.
+- Below 80% verified Task success or above one manual repair per Task on average: do not broaden claims or self-serve acquisition.
+- Managed gross margin below 70% or stabilized support above 30 minutes/customer/month: correct price, allowance, or scope before onboarding more customers.
+- Any authority-boundary, secret-leak, uncontrolled retry, or failed-restore issue stops affected customer onboarding until fixed and verified.
+
+
+---
+
+## Outcome-first Headless Control Plane strategy (2026-11-24)
+
+Status: **approved business/architecture direction recorded; no new code Goal, paid launch, provider account, customer outreach or deployment is started by this entry.** Stage 2.5-A `delivery/v1` remains the current implementation target. The earlier Commercial validation P0 `$300 installation` offer and the rejected vertical-service-first draft are superseded for future work; their historical records are preserved.
+
+### Source of truth and product direction
+
+`docs/BUSINESS.md` §0 and §6 define the commercial sequence and paid managed offer. `docs/ARCHITECTURE.md` §1/§5/§12/§13 define the future Outcome, scoped event projection, Lease and verification boundaries without marking them implemented.
+
+The target is a MausBot-like free Local workbench plus paid Always-on Cloud/Team, differentiated as a **model-neutral Headless Agent Control Plane**. Headless means **any UI, not no UI**. The public model is:
+
+```text
+Outcome (owner + metric + acceptance + budget + scope)
+  └── Task
+        └── Run
+              └── Event / Artifact / Evidence / Delivery
+```
+
+Task/Run completion does not automatically achieve an Outcome. A single authorized event model supports Web Ops, Telegram/Slack, CLI, Kanban and customer-generated UIs. External/generated UIs never write stores directly and use minimum-scope projections.
+
+Vercel Board already provides a hosted message/task primitive with claims, leases, schedules and sync and is free while experimental. Iskra does not clone it. Iskra's intended differentiation is Outcome evidence, local/customer-selected data residency, actual per-Agent authority, cross-provider evaluation, no invisible replay and simple managed operation. A future Board connection is only an optional adapter subject to separate terms/security review.
+
+### P0-H — demand and wedge validation card (normal mode)
+
+- **Outcome**: Evidence that technical teams will pay for a Managed Headless Workspace rather than merely request GLM setup help.
+- **Spec**: `docs/BUSINESS.md` §0 and §6 Phase A.
+- **Scope**: 15 qualified interviews, at least five actual GLM Coding Plan/API users and five teams operating multiple Agent engines; no new product code or customer data collection without consent.
+- **Proof**: Current providers, spend, switching reasons, laptop-off work, API clients, operational failures and alternatives are recorded. Five teams confirm a real multi-provider/Agent operations problem and three discuss a concrete managed design-partner Task and budget.
+- **Current**: `master` HEAD `b5af990`; latest recorded code baseline 215 passed, 0 failed, not rerun for this strategy work. Stage 2.5-A is designed but not implemented.
+- **Stop**: If only GLM setup demand appears, treat it as content demand. If five teams do not confirm the operating problem, do not start the large Headless/cloud build. External messages and publication require separate owner approval.
+- **Live**: Owner performs interviews and any actual GLM/provider/account/payment/network checks. No representative “Russian developers are migrating to GLM” claim is allowed without representative evidence.
+
+### Sequential technical cards after P0-H
+
+These are **design-card names and gates, not authorization to start all implementation**. Each needs its own scope, state transitions, files, proof and explicit start instruction.
+
+1. **Stage 2.5-A `delivery/v1`** — already approved and current; separate Run completion from client delivery, preserve unknown/no-retry semantics.
+2. **Provider compatibility and Outcome evaluation** — provider profiles, DeepSeek regression, GLM mock/live gates, unknown price/balance, cross-provider cost/latency/evidence.
+3. **`outcome/v1` + `headless/v1`** — local authenticated Outcome commands, acceptance/evidence, idempotency, strict schemas, bounded requests and cursor-based authorized event projections.
+4. **MausBot-like workbench slices** — one validated ACP engine, then only required schedules/webhooks/MCP/Approval Broker, verification, Procedures and the Intake → Outcome Contract flow.
+5. **Managed Headless Workspace** — single-tenant always-on operation, one remote client, one recurring Outcome, backup/restore, update/rollback, termination export and measured total cost.
+6. **Control Plane/Team** — scoped BYOUI, leases only when actual multi-dispatcher claims require them, bounded delegation, A2A, Team and self-serve billing after retention/economics.
+
+### Outcome and commercial gates
+
+- North-star metrics: Verified Outcome Rate, Cost per Verified Outcome, Time to Verified Outcome, Unassisted Outcome Rate, Repeat Outcome Rate and Outcome Delivery Assurance.
+- First paid managed beta: target **8–16 weeks after product/security gates**, not an immediate sales promise. LOI, waitlist and free usage are not revenue.
+- Paid beta gate: three actual monthly-paying design partners, two retained after four weeks, one recurring Outcome without manual repair for an agreed period, proven restore/export/deletion and measured total cost.
+- Pricing: platform/operations plus actual resources; Verified Outcome pricing only when acceptance is objective. No per-Agent or per-execution pricing.
+- Twenty qualified contacts and three concrete paid proposals with no purchase stop generic managed-cloud expansion and trigger segment/use-case review.
+- Every design partner requiring a private fork or unrelated custom workflow stops the generic Control Plane hypothesis before it becomes an unbounded consultancy.
+
+### Visual deliverables in this strategy slice
+
+The completed visual set is `docs/assets/iskra-outcome-model.svg`, `iskra-byo-ui.svg`, `iskra-headless-strategy.svg`, `iskra-control-plane-architecture.svg`, `iskra-final-product.svg`, and `iskra-ops-wireframe.png`. All are labelled **Target / Concept / Not implemented** and use synthetic data. The five SVG files passed XML parsing and were rendered with `sips` at 1600×1000; the Outcome Board PNG is 1800×1100. All rendered images passed `ReadMediaFile` inspection for aspect ratio, clipping, Korean text and panel/button visibility. An initial Quick Look thumbnail render produced square cropped images and was discarded as an invalid verification artifact; correct `sips` renders replaced it. These are design assets, not claims of implemented product behavior.

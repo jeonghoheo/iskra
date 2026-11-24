@@ -1,18 +1,18 @@
 # Iskra Agent Workbench Architecture
 
-Status: **approved target design; the Stage 2 two-Agent slice is committed as `3d3c98f`, and the Stage 2.5-A `delivery/v1` contract is approved but not implemented. Stage 3 and later are not started**.
+Status: **approved target design including the future Outcome-first Headless Control Plane; the Stage 2 two-Agent slice is committed as `3d3c98f`, and Stage 2.5-A `delivery/v1` is approved but not implemented. Outcome/Headless/BYOUI/Lease, Stage 3 and later are not implemented**.
 Date: 2026-11-24.
 
-This document defines the architecture for turning Iskra from one persistent personal agent into a model-neutral workbench for multiple agents. It preserves the existing Rust core, local data ownership, fail-closed tools, and single-binary distribution.
+This document defines the architecture for turning Iskra from one persistent personal agent into a model-neutral workbench and, behind later gates, an Outcome-first Headless Control Plane. It preserves the existing Rust core, local data ownership, fail-closed tools, and single-binary distribution.
 
-The compatibility runtime and first two-Agent slice are implemented. The next implementation target is delivery reliability (`delivery/v1`): a completed Run must not imply that its answer reached Telegram. ACP, automatic model routing, agent-to-agent delegation, and hosted mode remain behind separate gates.
+The compatibility runtime and first two-Agent slice are implemented. The next implementation target remains delivery reliability (`delivery/v1`): a completed Run must not imply that its answer reached Telegram. ACP, Outcome/Headless APIs, BYOUI projections, automatic model routing, agent-to-agent delegation, leases and hosted mode remain behind separate gates.
 
 ## 1. Goals
 
-- Let an owner assign work to agents with different roles, models, providers, and tool permissions.
+- Let an owner define a measurable **Outcome** with acceptance and evidence, then decompose it into Tasks and Runs with different roles, models, providers and tool permissions.
 - Make model and engine replacement possible without moving core-owned memory, policy, approvals, audit, sessions, or usage accounting into the engine.
-- Complete work with measurable cost, latency, reliability, and human-intervention efficiency.
-- Keep Telegram and CLI behavior working while allowing a future local web or desktop client to use the same core.
+- Measure **Verified Outcome Rate**, total cost per Verified Outcome, time to evidence, human intervention, repeat achievement and delivery assurance—not merely Task/token counts.
+- Keep Telegram and CLI behavior working while allowing SaaS backends, other agents, a thin web console and customer-generated UIs to use the same scoped Core projection. Headless means any UI, not no UI.
 - Recover from crashes without silently repeating model calls, tools, payments, external sends, or other side effects.
 
 ## 2. Non-goals for the first slices
@@ -36,6 +36,8 @@ The compatibility runtime and first two-Agent slice are implemented. The next im
 8. **Routing fallback is not security fallback.** Routing may fall back to `main`; a failed permission or policy check never falls back to allow.
 9. **Budgets are measured.** The existing core budgets remain: stripped binary at most 20 MB, idle core RSS at most 30 MB, and at most 15 direct dependencies. External engine resource use is reported separately rather than hidden inside or excluded silently from product measurements.
 10. **Delivery is not execution success.** A completed Run means the core received a valid final result. Whether that result reached a channel is a separate Core-owned delivery record, and an ambiguous external send is never blindly retried.
+11. **Outcome achievement is not Task completion.** A future Outcome becomes `achieved` only after its declared acceptance checks and required evidence pass. Task/Run completion, generated text and a client receipt are each insufficient alone.
+12. **Projections are authorized views, not new authorities.** Every UI receives a scoped, versioned projection of canonical state. Generated or external UIs never write stores directly; commands and approvals pass through Core policy. Sync exports use the minimum necessary fields and explicit platform-scope warnings.
 
 ## 4. Current baseline and why a runtime is needed
 
@@ -52,6 +54,21 @@ The current coupling is not multi-agent-ready:
 Creating several `Brain` values alone would therefore mix authority and accounting. The runtime boundary comes first.
 
 ## 5. Concepts and ownership
+
+### Outcome (target contract, not implemented)
+
+An Outcome is the customer-visible desired result and the top-level contract for future Headless and BYOUI clients. It contains an owner, desired result, baseline/target metric and direction, deadline, budget, allowed Agents/tools/workspaces, approval policy, data scopes, client idempotency key, result-delivery policy, and acceptance checks with required evidence/evaluator.
+
+The target hierarchy is:
+
+```text
+Outcome
+  └── Task
+        └── Run
+              └── Event / Artifact / Evidence / Delivery
+```
+
+A vague objective without a metric or acceptance is not promoted into an Outcome; Intake asks a bounded question or keeps it as a Task. Target states are `draft → proposed → active → evaluating → achieved`, with `blocked`, `failed` and `cancelled`. Task/Run completion never automatically achieves an Outcome. External ambiguity remains `unknown`, and reopening requires explicit evidence/event history rather than a silent reset.
 
 ### Agent
 
@@ -77,11 +94,17 @@ Agents refer to engines by ID. Changing a model or provider changes an Engine pr
 
 ### Task and Run
 
-- A **Task** is the owner-visible requested outcome.
+- A **Task** is an actionable unit of work linked to an Outcome when the future Outcome contract exists; current single-owner work remains valid without requiring an Outcome migration.
 - A **Run** is one Agent's execution attempt for a Task.
 - A retry is a new Run linked to the same Task; it is never disguised as the same attempt.
 - A delegated Run has a parent Task/Run and a separately bounded budget.
 - Every Task has exactly one accountable primary Agent, even when later delegation is enabled.
+
+### Event projection and Lease (target contracts, not implemented)
+
+A canonical typed event log lets Web Ops, Telegram/Slack, CLI, Kanban and customer-generated UIs observe the same Outcome/Task/Run state through monotonic cursors. Projections apply actor, channel and data-scope grants; they never expose secrets or let a UI mutate the store directly.
+
+A future multi-dispatcher claim may carry a Lease with an owner and expiry, heartbeat/renew and release/completion. Expiry marks work interrupted/unknown for explicit evaluation; it never automatically retries a model call, external write, payment or delivery. The current single-dispatcher lock does not gain a lease merely for presentation parity.
 
 ### Workspace
 
@@ -96,7 +119,7 @@ A Workspace is an owner-approved file root identified by ID. Models never choose
 ## 6. Component boundaries
 
 ```text
-Telegram / CLI / future local web or desktop
+SaaS / Other Agents / Telegram / CLI / Web / generated UIs
                   |
              Channel Adapter
        commands in / RuntimeEvents out
@@ -126,7 +149,7 @@ Telegram / CLI / future local web or desktop
 
 ### Core API
 
-The Core API is the only entry point for accepting work, changing run state, granting approval, recording usage, and publishing artifacts. Channels normalize input and render output; they do not decide permissions or independently persist execution state.
+The Core API is the only entry point for accepting work, changing run state, granting approval, recording usage, and publishing artifacts. Channels normalize input and render output; they do not decide permissions or independently persist execution state. The future public `outcome/v1` contract accepts desired results and acceptance/evidence requirements; `headless/v1` exposes bounded Outcome commands and cursor-based authorized event projections. Task and Run APIs remain subordinate execution interfaces.
 
 ### Agent and Engine Registries
 
@@ -483,11 +506,15 @@ Stage 2.5-A acceptance requires automated transition, failure, restart, event-la
 - Implement one validated ACP path behind core approval and sandbox boundaries.
 - If delegation is later approved, use depth 1, bounded child count/time/tokens, and one accountable primary Agent.
 
-### Stage 4 — optimization and product surfaces
+### Stage 4 — Outcome, Headless and product surfaces
 
-- Evaluate rules and decision-model routing.
-- Add reusable procedures/skills and credential-free portable packages.
-- Consider local web/Tauri and hosted mode only after local reliability and retention are demonstrated.
+- Add provider profiles and labelled cross-provider/cross-engine Outcome evaluations. GLM is an early compatibility candidate, not a hard-coded product identity.
+- Define `outcome/v1` and a local authenticated `headless/v1` with idempotency, strict schemas, request bounds and cursor-based event projections.
+- Add `verification/v1`, reusable Procedures/Routines, credential-free portable packages and the Intake → Outcome Contract → shadow Run → approval flow.
+- Implement an official thin Outcome Board as one BYOUI projection. Generated UIs run outside Core and begin read-only; approvals use Core commands only.
+- Add managed always-on, schedules/webhooks, backup/restore and remote access only after local reliability and retention are demonstrated.
+- Treat Vercel Board as an optional future communication adapter rather than cloning its message store. Add leases only for an actual multi-dispatcher/Agent claim requirement.
+- Evaluate rules and decision-model routing only against explicit/default baselines.
 
 ## 13. Verification requirements
 
@@ -521,11 +548,22 @@ Stage 2.5-A must prove:
 
 The ACP gate must prove approval allow/deny, unsupported-capability refusal, process-group cleanup, external file/network restrictions, and no automatic side-effect replay with both a mock ACP process and one real installed CLI.
 
+The future Outcome/Headless/BYOUI gate must additionally prove:
+
+- An Outcome cannot become `achieved` from Task/Run completion alone; declared acceptance and required evidence are mandatory.
+- Local-only default bind, owner authentication, idempotency, strict schema/version, request/time/size bounds and fail-closed invalid state.
+- Two independent clients receive identical authorized Outcome state through monotonic event cursors, with no automatic restart replay or duplicate admission.
+- A generated/external UI cannot write stores, bypass approval, read another scope or export secrets. External sync uses minimum fields and warns about differing platform grants.
+- Lease heartbeat, renew, release and expiry never automatically repeat side effects or reopen cancelled work.
+- Verified Outcome Rate, total cost, time to evidence, human intervention and delivery assurance are measured with external-engine resources included rather than hidden.
+
 ## 14. Reuse and license boundary
 
 OpenMausBot's non-`enterprise/` code is Apache 2.0 and may be selectively ported with its license, copyright, NOTICE, and modification obligations. Any actual port records the source repository, exact commit, source files, destination files, and modifications. The `enterprise/` tree, trademarks, and mascot are excluded.
 
 OpenBot is PolyForm Noncommercial 1.0.0. Iskra independently implements general ideas such as independent workspaces and durable queues; it does not copy OpenBot code, text, tests, or assets into the commercial product.
+
+Vercel Board is a product/architecture reference for BYOUI, canonical event projections, claims and leases. Iskra independently designs its Outcome-first local contracts and does not copy Vercel branding, media, UI assets or implementation. Any future Board adapter or code reuse requires separate API, terms and license review. Board's documented US-only storage, broad default visibility, profile permissions and sync-spill limits are treated as requirements for stronger customer-selected locality and scoped projections, not as claims that every competing product lacks those controls.
 
 References:
 
@@ -536,3 +574,12 @@ References:
 - https://github.com/nightly-labs/openbot
 - https://github.com/nightly-labs/openbot/blob/main/LICENSE
 - https://agentclientprotocol.com/get-started/introduction
+- https://vercel.com/blog/introducing-vercel-board
+- https://vercel.com/docs/board
+- https://www.anthropic.com/engineering/managed-agents
+- https://docs.langchain.com/oss/python/langgraph/overview
+- https://learn.microsoft.com/en-us/agent-framework/overview/
+- https://temporal.io/solutions/ai
+- https://modelcontextprotocol.io/docs/getting-started/intro
+- https://a2a-protocol.org/latest/
+- https://docs.z.ai/devpack/tool/claude

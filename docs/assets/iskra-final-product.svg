@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Iskra final product family</title>
+  <desc id="desc">같은 Core를 Local, Managed, Team으로 제공하고 여러 UI와 패키지를 연결하는 최종 제품 지도</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0E1420"/><stop offset="1" stop-color="#171B29"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity=".22"/></filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#FF8A55"/></marker>
+    <style>
+      text{font-family:'Apple SD Gothic Neo','Noto Sans CJK KR','Noto Sans KR',Arial,sans-serif;fill:#F6F4EF}
+      .muted{fill:#A8B2C5}.dim{fill:#77849A}.orange{fill:#FF8A55}.teal{fill:#56DCC7}.amber{fill:#FFD166}.blue{fill:#82AEFF}
+      .card{fill:#1D2535;stroke:#354158;stroke-width:2}.panel{fill:#151D2B;stroke:#2D394D;stroke-width:2}
+      .title{font-size:44px;font-weight:700}.subtitle{font-size:21px}.label{font-size:15px;font-weight:700;letter-spacing:1.4px}.h2{font-size:26px;font-weight:700}.h3{font-size:19px;font-weight:700}.body{font-size:17px}.small{font-size:14px}
+    </style>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#bg)"/>
+  <circle cx="1480" cy="80" r="260" fill="#56DCC7" opacity=".035"/>
+  <text x="65" y="65" class="label orange">ISKRA / TARGET CONCEPT · NOT IMPLEMENTED</text>
+  <text x="65" y="125" class="title">한 개의 Core, 여러 배포와 UI</text>
+  <text x="65" y="165" class="subtitle muted">최종 제품은 Bot이 아니라 Local·Managed·Team이 같은 Outcome 모델을 쓰는 제품군</text>
+
+  <g filter="url(#shadow)"><rect x="410" y="205" width="780" height="145" rx="25" fill="#202C3E" stroke="#FF8A55" stroke-width="3"/></g>
+  <text x="800" y="248" text-anchor="middle" class="label orange">SHARED FOUNDATION</text>
+  <text x="800" y="288" text-anchor="middle" class="h2">ISKRA CORE + OUTCOME / EVENT MODEL</text>
+  <text x="800" y="322" text-anchor="middle" class="body muted">Policy · Approval · Evidence · Delivery · Session · Procedure</text>
+
+  <g stroke="#FF8A55" stroke-width="3" marker-end="url(#arrow)">
+    <line x1="800" y1="350" x2="800" y2="390"/>
+    <line x1="410" y1="555" x2="410" y2="600"/>
+    <line x1="800" y1="555" x2="800" y2="600"/>
+    <line x1="1190" y1="555" x2="1190" y2="600"/>
+  </g>
+
+  <text x="65" y="400" class="label muted">CLIENTS / ANY UI</text>
+  <g>
+    <rect x="65" y="420" width="280" height="135" rx="18" class="card"/>
+    <rect x="375" y="420" width="280" height="135" rx="18" class="card"/>
+    <rect x="685" y="420" width="280" height="135" rx="18" class="card"/>
+    <rect x="995" y="420" width="280" height="135" rx="18" class="card"/>
+    <rect x="1305" y="420" width="230" height="135" rx="18" fill="#263044" stroke="#56DCC7" stroke-width="2"/>
+  </g>
+  <text x="205" y="465" text-anchor="middle" class="h2">CLI</text><text x="205" y="498" text-anchor="middle" class="small muted">script · wait · audit</text>
+  <text x="515" y="465" text-anchor="middle" class="h2">Telegram</text><text x="515" y="498" text-anchor="middle" class="small muted">chat · approval</text>
+  <text x="825" y="465" text-anchor="middle" class="h2">Web Ops</text><text x="825" y="498" text-anchor="middle" class="small muted">Outcome Board</text>
+  <text x="1135" y="465" text-anchor="middle" class="h2">SDK / API</text><text x="1135" y="498" text-anchor="middle" class="small muted">SaaS · CI · Agent</text>
+  <text x="1420" y="465" text-anchor="middle" class="h2 teal">BYOUI</text><text x="1420" y="498" text-anchor="middle" class="small muted">generated views</text>
+
+  <g filter="url(#shadow)">
+    <rect x="65" y="610" width="470" height="280" rx="22" class="card"/>
+    <rect x="565" y="610" width="470" height="280" rx="22" fill="#202C3E" stroke="#FF8A55" stroke-width="3"/>
+    <rect x="1065" y="610" width="470" height="280" rx="22" fill="#17302F" stroke="#56DCC7" stroke-width="2"/>
+  </g>
+  <text x="95" y="652" class="label blue">FREE LOCAL</text>
+  <text x="95" y="692" class="h2">Iskra Core</text>
+  <text x="95" y="731" class="body muted">· single binary / local state</text>
+  <text x="95" y="762" class="body muted">· Outcome API / isolated Agents</text>
+  <text x="95" y="793" class="body muted">· provider profiles / BYOK</text>
+  <text x="95" y="824" class="body muted">· readable export / no account</text>
+  <text x="95" y="862" class="h3 blue">채택과 검증의 진입점</text>
+
+  <text x="595" y="652" class="label orange">PAID ALWAYS-ON</text>
+  <text x="595" y="692" class="h2">Iskra Managed</text>
+  <text x="595" y="731" class="body muted">· remote authenticated API</text>
+  <text x="595" y="762" class="body muted">· schedules / webhook / resources</text>
+  <text x="595" y="793" class="body muted">· backup / restore / health</text>
+  <text x="595" y="824" class="body muted">· approval / delivery / termination</text>
+  <text x="595" y="862" class="h3 orange">운영 결과에 대한 반복 매출</text>
+
+  <text x="1095" y="652" class="label teal">PAID COLLABORATION</text>
+  <text x="1095" y="692" class="h2">Iskra Team / Enterprise</text>
+  <text x="1095" y="731" class="body muted">· human seats / shared packages</text>
+  <text x="1095" y="762" class="body muted">· organization policy / audit</text>
+  <text x="1095" y="793" class="body muted">· private overrides / budgets</text>
+  <text x="1095" y="824" class="body muted">· self-host / support / migration</text>
+  <text x="1095" y="862" class="h3 teal">안정된 managed 이후 확장</text>
+
+  <rect x="65" y="925" width="1470" height="48" rx="14" class="panel"/>
+  <text x="800" y="956" text-anchor="middle" class="body muted"><tspan class="orange">PACKAGES + MODELS</tspan><tspan> · Agent · Procedure · Routine · Provider profiles · GLM · DeepSeek · Qwen · Claude · OpenAI · Local</tspan></text>
+</svg>

@@ -1,11 +1,69 @@
 # Iskra Business Strategy
 
-Status: **recommended strategy; no paid product, price, account, or external service has been launched**.
-Date: 2026-11-23.
+Status: **Outcome-first Headless Control Plane strategy approved; current implementation remains Stage 2.5-A `delivery/v1`; no paid product, final price, payment account, customer campaign, or external service has been launched**.
+Date: 2026-11-24.
+
+## 0. Current product and commercial strategy
+
+Build Iskra toward a MausBot-like **free local Agent workbench plus paid Always-on Cloud and Team**, but differentiate it as a **model-neutral, Headless Agent Control Plane**. Headless means **any UI, not no UI**: customer software, other agents, CLI, Telegram, a thin web console, and generated interfaces are replaceable projections of one authorized Outcome/event model.
+
+The public positioning hypothesis is:
+
+> **The model-neutral, headless control plane for agent work.** Run different agents, models and tools behind one durable API, policy boundary and audit trail.
+
+The public customer contract is **Outcome → Task → Run → Event/Artifact/Evidence/Delivery**, not merely an Agent chat or a count of executed Tasks. An Outcome has an owner, desired result, baseline/target metric, budget, data/tool scope, approval policy, acceptance checks and required evidence. A completed Run never automatically means an achieved Outcome.
+
+This section supersedes the earlier `$300 generic installation` offer and the rejected vertical-service-first draft. Limited design-partner support remains, but only to deliver the same managed Iskra product—not to become a different custom consultancy for every customer.
+
+### Beachhead customer
+
+The first paid-customer hypothesis is a one-to-ten-person software or AI product team, or a technical founder, that already uses multiple models, Agents or CLIs; has API/webhook/routine work that must continue while a laptop is closed; and needs one policy, cost, delivery and recovery boundary. They do not want to be locked into one model provider's hosted runtime or assemble a large framework stack merely to operate Agents.
+
+Free Local adoption targets technical users who combine cost-efficient models such as GLM, DeepSeek or Qwen with existing coding agents and value a small self-hosted runtime and readable customer-owned data. Non-technical “business autopilot” buyers are not the initial market.
+
+The customer pays for this operating result:
+
+> “My software or another Agent can submit a measurable Outcome to Iskra, keep it running after my laptop closes, and rely on Core-owned permissions, approvals, evidence, delivery and recovery.”
+
+### Offer structure
+
+| Offer | Commercial role | Included value | Pricing boundary |
+|---|---|---|---|
+| **Free Local** | Adoption and proof | FSL single binary, local Outcome/event API, isolated Agent state, provider profiles, CLI/Telegram clients, export and no mandatory account | BYOK; no per-Agent fee; only implemented capabilities are public |
+| **Managed Always-on** | Recurring revenue | Remote authenticated API, schedules/webhooks, queue resources, backup/restore, health, updates, approvals, delivery/usage evidence and termination export | Platform/operations fee plus actual resources; optionally add Verified Outcome pricing only when acceptance is objective |
+| **Team** | Human collaboration | Seats, shared Agent/Procedure packages, private overrides, organization policy, approval roles and audit retention | Human seats plus resources after single-owner managed retention is proven |
+| **Private Deployment / Support** | Higher-touch revenue | Self-hosted deployment, migration, security review, training and support | Scoped services without private Core forks or unimplemented Team claims |
+
+Do not set final public prices by copying competitors. The first paid offer is a monthly **Managed Headless Workspace** design-partner beta, not a one-time installation fee. A realistic first paid-beta target is **8–16 weeks after product and security gates**, not an immediate revenue promise. LOIs, waitlists and free usage are not revenue.
+
+### Outcome and BYOUI as product differentiators
+
+Vercel Board already provides a hosted, harness-agnostic message store with channels, threads, claims, leases, dependencies, watchers, schedules, structured data, grants, event logs and external sync. It is free while experimental. Iskra must not clone that primitive.
+
+Iskra's intended differentiation is the combination of:
+
+- **Outcome and evidence:** measurable customer results rather than message/Task counts.
+- **Local and customer-selected data residency:** a single local binary, customer-owned readable state and no required Vercel/provider account.
+- **Actual per-Agent authority:** independent workspaces, tools, budgets and approval policies rather than a display-only Agent profile.
+- **BYOUI:** one canonical, scoped event projection rendered as official Web Ops, Telegram/Slack, CLI, Kanban or customer-generated UI.
+- **Cross-provider evidence:** verified Outcome rate, total cost, latency and human intervention by model/engine/workflow.
+- **No invisible replay:** delivery uncertainty, lease expiry and restart do not silently repeat side effects.
+
+Vercel Board can become an optional communication adapter later; Iskra does not need to recreate every Board or Slack feature.
+
+### Demand and GLM validation
+
+During the first 14 days, interview 15 qualified technical users, including at least five actual GLM Coding Plan/API users and five teams running multiple Agent engines. Validate real provider spend, switching reasons, laptop-off work, API clients, operational failures and current alternatives. Require five teams with an actual multi-provider/Agent operating problem and three with a concrete managed design-partner Task and budget discussion.
+
+Z.AI officially supports GLM Coding Plan integration with Claude Code, and Russian-language setup/payment guides exist. No representative evidence has been found that most Russian developers are migrating to GLM. Treat GLM as an early Russian-speaking developer-community wedge and the next provider-compatibility candidate, never as the whole market thesis or a hard-coded default.
+
+### Current technical dependency
+
+The approved Stage 2.5-A `delivery/v1` contract remains the current implementation target. The commercial and long-term architecture strategy does not replace it or start a parallel code Goal. Subsequent sequential cards cover provider compatibility, `outcome/v1`, `headless/v1`, scoped event projections, managed operation and only then bounded delegation/leases where required.
 
 ## 1. Product thesis
 
-Iskra should be the **lightweight, model-neutral, safety-first workbench for people who want several AI agents to finish real work efficiently**.
+Iskra should be the **lightweight, model-neutral, safety-first Outcome control plane for software teams that want several AI agents to complete verifiable work through any client or UI**.
 
 The differentiator is not the largest model catalog, the most connected apps, or an always-full-access agent. It is the combination of:
 
@@ -13,9 +71,9 @@ The differentiator is not the largest model catalog, the most connected apps, or
 - Replaceable models and agent engines.
 - Independent workspaces and explicit ownership.
 - Core-controlled policy, approvals, memory, and audit.
-- Measured cost and human effort per successfully completed Task.
+- Measured cost and human effort per **Verified Outcome**, with Tasks and Runs subordinate to customer acceptance evidence.
 
-The initial customer is a solo technical user who already has one or more AI subscriptions or API keys. The later customer is a small team that needs shared, always-on, auditable agent capacity without giving every engine unrestricted host access.
+The initial customer is the beachhead technical owner defined in §0. The later customer is a small team that needs shared, always-on, auditable agent capacity without giving every engine unrestricted host access.
 
 ## 2. What the reference projects demonstrate
 
@@ -61,6 +119,30 @@ Sources:
 - https://openbot.run/
 - https://openbot.run/pricing
 
+### Headless and orchestration references
+
+Observed public structures:
+
+- **Vercel Board:** an experimental hosted communication primitive and message store for people and coding Agents. Channels/threads/tasks, claims and renewable leases, dependencies, watchers/schedules, structured data, grants, ordered event logs, Slack/GitHub/Linear sync, and sandbox policies are documented. It is free during the experiment. Public documentation also notes US-only storage, broad default team visibility, profiles without independent permissions, and permissions/sync spill risks.
+- **Anthropic Managed Agents:** a hosted meta-harness separating session, harness and sandbox, with many brains/hands and credentials outside the sandbox.
+- **LangGraph / LangSmith:** a low-level stateful Agent orchestration runtime plus observability/evaluation/deployment products.
+- **Microsoft Agent Framework:** multi-provider Agents, harnesses, explicit workflows and integrations.
+- **Temporal:** durable orchestration for AI applications and Agent control planes.
+
+Useful lesson: Headless coordination, leases and durable state are becoming standard infrastructure, not a standalone moat. Iskra should integrate useful primitives where sensible and win on local/customer-owned deployment, actual per-Agent policy, Outcome evidence, provider neutrality and simple managed operation.
+
+Sources:
+
+- https://vercel.com/blog/introducing-vercel-board
+- https://vercel.com/docs/board
+- https://www.anthropic.com/engineering/managed-agents
+- https://docs.langchain.com/oss/python/langgraph/overview
+- https://learn.microsoft.com/en-us/agent-framework/overview/
+- https://temporal.io/solutions/ai
+- https://modelcontextprotocol.io/docs/getting-started/intro
+- https://a2a-protocol.org/latest/
+- https://docs.z.ai/devpack/tool/claude
+
 ## 3. Recommended offer structure
 
 ### Free Local
@@ -69,6 +151,7 @@ Include the complete local orchestration core:
 
 - Multiple Agents and replaceable Engine profiles.
 - Explicit routing, durable queues, independent sessions/workspaces, core policy, approvals, usage records, and exportable diagnostics.
+- Versioned `outcome/v1` and `headless/v1` contracts, scoped event projections for BYOUI, and acceptance/evidence linked to customer-visible results.
 - BYOK/BYO-agent with no hidden model markup.
 - No mandatory account, cloud connection, telemetry, or paid license for internal business use under the existing FSL terms.
 
@@ -163,53 +246,75 @@ These measures are more aligned with the goal than downloads, stars, number of b
 
 ## 6. Go-to-market sequence
 
-### Phase A — prove the local workbench
+### Phase A — demand and wedge evidence, Day 1–14
 
-- Finish `session/v1` live verification.
-- Ship the compatibility runtime and two-Agent explicit-routing slice.
-- Publish reproducible coding/file-workflow evaluations using fictional or synthetic data.
-- Document exact model/provider and resource limits rather than claiming universal efficiency.
+- Interview 15 qualified technical users, including at least five actual GLM users and five teams operating multiple Agent engines.
+- Record current providers, spend, switching reasons, laptop-off work, API clients, delivery/recovery failures and existing alternatives.
+- Design three synthetic demonstrations: backend/CI → Outcome API → evidence/result; GLM versus another provider on the same labelled Outcome; scheduled/webhook work → approval → delivery/audit.
 
-Gate: repeated real use, successful isolated Tasks, no state/permission cross-contamination, and known cost/latency measurements.
+Gate: five teams confirm a real multi-provider/Agent operations problem and three discuss a concrete managed design-partner Task and budget. GLM setup questions alone validate content demand, not Control Plane demand.
 
-### Phase B — reusable work and external engines
+### Phase B — reliability and Headless Local v0, 0–3 months
 
-- Add one securely mediated ACP engine path.
-- Add portable Agent/Team packages and bounded, explicit delegation if evaluations justify them.
-- Publish a small set of high-quality role packages for concrete outcomes rather than a large unreviewed catalog.
+- Implement the approved Stage 2.5-A `delivery/v1` first.
+- Add provider profiles and reproducible GLM/DeepSeek comparison gates with unknown cost/balance shown honestly.
+- Define `outcome/v1`: desired result, metric, acceptance, evidence, owner, budget and scope.
+- Add `headless/v1`: local-only authenticated Outcome API, idempotency, strict schemas, bounded requests and cursor-based event projections.
+- Prove that two different clients render the same authorized Outcome state without automatic restart replay.
 
-Gate: users reuse packages and complete recurring Tasks with less intervention; external engines cannot bypass core authority.
+Gate: a new user defines an acceptance-bearing Outcome and obtains evidence within 15 minutes; existing tests/process checks, release/resource budgets and real provider checks pass.
 
-### Phase C — paid always-on pilot
+### Phase C — MausBot-like Local Workbench, 2–6 months
 
-- Offer a limited, explicitly approved managed pilot only after unit economics are measured.
-- Test one simple hosting offer before adding multiple tiers.
-- Keep BYOK and local export available so cloud use does not become lock-in.
+- Add one validated ACP coding-engine path, then only design-partner-required schedules/webhooks, MCP tools and Approval Broker slices.
+- Let an Intake Agent turn conversation into an Outcome Contract, a shadow Run and an approved Routine/Procedure; unsupported capabilities return an integration need or refusal.
+- Add verification, artifacts, evidence and reusable Procedures before a broad connector catalog.
+- Keep an official thin Outcome Board as one projection while allowing customer-generated read-only/sandboxed interfaces.
 
-Gate: owners pay for reliable always-on operation, infrastructure and support costs are understood, and cancellation/export/restore work.
+Gate: real users repeatedly achieve Outcomes with less human intervention; external engines cannot bypass Core authority, and generated UIs cannot write stores directly.
 
-### Phase D — team and organization services
+### Phase D — paid Managed Headless Workspace, 3–9 months
 
-- Add human collaboration, organization policy, and support only after the single-owner foundation is stable.
-- Price larger custom deployments and support through direct consultation.
+- Sell only implemented and verified capabilities: a single-tenant always-on workspace, validated providers, one remote client integration, one recurring Outcome, backup/restore, delivery/usage evidence and termination export.
+- Start with a manually provisioned monthly beta for at most three design partners sharing the same Core and operations path. No private forks or one-time installation-only offer.
+- Use GLM/Russian-language technical content for adoption and Headless quickstarts/provider evaluations for English-speaking acquisition; attach paid conversion to always-on operation, policy and recovery.
+- Measure total model, external-engine, infrastructure, support and payment cost before final pricing.
+
+Gate: three partners actually pay, at least two remain active after four weeks, one recurring Outcome runs without manual repair for an agreed period, restore/export/deletion works, and target gross margin is at least 70% after stabilization. Twenty qualified contacts plus three concrete paid proposals with no purchase stops generic managed-cloud expansion.
+
+### Phase E — Headless Agent Control Plane, 6–18 months
+
+- Add scoped BYOUI projections, typed event schemas, Outcome/Task/Run dependency graphs and bounded delegation.
+- Introduce leases only when multi-dispatcher/Agent claims require them. Expiry produces an explicit interrupted/unknown state, never automatic side-effect replay.
+- Add A2A and external credential brokering only behind separate compatibility and security gates.
+- Expand delegation only when it beats single-Agent/deterministic baselines on the same Outcome evaluation.
+
+Gate: customer work genuinely requires dynamic multi-Agent coordination and its measured outcome/cost/latency improves without weakening policy.
+
+### Phase F — Team and ecosystem after recurring revenue
+
+- Add remote thin Web Ops, human seats, shared packages, organization policy and audit retention.
+- Add self-serve accounts/billing only after repeatable managed operation and margin are demonstrated.
+- Consider credential-free SDK/package licensing, marketplace, desktop companion, voice and cloud computers separately; none is a launch prerequisite.
 
 ## 7. Metrics and stop rules
 
 Track locally and, for any future hosted service, with explicit consent:
 
-### Product efficiency
+### Outcome efficiency
 
-- Verified successful Tasks per active week.
-- Cost and wall time per successful Task.
-- Retry, cancellation, tool-error, and manual-repair rates.
-- Queue wait and approval latency.
+- **Verified Outcome Rate:** Outcomes passing acceptance evidence / accepted Outcomes.
+- **Cost per Verified Outcome:** model + external engine + infrastructure + human intervention + support.
+- **Time to Verified Outcome:** p50/p95 from admission to evidence confirmation.
+- **Unassisted Outcome Rate:** Outcomes achieved without human repair.
+- Retry, cancellation, lease expiry, tool-error, approval latency and delivery-unknown rates.
 
 ### Product value
 
-- Four-week retained active owners.
-- Recurring Tasks per retained owner.
-- Package reuse and successful import rate.
-- Percentage of new users who complete one verified useful Task.
+- **Repeat Outcome Rate:** repeated achievement of the same workflow by a retained customer.
+- Four-week retained active owners and verified recurring Outcomes per owner.
+- Package/Procedure reuse and successful import rate.
+- Outcome Delivery Assurance: achieved results whose delivery is confirmed at the client.
 
 ### Hosted economics
 
@@ -234,4 +339,6 @@ Stop or narrow expansion when:
 - Default telemetry or a required account for local use.
 - Competing first on hardware, hundreds of connectors, voice, or remote desktop.
 - Full-access external agents after one blanket consent.
-- Publishing projected revenue or prices without actual cost and retention evidence.
+- Publishing revenue forecasts as facts, or final self-serve prices without actual cost and retention evidence.
+- Selling a generic installation, cloning Vercel Board's message primitive, treating BYOUI as “no UI”, or making GLM the permanent product identity.
+- Counting Tasks, tokens, Agent activity or PRs as customer success without acceptance evidence and an achieved Outcome.

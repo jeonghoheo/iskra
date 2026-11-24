@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Iskra Headless Control Plane architecture</title>
+  <desc id="desc">다양한 클라이언트가 Iskra Core를 통해 Agent, 도구, 모델을 사용하는 최종 목표 아키텍처</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0E1420"/><stop offset="1" stop-color="#171B29"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity=".22"/></filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#FF8A55"/></marker>
+    <marker id="arrowTeal" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#56DCC7"/></marker>
+    <style>
+      text{font-family:'Apple SD Gothic Neo','Noto Sans CJK KR','Noto Sans KR',Arial,sans-serif;fill:#F6F4EF}
+      .muted{fill:#A8B2C5}.dim{fill:#77849A}.orange{fill:#FF8A55}.teal{fill:#56DCC7}.amber{fill:#FFD166}.blue{fill:#82AEFF}
+      .card{fill:#1D2535;stroke:#354158;stroke-width:2}.panel{fill:#151D2B;stroke:#2D394D;stroke-width:2}
+      .title{font-size:42px;font-weight:700}.subtitle{font-size:21px}.label{font-size:15px;font-weight:700;letter-spacing:1.3px}.h2{font-size:26px;font-weight:700}.h3{font-size:19px;font-weight:700}.body{font-size:17px}.small{font-size:14px}
+    </style>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#bg)"/>
+  <circle cx="800" cy="490" r="420" fill="#FF8A55" opacity=".025"/>
+  <text x="60" y="62" class="label orange">ISKRA / TARGET CONCEPT · NOT IMPLEMENTED</text>
+  <text x="60" y="120" class="title">ISKRA HEADLESS CONTROL PLANE</text>
+  <text x="60" y="158" class="subtitle muted">Outcome · Authority · Evidence · Any UI · Any Agent · Any Model</text>
+
+  <text x="60" y="218" class="label muted">CLIENTS / CALLERS</text>
+  <g filter="url(#shadow)">
+    <rect x="55" y="245" width="310" height="130" rx="18" class="card"/>
+    <rect x="55" y="415" width="310" height="130" rx="18" class="card"/>
+    <rect x="55" y="585" width="310" height="155" rx="18" class="card"/>
+  </g>
+  <text x="80" y="280" class="h3 blue">SOFTWARE</text><text x="80" y="316" class="h2">SaaS / Backend / CI</text><text x="80" y="347" class="small muted">Outcome + idempotency key</text>
+  <text x="80" y="450" class="h3 blue">AGENT CALLERS</text><text x="80" y="486" class="h2">Other Agents / A2A</text><text x="80" y="517" class="small muted">delegated result request</text>
+  <text x="80" y="620" class="h3 blue">HUMAN CLIENTS</text><text x="80" y="656" class="h2">Web · Telegram · CLI</text><text x="80" y="687" class="small muted">approval · inspection · audit</text><text x="80" y="714" class="small dim">generated UI = projection only</text>
+
+  <g stroke="#FF8A55" stroke-width="3" marker-end="url(#arrow)">
+    <line x1="365" y1="310" x2="460" y2="400"/>
+    <line x1="365" y1="480" x2="460" y2="480"/>
+    <line x1="365" y1="650" x2="460" y2="560"/>
+  </g>
+
+  <g filter="url(#shadow)"><rect x="470" y="205" width="650" height="635" rx="28" fill="#202C3E" stroke="#FF8A55" stroke-width="3"/></g>
+  <text x="795" y="250" text-anchor="middle" class="label orange">CORE OWNS AUTHORITY + STATE</text>
+  <text x="795" y="290" text-anchor="middle" class="h2">ISKRA CORE</text>
+  <text x="795" y="320" text-anchor="middle" class="small muted">local single binary / customer host / managed</text>
+
+  <rect x="515" y="350" width="260" height="100" rx="15" class="panel"/>
+  <rect x="815" y="350" width="260" height="100" rx="15" class="panel"/>
+  <rect x="515" y="480" width="260" height="100" rx="15" class="panel"/>
+  <rect x="815" y="480" width="260" height="100" rx="15" class="panel"/>
+  <rect x="515" y="610" width="260" height="100" rx="15" class="panel"/>
+  <rect x="815" y="610" width="260" height="100" rx="15" class="panel"/>
+  <text x="535" y="383" class="h3 orange">OUTCOME</text><text x="535" y="414" class="small muted">metric · acceptance · scope</text>
+  <text x="835" y="383" class="h3 orange">ROUTER</text><text x="835" y="414" class="small muted">Agent · engine · budget</text>
+  <text x="535" y="513" class="h3 orange">EXECUTION</text><text x="535" y="544" class="small muted">Task · Run · Queue · Lease</text>
+  <text x="835" y="513" class="h3 orange">AUTHORITY</text><text x="835" y="544" class="small muted">Policy · Approval · Secrets</text>
+  <text x="535" y="643" class="h3 orange">PROJECTION</text><text x="535" y="674" class="small muted">typed events · scoped UI</text>
+  <text x="835" y="643" class="h3 orange">EVIDENCE</text><text x="835" y="674" class="small muted">Artifact · Delivery · Audit</text>
+  <rect x="515" y="748" width="560" height="54" rx="14" fill="#312538" stroke="#814A53"/>
+  <text x="795" y="782" text-anchor="middle" class="h3">NO INVISIBLE REPLAY · NO DIRECT UI WRITES</text>
+
+  <text x="1190" y="218" class="label muted">SUPERVISED EXECUTION</text>
+  <g filter="url(#shadow)">
+    <rect x="1190" y="245" width="350" height="112" rx="18" class="card"/>
+    <rect x="1190" y="387" width="350" height="112" rx="18" class="card"/>
+    <rect x="1190" y="529" width="350" height="112" rx="18" class="card"/>
+    <rect x="1190" y="703" width="350" height="137" rx="18" fill="#17302F" stroke="#56DCC7" stroke-width="2"/>
+  </g>
+  <text x="1215" y="279" class="h3 teal">BUILT-IN AGENTS</text><text x="1215" y="310" class="body muted">isolated memory / workspace / tools</text><text x="1215" y="335" class="small dim">DeepSeek · GLM · OpenAI-compatible</text>
+  <text x="1215" y="421" class="h3 teal">ACP ENGINES</text><text x="1215" y="452" class="body muted">coding CLI · sandbox · cancellation</text><text x="1215" y="477" class="small dim">owner-approved executable only</text>
+  <text x="1215" y="563" class="h3 teal">A2A / EXTERNAL AGENTS</text><text x="1215" y="594" class="body muted">bounded delegation · artifact contract</text><text x="1215" y="619" class="small dim">no authority inheritance</text>
+  <text x="1215" y="739" class="h3 teal">TOOLS + MODELS</text><text x="1215" y="770" class="body muted">MCP · API · Files · Sandbox</text><text x="1215" y="797" class="small muted">GLM · Qwen · Claude · OpenAI · Local</text><text x="1215" y="822" class="small dim">replaceable parts, not Core authority</text>
+
+  <g stroke="#FF8A55" stroke-width="3" marker-end="url(#arrow)">
+    <line x1="1120" y1="395" x2="1180" y2="320"/>
+    <line x1="1120" y1="480" x2="1180" y2="452"/>
+    <line x1="1120" y1="565" x2="1180" y2="585"/>
+    <line x1="1120" y1="690" x2="1180" y2="748"/>
+  </g>
+  <path d="M1360 703 C1360 660 1320 670 1320 646" fill="none" stroke="#56DCC7" stroke-width="2" marker-end="url(#arrowTeal)"/>
+
+  <rect x="60" y="880" width="1480" height="76" rx="18" class="panel"/>
+  <text x="85" y="913" class="h3 orange">OPTIONAL ADAPTERS</text>
+  <text x="85" y="940" class="body muted">Vercel Board · Slack · GitHub · customer UI — Core와 권한 계약을 통과하는 연결부일 뿐, Iskra의 상태 소유자가 아님</text>
+</svg>

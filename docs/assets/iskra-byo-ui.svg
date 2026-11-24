@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Iskra BYOUI architecture</title>
+  <desc id="desc">하나의 권한 적용 Outcome 데이터와 이벤트 로그를 다섯 가지 UI로 표현하는 목표 구상도</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0E1420"/><stop offset="1" stop-color="#171B29"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity=".22"/></filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#56DCC7"/></marker>
+    <marker id="arrowOrange" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#FF8A55"/></marker>
+    <style>
+      text{font-family:'Apple SD Gothic Neo','Noto Sans CJK KR','Noto Sans KR',Arial,sans-serif;fill:#F6F4EF}
+      .muted{fill:#A8B2C5}.dim{fill:#77849A}.orange{fill:#FF8A55}.teal{fill:#56DCC7}.amber{fill:#FFD166}.green{fill:#78DDA2}
+      .card{fill:#1D2535;stroke:#354158;stroke-width:2}.panel{fill:#151D2B;stroke:#2D394D;stroke-width:2}
+      .title{font-size:44px;font-weight:700}.subtitle{font-size:21px}.label{font-size:16px;font-weight:700;letter-spacing:1.5px}.h2{font-size:25px;font-weight:700}.h3{font-size:20px;font-weight:700}.body{font-size:18px}.small{font-size:15px}.mono{font-family:Menlo,monospace;font-size:14px}
+    </style>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#bg)"/>
+  <circle cx="140" cy="880" r="300" fill="#56DCC7" opacity=".035"/>
+  <text x="72" y="68" class="label orange">ISKRA / TARGET CONCEPT · NOT IMPLEMENTED</text>
+  <text x="72" y="130" class="title">Headless = Any UI, not “No UI”</text>
+  <text x="72" y="170" class="subtitle muted">BYOUI · 하나의 권한 적용 데이터층을 각자 원하는 화면으로</text>
+
+  <g stroke="#56DCC7" stroke-width="3" opacity=".8" marker-end="url(#arrow)">
+    <line x1="635" y1="375" x2="425" y2="300"/>
+    <line x1="965" y1="375" x2="1175" y2="300"/>
+    <line x1="635" y1="555" x2="425" y2="700"/>
+    <line x1="965" y1="555" x2="1175" y2="700"/>
+    <line x1="800" y1="640" x2="800" y2="745"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="75" y="210" width="350" height="165" rx="20" class="card"/>
+    <rect x="1175" y="210" width="350" height="165" rx="20" class="card"/>
+    <rect x="75" y="640" width="350" height="165" rx="20" class="card"/>
+    <rect x="1175" y="640" width="350" height="165" rx="20" class="card"/>
+    <rect x="625" y="755" width="350" height="150" rx="20" fill="#263044" stroke="#FF8A55" stroke-width="3"/>
+  </g>
+
+  <text x="100" y="247" class="label teal">OFFICIAL PROJECTION</text>
+  <text x="100" y="286" class="h2">Web Outcome Ops</text>
+  <text x="100" y="320" class="body muted">Outcome · Approval · Evidence</text>
+  <text x="100" y="350" class="small dim">목표·비용·근거 중심의 관제 화면</text>
+
+  <text x="1200" y="247" class="label teal">CHAT PROJECTION</text>
+  <text x="1200" y="286" class="h2">Telegram / Slack</text>
+  <text x="1200" y="320" class="body muted">요약 · 멘션 · allow once</text>
+  <text x="1200" y="350" class="small dim">최소 필드만 외부 platform으로 export</text>
+
+  <text x="100" y="677" class="label teal">TERMINAL PROJECTION</text>
+  <text x="100" y="716" class="h2">CLI / IRC</text>
+  <text x="100" y="750" class="body muted">read · wait · filter · script</text>
+  <text x="100" y="780" class="small dim">cursor 기반으로 같은 상태 구독</text>
+
+  <text x="1200" y="677" class="label teal">WORK PROJECTION</text>
+  <text x="1200" y="716" class="h2">Generated Kanban</text>
+  <text x="1200" y="750" class="body muted">Ready · Claimed · Blocked</text>
+  <text x="1200" y="780" class="small dim">Task보다 Outcome 진행을 먼저 표시</text>
+
+  <text x="650" y="792" class="label orange">YOUR UI</text>
+  <text x="650" y="830" class="h2">Mobile · Watch · Digest</text>
+  <text x="650" y="865" class="body muted">사용자가 Agent에게 만들게 하는 UI</text>
+
+  <g filter="url(#shadow)">
+    <rect x="485" y="275" width="630" height="390" rx="28" fill="#202C3E" stroke="#FF8A55" stroke-width="3"/>
+  </g>
+  <text x="800" y="322" text-anchor="middle" class="label orange">SINGLE SOURCE OF AUTHORITY</text>
+  <text x="800" y="364" text-anchor="middle" class="h2">ISKRA CANONICAL DATA</text>
+  <text x="800" y="395" text-anchor="middle" class="body muted">+ ORDERED EVENT LOG</text>
+  <line x1="535" y1="420" x2="1065" y2="420" stroke="#354158"/>
+  <rect x="535" y="447" width="250" height="76" rx="14" class="panel"/>
+  <rect x="815" y="447" width="250" height="76" rx="14" class="panel"/>
+  <rect x="535" y="548" width="250" height="76" rx="14" class="panel"/>
+  <rect x="815" y="548" width="250" height="76" rx="14" class="panel"/>
+  <text x="555" y="478" class="h3">Outcome</text><text x="555" y="505" class="small muted">metric · acceptance</text>
+  <text x="835" y="478" class="h3">Work graph</text><text x="835" y="505" class="small muted">Task · Run · Lease</text>
+  <text x="555" y="579" class="h3">Result</text><text x="555" y="606" class="small muted">Artifact · Evidence · Delivery</text>
+  <text x="835" y="579" class="h3">Authority</text><text x="835" y="606" class="small muted">Actor · Scope · Approval</text>
+
+  <rect x="470" y="930" width="660" height="46" rx="14" fill="#17302F" stroke="#56DCC7"/>
+  <text x="800" y="960" text-anchor="middle" class="h3 teal">Projection은 읽기 · 승인과 쓰기는 Core Command API</text>
+
+  <g>
+    <rect x="1210" y="430" width="280" height="136" rx="18" fill="#312538" stroke="#814A53"/>
+    <text x="1230" y="462" class="label" fill="#FF8D98">SECURITY BOUNDARY</text>
+    <text x="1230" y="493" class="small muted">generated UI = sandbox/read-only</text>
+    <text x="1230" y="520" class="small muted">임의 JS · SQL · tool 권한 없음</text>
+    <text x="1230" y="547" class="small muted">sync는 최소 scope와 경고 필수</text>
+  </g>
+  <path d="M1110 565 C1170 565 1160 545 1200 535" fill="none" stroke="#FF8A55" stroke-width="2" stroke-dasharray="7 6" marker-end="url(#arrowOrange)"/>
+</svg>

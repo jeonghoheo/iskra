@@ -1317,3 +1317,64 @@ Status: **approved architecture recorded; no code, Goal, commit, push, or test r
 
 - No implementation, real Telegram/provider call, owner-run verification, commit, or push was performed.
 - The next step is owner review of the compact Stage 2.5-A task card. A separate explicit instruction is required before creating a Goal or starting implementation.
+
+
+## Commercial validation P0 — paid Launch first (2026-11-24)
+
+Status: **business strategy and execution card recorded; documentation only; no paid product, payment, deployment, outreach, code change, commit, or push.**
+
+### What changed
+
+- `docs/BUSINESS.md` now defines the beachhead customer, three commercialization scenarios, the recommended paid-Launch → managed sequence, experimental offer boundaries, rollout gates, unit-economics limits, and commercial stop rules.
+- `SESSION.md` adds the Commercial validation P0 card, four-part defensibility contract, first-14-day sequence, productization sequencing gate, and expansion/stop rules.
+- The initial offer hypothesis is a $300 assisted setup with one provider, two isolated Agents, three verified workflows, recovery instructions, and 14 days of bounded support. The $49/month managed founding pilot remains subject to retention and measured cost. Neither is a final public price or a revenue forecast.
+- Current public reference checks: MausBot lists free local desktop, Cloud plans at $15/$49/$99, and Teams from $40/month for two people; OpenBot lists free local use and paid hosting/business licensing. These are competitor-published claims and price anchors, not independent demand or cost evidence.
+- Stage 2.5-A `delivery/v1` remains the current technical implementation target. The commercial plan does not supersede it or start a parallel code Goal. ACP/delegation now requires paid-demand evidence after delivery reliability rather than being the default next business phase.
+
+### Verification and limits
+
+- Repository baseline before this entry: `master` HEAD `b5af990`. The latest recorded code baseline remains **215 passed, 0 failed**; tests, builds, clippy, and resource measurements were not rerun because only business/session documentation changed.
+- Final `git diff --check` passed after this log entry. Final repository status shows only `docs/BUSINESS.md`, `SESSION.md`, and this log modified; no new files were created.
+- No customer discovery, actual payment, installation on a customer machine, managed hosting, backup/restore, or productization workflow has been performed. Revenue and timeline figures are hypotheses and arithmetic examples only.
+- Owner action and separate approval remain required for payment/tax/refund setup, intake publication, external outreach, account creation, deployment, and case-study publication. The next code step remains owner review of the compact Stage 2.5-A task card; the next business step is the P0-S offer/intake package.
+
+
+## Outcome-first Headless strategy and visual product assets (2026-11-24)
+
+Status: **approved strategy, architecture and six visual assets completed and inspected; documentation/design only; no new code Goal, paid launch, provider account, customer outreach, deployment, commit or push.**
+
+### What changed
+
+- `docs/BUSINESS.md` supersedes the earlier `$300 generic installation` offer and rejected vertical-service-first draft. It now defines a MausBot-like free Local → paid Managed Always-on → Team path, with a model-neutral Headless Agent Control Plane, Outcome/evidence metrics, BYOUI projections, GLM as a validation wedge rather than a permanent identity, and managed design-partner gates.
+- `docs/ARCHITECTURE.md` keeps Stage 2.5-A `delivery/v1` as the current implementation target while separating future Outcome, Headless, BYOUI and Lease contracts from current behavior. It adds Outcome ≠ Task completion, authorized UI projections, lease-expiry/no-replay rules, `outcome/v1`/`headless/v1` direction and future verification gates.
+- `SESSION.md` adds the Outcome-first strategy, the P0-H demand card, sequential—not concurrent—technical cards, commercial stop rules and the visual-asset result.
+- Public-reference research now includes Vercel Board's official experimental message/task primitive, claims and renewable leases, dependencies, watchers/schedules, structured data, grants, event logs and external sync, plus its US-only storage, default visibility, profile-permission and sync-spill limits. Iskra will not clone Board; an optional future adapter requires separate terms/security review.
+- The strategy also incorporates Anthropic Managed Agents, LangGraph, Microsoft Agent Framework, Temporal, MCP/A2A and Z.AI's official GLM/Claude Code integration. No representative evidence was found for a mass migration of Russian developers to GLM.
+
+### Visual deliverables
+
+Created the following target/concept assets with synthetic content and explicit **NOT IMPLEMENTED** labels:
+
+- `docs/assets/iskra-outcome-model.svg`
+- `docs/assets/iskra-byo-ui.svg`
+- `docs/assets/iskra-headless-strategy.svg`
+- `docs/assets/iskra-control-plane-architecture.svg`
+- `docs/assets/iskra-final-product.svg`
+- `docs/assets/iskra-ops-wireframe.png`
+
+The images cover Outcome → Task → Run → Evidence, six outcome metrics, BYOUI projections and security boundaries, vertical-service versus MausBot versus Headless strategy, the final Control Plane, Local/Managed/Team product family, and the Outcome Board with acceptance, cost, human intervention, lease and approval.
+
+### Verification (actual)
+
+- XML parsing with Python `xml.etree.ElementTree`: **5 SVG files passed**.
+- `sips` rendering: all five SVGs rendered at **1600×1000**; the Outcome Board PNG is **1800×1100**.
+- `ReadMediaFile`: all six final rendered images were inspected for aspect ratio, clipping, Korean text, panel/button visibility and Outcome/BYOUI semantics. No right-side cropping remained.
+- An initial Quick Look thumbnail pass produced square, horizontally cropped images and was rejected as an invalid verification artifact. Correct `sips` renders replaced it; no final deliverable uses the cropped render.
+- `git diff --check`: passed before this log entry. Final checks follow the log update.
+- No Rust code, tests, manifests or runtime assets changed. The latest recorded code baseline remains **215 passed, 0 failed**; tests/builds were not rerun for this documentation/design work.
+
+### Limits and next step
+
+- These are target visuals, not screenshots of an implemented product. Headless/Outcome/BYOUI/Lease/Cloud/GLM compatibility and managed pricing remain unimplemented or unvalidated as explicitly marked.
+- No customer interview, actual payment, GLM live-provider call, customer deployment or production UI was performed.
+- The next code step remains owner review of the compact Stage 2.5-A card. The next business step is the P0-H demand interviews. Each subsequent technical card requires its own scope, state transitions, proof and explicit start instruction.
