@@ -72,6 +72,7 @@ Rules:
 - Refer to exact sections instead of embedding the full architecture in every goal.
 - A new session reads the required repository/personal state documents once, then finds and reads only the current task card, the previous relevant result and targeted source ranges. Do not load the whole `SESSION.md` or decision history by default. Continuations must not reread unchanged material without a contradiction or a new fact to confirm.
 - Keep one current Stage and one next goal in the personal `NOW.md`, so a new execution does not need the whole conversation history.
+- Draft this card and the §5 contract with `/skill:goal-card <task>`. The skill is read-only: it does not create the goal, run verification, or commit. If it reports the task is unsuitable for Goal mode, resolve that decision before creating a goal.
 
 ## 5. Goal contract
 
