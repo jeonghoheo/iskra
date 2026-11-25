@@ -1406,3 +1406,25 @@ Status: **approved competitive architecture and validation card recorded; docume
 - Final `git diff --check` passed. No customer interviews, actual provider calls, AgentField installation, partnership or paid validation was performed.
 - Stage 2.5-A `delivery/v1` remains the current implementation target. HUB-PROOF is a design card, not authorization to implement adapters or start another Goal.
 - Stop conditions now include no practical advantage over AgentField/CodeAF/OpenClaw, vendor-owned canonical state, permission bypass, unrelated custom workflows or negative managed economics.
+
+
+## G1 desk evidence — cross-vendor Agent operation pain (2026-11-25)
+
+Status: **G1 passed; public evidence documented; no code, paid offer, outreach, or external account change.**
+
+### What changed
+
+- Created `docs/research/demand-evidence.md` as the only project deliverable. It records dated public evidence with source URLs and direct quotations for the interview-free demand ladder.
+- Adopted **17 records** of cross-vendor Agent operation pain and **6 explicit requests** for a layer owning shared state, authority, policy, or evidence, exceeding the G1 threshold of 8 records and 3 layer requests.
+- Sources cover AgentField, OpenClaw, ccusage, Z.AI/ZCode, OpenAI Codex, r/LocalLLaMA, r/ClaudeAI, Hacker News, Habr, and OKKY. CodeAF cases are included as supporting evidence but excluded from the primary count because the multi-Agent/Provider condition is not explicit.
+- The repeated failures are state drift, retry overwrites, restart duplicate execution/delivery, ineffective permission revocation, and missing execution/audit evidence. This is not a token-price-only or GLM-setup-only result.
+
+### Verification and limits
+
+- Base HEAD: `34b8e58f4efe298f7514ddc7f6c8570905391f5f` on `master`.
+- Structural check: 18 `E` headings, 17 primary records, 6 layer requests, no missing metadata or quotes, no trailing whitespace, and 24 Markdown source links.
+- `git diff --check` passed. The new untracked document was checked separately for structure and trailing whitespace.
+- No Rust code, tests, or manifests changed. `cargo test` and builds were not rerun; the latest recorded code baseline remains **215 passed, 0 failed**, not a new measurement.
+- `E16` is excluded because its original date metadata was not independently verified. Korean first-person multi-Agent incident evidence, willingness to pay, Managed demand, representative GLM migration, and Iskra's practical advantage over existing orchestrators remain unverified.
+- The `$49 Agent Ops Audit` remains a pre-existing price hypothesis from `SESSION.md`; this research did not derive or validate that price.
+- The next business action is owner review of the evidence followed by a separate decision to prepare the G2 offer and asynchronous intake. No payment route, listing, or outreach was created.
