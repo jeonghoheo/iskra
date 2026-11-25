@@ -17,6 +17,8 @@ Large design once
   -> stronger-model review only for new decisions or high-risk failures
 ```
 
+Use one session for one deliverable. Research, design, implementation and owner verification end at a handoff: save the task card and actual result, then start a new session for the next phase. Changing `/model` alone does not reduce the accumulated context.
+
 The large specification remains the source of truth. A smaller Plan-mode document is needed only when the large specification leaves a real decision unresolved.
 
 ## 2. Mode selection
@@ -24,6 +26,8 @@ The large specification remains the source of truth. A smaller Plan-mode documen
 | Work | Mode and model | Reason |
 |---|---|---|
 | Architecture, external-project analysis, new security/business decisions | Plan mode + stronger model | Judgment and trade-offs matter more than token cost |
+| Long-document comparison or multimodal first pass | Gemini in a separate research session | Only a compressed evidence/unknowns brief enters the project session |
+| Repetitive public-web or logged-in app checks | Muse in a separate session | Return URLs, dates, observations and the next action; owner approval still applies |
 | A smaller step with an unresolved design choice | Plan mode + stronger model | Stop the wrong implementation before spending execution tokens |
 | Implementation with known files and automated acceptance checks | Goal mode + DeepSeek | It can iterate and stop on objective proof |
 | Short reads, log updates, wording corrections | Normal mode | Goal creation and audits cost more than the task |
@@ -66,7 +70,7 @@ Rules:
 - If `Spec`, `Files`, `Proof`, and `Stop` are already clear, skip a smaller Plan-mode document.
 - If a real choice remains, resolve only that choice in Plan mode.
 - Refer to exact sections instead of embedding the full architecture in every goal.
-- A new session reads the required repository/personal state documents once, then reads the current task card and relevant source. Continuations must not reread the same material without a change or contradiction.
+- A new session reads the required repository/personal state documents once, then finds and reads only the current task card, the previous relevant result and targeted source ranges. Do not load the whole `SESSION.md` or decision history by default. Continuations must not reread unchanged material without a contradiction or a new fact to confirm.
 - Keep one current Stage and one next goal in the personal `NOW.md`, so a new execution does not need the whole conversation history.
 
 ## 5. Goal contract
@@ -119,6 +123,8 @@ During implementation:
 - Start long builds/tests in the background and perform independent review while they run.
 - When a required background result is needed, use `WaitFor`; do not repeatedly poll status.
 - Read targeted source ranges after the initial orientation instead of repeatedly loading full large files.
+- When the context approaches roughly 100k tokens, compact before the next action. Preserve only the current goal, changed files, actual test results, unresolved issues and next action. Adjust this initial threshold from observed model limits and results.
+- Do not use routine parallel agents or multi-model reviews: each one reads a fresh context. Escalate sequentially only when the current worker cannot resolve the problem.
 - Do not repeat completed web research unless freshness or a contradiction requires it.
 - After every actual change, update stale comments and documentation, but do not create extra narrative reports.
 - Keep progress messages short: the next non-obvious action or the newly discovered fact.
@@ -203,3 +209,17 @@ A read-only review after the Stage 2 milestone found five commit blockers: stick
 - Run only the focused checks named in each card at a handoff.
 - Run the full milestone verification once after R3, not at every handoff.
 - Do not commit or push without separate owner approval, and do not claim live verification before the owner-run checklist.
+
+## 12. Context and quota measurement
+
+A 2026-11-25 aggregate of local Kimi Code logs found 23 Iskra sessions with 1,984 LLM calls, about 381.2 million cumulative processed input tokens and about 1.70 million output tokens. There were 163 turns above 100k recorded context tokens and 121 above 200k; the maximum was 678,508. `inputCacheRead` represented 97.1% of input. These are local processing counters, not invoice or quota deductions.
+
+The same log review found 570 `Read` calls, including 224 repeated reads of the same path. Changed-file checks and different ranges are legitimate reasons to reread, so this is a reduction candidate rather than proof that every repeated read was waste.
+
+Starting with Stage 2.5-A `delivery/v1`, record at session start and end:
+
+- User turns, Goal continuations, LLM calls and model distribution.
+- Uncached input, cache reads, output and maximum context.
+- Unchanged-document rereads and actual test commands/results.
+
+Target zero Goal continuations while waiting for owner input and zero rereads of an unchanged identical range. Run full milestone verification once unless a failure requires another pass. Compare the next two or three tasks with previous Goals only as context, because task difficulty differs. Confirm actual quota changes in each provider's usage view before claiming a savings percentage.

@@ -1,12 +1,14 @@
 # Iskra — AI 작업 지시
 
-작업 전 다음 순서로 읽는다.
+작업 전 다음 순서로 필요한 범위만 읽는다.
 
 1. `/Users/heojeongho/Desktop/My/AI-personal-memory/AGENTS.md`
 2. `/Users/heojeongho/Desktop/My/AI-personal-memory/USER.md`
-3. `/Users/heojeongho/Desktop/My/AI-personal-memory/NOW.md`
-4. `/Users/heojeongho/Desktop/My/AI-personal-memory/DECISIONS.md`에서 Iskra 관련 최신 결정
-5. 이 저장소의 `SESSION.md`, `SESSION-LOG.md` 마지막 기록, `README.md`
+3. `/Users/heojeongho/Desktop/My/AI-personal-memory/NOW.md`의 현재 우선순위와 다음 행동
+4. `/Users/heojeongho/Desktop/My/AI-personal-memory/DECISIONS.md`에서 Iskra와 현재 작업에 관련된 최신 결정만 검색
+5. 이 저장소의 `SESSION.md`에서는 현재 작업 카드와 직전 결과만 읽는다. `SESSION-LOG.md`는 마지막 관련 기록, `README.md`와 명세는 현재 작업에 필요한 섹션만 읽는다.
+
+긴 파일 전체를 기본 읽기 범위로 두지 않고, 변경되지 않은 같은 문서·구간을 같은 세션에서 다시 읽지 않는다. 조사·설계·구현·수동 검증의 단계가 끝나면 작업 카드와 결과만 남기고 새 세션으로 인계한다. `/model` 전환만으로 기존 문맥은 줄어들지 않는다.
 
 작업을 Plan/Goal/일반 모드로 나눌 때는 `docs/WORKFLOW.md`를 참조한다. Goal은 자동 검증 가능한 구현에만 사용하고, owner 입력이 필요한 실사용 검증은 일반 모드로 분리한다.
 

@@ -1428,3 +1428,26 @@ Status: **G1 passed; public evidence documented; no code, paid offer, outreach, 
 - `E16` is excluded because its original date metadata was not independently verified. Korean first-person multi-Agent incident evidence, willingness to pay, Managed demand, representative GLM migration, and Iskra's practical advantage over existing orchestrators remain unverified.
 - The `$49 Agent Ops Audit` remains a pre-existing price hypothesis from `SESSION.md`; this research did not derive or validate that price.
 - The next business action is owner review of the evidence followed by a separate decision to prepare the G2 offer and asynchronous intake. No payment route, listing, or outreach was created.
+
+
+## Token/quota workflow — session splitting and targeted reads (2026-11-25)
+
+Status: **documentation-only operating-rule update; no implementation Goal, Rust code change, live verification, commit or push.**
+
+### What changed
+
+- `AGENTS.md` now limits startup reads to the current task card, the previous relevant result, the latest applicable decisions and targeted specification sections. It prohibits rereading unchanged ranges without a new fact or contradiction.
+- `docs/WORKFLOW.md` now requires one session per deliverable and a new session at research/design/implementation/owner-verification handoffs. Changing `/model` alone is not a context-reduction strategy.
+- The initial context threshold is roughly 100k tokens before compaction. Routine parallel agents and duplicate multi-model review are excluded; escalation is sequential after two failed approaches or a security/design conflict.
+- Gemini is assigned long-document comparison and multimodal first passes; Muse is assigned repetitive browser/app checks. Only compressed evidence and unknowns enter the project session. Existing owner-approval rules remain unchanged.
+
+### Evidence and limits
+
+- Local Kimi Code log counters for 23 Iskra sessions recorded 1,984 LLM calls, about 381.2 million cumulative processed input tokens and about 1.70 million output tokens. There were 163 turns above 100k context tokens and 121 above 200k; the maximum was 678,508.
+- Cache reads represented 97.1% of input. These are processing counters, not invoice or quota deductions. The first optimization target is fewer calls, smaller sessions and fewer repeated reads.
+- No Rust tests or builds were rerun. The latest recorded code baseline remains **215 passed, 0 failed**, stripped binary **6.40 MiB**, dummy-config CLI idle RSS **4.06 MiB**, and **7 direct dependencies**.
+- Pre-existing uncommitted changes in `SESSION.md` and `docs/BUSINESS.md` were preserved. No product, payment, provider, external account or watchpost change was made.
+
+### Next step
+
+Apply and measure this workflow from Stage 2.5-A `delivery/v1`, but do not start that implementation without a separate owner instruction. Compare LLM calls, context size, rereads, actual test results and provider quota views over the next two or three tasks before claiming any savings percentage.

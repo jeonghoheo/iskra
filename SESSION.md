@@ -1174,7 +1174,7 @@ Add to the existing 15-interview card:
 - Who approves the Outcome and what evidence is accepted independently of the executing Agent?
 - What always-on recovery, audit retention or policy operation has a measurable budget?
 
-The demand gate changes to: **five teams with a real cross-vendor Authority/Outcome problem and three teams with a specific recurring Outcome that requires Iskra in the execution path plus a managed budget discussion.** Generic connector interest and GLM setup requests do not pass. **Revised 2026-11-24:** these five and three confirmations are no longer collected through owner-held interviews; the interview-free demand ladder replaces them with dated public evidence, asynchronous written responses, and at least one paid audit delivered through Iskra with an accepted Launch or Managed proposal.
+The demand gate changes to: **five teams with a real cross-vendor Authority/Outcome problem and three teams with a specific recurring Outcome that requires Iskra in the execution path plus a managed budget discussion.** Generic connector interest and GLM setup requests do not pass. **Revised 2026-11-24:** these five and three confirmations are no longer collected through owner-held interviews; the interview-free demand ladder replaces them with dated public evidence, asynchronous written responses, and at least one paid audit delivered through Iskra with an accepted Managed design-partner proposal.
 
 ### HUB-PROOF — one vertical integration card (design only)
 
@@ -1219,7 +1219,7 @@ Where qualitative detail is still needed, the owner reads written answers collec
 | **G1 desk evidence** | 2–3 days | Dated public records with URL and quote from GitHub issues, Reddit/HN, Habr, provider/Z.AI forums and Korean developer communities | ≥8 records of cross-vendor agent operation pain; ≥3 explicitly asking for a layer that owns state, authority or evidence across agents | If the pain is only token cost or model setup, keep the GLM migration wedge and do not build the Hub |
 | **G2 buyable async offer** | 2 days | One page, ten-question async intake form, payment path, and the offer boundary | A stranger can read, qualify, pay and submit inputs without any call; owner confirms payment/tax/refund feasibility | If payment is unavailable, run G3 with a free diagnostic form and treat it as qualitative evidence only, not demand |
 | **G3 distribution without an audience** | 14 days | At most two listings where an ad can be posted without an existing following: Upwork/Fiverr, Korean marketplaces such as 크몽/숨고, Habr or Telegram channels with explicit self-promotion rules, Reddit/HN threads where allowed | 200+ listing views, 5+ intake starts, 1+ paid order | 0 orders at 200 views changes the problem, offer or price — never adds features or connectors |
-| **G4 deliver, then upsell** | 3–5 days | The first paid deliverable plus recorded hours, provider cost, defects and manual repair | Delivered within 48 hours, ≤4 owner hours, produced through the same Iskra path the product will use; at least one of the first three buyers accepts a Launch or Managed proposal | If every next-step proposal is rejected, the audit sells diagnosis rather than operation; reclassify the paid product as the audit or a small adapter, not Managed |
+| **G4 deliver, then upsell** | 3–5 days | The first paid deliverable plus recorded hours, provider cost, defects and manual repair | Delivered within 48 hours, ≤4 owner hours, produced through the same Iskra path the product will use; at least one of the first three buyers accepts a Managed design-partner proposal | If every next-step proposal is rejected, the audit sells diagnosis rather than operation; reclassify the paid product as the audit or a small adapter, not Managed |
 
 ### G2 offer under test — Agent Ops Audit, $49 hypothesis
 
@@ -1261,7 +1261,7 @@ Phase A now passes when:
 1. G1 publishes dated pain evidence with receipts.
 2. G3 produces at least one paid audit.
 3. G4 delivers it with Iskra in the execution path in at most four owner hours.
-4. At least one of the first three buyers accepts a Launch or Managed proposal.
+4. At least one of the first three buyers accepts a Managed design-partner proposal.
 
 Five conversational confirmations and three budget discussions are no longer required. One paid managed order plus two delivered audits is stronger evidence than fifteen interviews and replaces the gate. The earlier twenty-contact/three-proposal stop rule is reinterpreted as twenty listing-qualified inquiries and three paid proposals.
 
