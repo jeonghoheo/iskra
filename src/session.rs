@@ -262,6 +262,24 @@ impl Session {
         })
     }
 
+    /// Returns the stored, already-redacted answer of a completed work item.
+    ///
+    /// Running, failed, stopped, interrupted, and unknown work items return
+    /// `None`. The returned text is the Session projection, not a new model
+    /// output.
+    pub fn completed_answer(&self, work_id: u64) -> Result<Option<String>, String> {
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|_| "Session lock is unavailable".to_string())?;
+        let state = inner.data.as_ref().map_err(Clone::clone)?;
+        Ok(state
+            .work
+            .iter()
+            .find(|record| record.id == work_id && record.status == WorkStatus::Completed)
+            .and_then(|record| record.answer.clone()))
+    }
+
     fn finish(
         &self,
         id: u64,
@@ -619,6 +637,41 @@ mod tests {
         );
         assert_eq!(turn.history[0].role, "user");
         assert_eq!(turn.history[1].role, "assistant");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn completed_answer_returns_only_the_stored_completed_answer() {
+        let dir = temp_dir("completed-answer");
+        let path = dir.join("session.json");
+        let session = Session::load(&path);
+
+        let mut completed = session.begin("remember the color").unwrap();
+        let completed_id = completed.id();
+        completed.complete("blue sk-secretvalue123").unwrap();
+
+        let mut failed = session.begin("fail this").unwrap();
+        let failed_id = failed.id();
+        failed.fail(FailureKind::Timeout).unwrap();
+
+        let stopped = session.begin("stop this").unwrap();
+        let stopped_id = stopped.id();
+        session.stop_current().unwrap();
+        drop(stopped);
+
+        assert_eq!(
+            session.completed_answer(completed_id).unwrap().as_deref(),
+            Some("blue «redacted 17 chars»")
+        );
+        assert_eq!(session.completed_answer(failed_id).unwrap(), None);
+        assert_eq!(session.completed_answer(stopped_id).unwrap(), None);
+        assert_eq!(session.completed_answer(999).unwrap(), None);
+
+        let reloaded = Session::load(&path);
+        assert_eq!(
+            reloaded.completed_answer(completed_id).unwrap().as_deref(),
+            Some("blue «redacted 17 chars»")
+        );
         fs::remove_dir_all(&dir).unwrap();
     }
 

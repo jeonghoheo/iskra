@@ -1,25 +1,29 @@
 # Iskra Business Strategy
 
-Status: **Outcome-first Headless Control Plane strategy approved; current implementation remains Stage 2.5-A `delivery/v1`; no paid product, final price, payment account, customer campaign, or external service has been launched**.
-Date: 2026-11-24.
+Status: **transaction-first survival strategy approved; current implementation remains Stage 2.5-A `delivery/v1`; no paid product, final price, payment account, customer campaign, or external service has been launched**.
+Date: 2026-11-25.
 
 ## 0. Current product and commercial strategy
 
-Build Iskra toward a MausBot-like **free local Agent workbench plus paid Always-on Cloud and Team**, but differentiate it as a **model-neutral, Headless Agent Control Plane**. Headless means **any UI, not no UI**: customer software, other agents, CLI, Telegram, a thin web console, and generated interfaces are replaceable projections of one authorized Outcome/event model.
+Build Iskra toward a MausBot-like **free local Agent workbench plus paid Always-on Cloud and Team**, with the long-term target of a **model-neutral, Outcome-verified Authority Hub**. Headless remains a target architecture meaning **any UI, not no UI**: customer software, other agents, CLI, Telegram, a thin web console, and generated interfaces are replaceable projections of one authorized Outcome/event model. It is not the current implemented product category.
 
-The public positioning hypothesis is:
+The initial market-entry strategy is **transaction first, one incident, one productization path**. Do not build Outcome, Evidence, Headless, ACP and several packs together before a stranger pays for a narrow result. Finish the current delivery-reliability stage, sell one fixed-scope incident audit through the existing Iskra path, and productize only a need that repeats in paid work.
 
-> **The model-neutral, headless control plane for agent work.** Run different agents, models and tools behind one durable API, policy boundary and audit trail.
+The long-term public customer contract remains **Outcome → Task → Run → Event/Artifact/Evidence/Delivery**, not merely an Agent chat or a count of executed Tasks. An Outcome has an owner, desired result, baseline/target metric, budget, data/tool scope, approval policy, acceptance checks and required evidence. A completed Run never automatically means an achieved Outcome. Approval records authorize privileged effects; they do not replace independent acceptance evidence.
 
-The public customer contract is **Outcome → Task → Run → Event/Artifact/Evidence/Delivery**, not merely an Agent chat or a count of executed Tasks. An Outcome has an owner, desired result, baseline/target metric, budget, data/tool scope, approval policy, acceptance checks and required evidence. A completed Run never automatically means an achieved Outcome.
+The initial product promise to test, only within scenarios that pass failure-injection verification, is:
+
+> **Verify agent results independently. Recover without invisible replay.**
+
+Current public descriptions must distinguish verified durable runs and no automatic restart replay from unimplemented Outcome, Evidence and Headless contracts. `docs/research/iskra-survival-strategy.md` §5–10 is the detailed survival plan.
 
 This section supersedes the earlier `$300 generic installation` offer and the rejected vertical-service-first draft. Limited design-partner support remains, but only to deliver the same managed Iskra product—not to become a different custom consultancy for every customer.
 
 ### Beachhead customer
 
-The first paid-customer hypothesis is a one-to-ten-person software or AI product team, or a technical founder, that already uses multiple models, Agents or CLIs; has API/webhook/routine work that must continue while a laptop is closed; and needs one policy, cost, delivery and recovery boundary. They do not want to be locked into one model provider's hosted runtime or assemble a large framework stack merely to operate Agents.
+The broader paid-customer hypothesis remains a one-to-ten-person software or AI product team, or a technical founder, that uses models, Agents or CLIs and needs one policy, cost, delivery and recovery boundary. The **first transaction target is narrower**: a technical owner already running coding agents unattended or repeatedly who has a reproducible restart duplicate-execution or duplicate-delivery incident. Multiple providers are not required for this first offer.
 
-Free Local adoption targets technical users who combine cost-efficient models such as GLM, DeepSeek or Qwen with existing coding agents and value a small self-hosted runtime and readable customer-owned data. Non-technical “business autopilot” buyers are not the initial market.
+Free Local adoption targets technical users who combine cost-efficient models such as GLM, DeepSeek or Qwen with existing coding agents and value a small self-hosted runtime and readable customer-owned data. These providers and communities are acquisition channels, not the permanent product identity. Non-technical “business autopilot” buyers are not the initial market.
 
 The customer pays for this operating result:
 
@@ -34,7 +38,7 @@ The customer pays for this operating result:
 | **Team** | Human collaboration | Seats, shared Agent/Procedure packages, private overrides, organization policy, approval roles and audit retention | Human seats plus resources after single-owner managed retention is proven |
 | **Private Deployment / Support** | Higher-touch revenue | Self-hosted deployment, migration, security review, training and support | Scoped services without private Core forks or unimplemented Team claims |
 
-Do not set final public prices by copying competitors. The product's first paid offer is a monthly **Managed Headless Workspace** design-partner beta, not a one-time installation fee. A realistic first paid-beta target is **8–16 weeks after product and security gates**, not an immediate revenue promise. The $49 **Agent Ops Audit** described under demand validation is a separate demand instrument that funds discovery; it is not the product, and it must be produced through the same Iskra path so that delivering it is also a product test. LOIs, waitlists and free usage are not revenue.
+Do not set final public prices by copying competitors. The product's first recurring-revenue offer remains a monthly **Managed Headless Workspace** design-partner beta, not a one-time installation fee. A realistic first paid-beta target is **8–16 weeks after product and security gates**, not an immediate revenue promise. The $49 **Agent Replay & Delivery Audit** described under demand validation is a separate fixed-scope demand instrument; neither its name nor price is validated. It uses the existing Iskra CLI/Run/Session/Delivery path after Stage 2.5-A, not a future Headless API, and records manual work explicitly. A paid audit proves demand for that diagnosis only—not Outcome API, Headless or Managed demand. LOIs, waitlists, design-partner proposal acceptance and free usage are not revenue.
 
 ### Outcome and BYOUI as product differentiators
 
@@ -53,15 +57,15 @@ Vercel Board can become an optional communication adapter later; Iskra does not 
 
 ### Demand and GLM validation
 
-Demand is validated by transactions, not by scheduled interviews. An owner who cannot hold intro calls runs an interview-free ladder instead: (1) collect dated public evidence of cross-vendor Agent operation pain from GitHub issues, Reddit/HN, Habr and provider forums; (2) publish one asynchronous, buyable **Agent Ops Audit** under a $49 price hypothesis with a ten-question intake form and a payment path that needs no call; (3) list it on at most two channels that require no existing audience, measuring views, intake starts and paid orders; (4) deliver the first paid audit through the same Iskra path the product will use, then offer the Managed Headless Workspace design-partner beta at a price set after measured cost.
+Demand is validated by transactions, not by scheduled interviews. An owner who cannot hold intro calls runs an interview-free ladder instead: (1) use the completed dated public evidence of Agent operation pain; (2) after Stage 2.5-A, produce one synthetic sample **Agent Replay & Delivery Audit** through the existing Iskra path and prepare a ten-question intake plus a payment path that needs no call; (3) after separate owner approval, list the fixed-scope offer on at most two channels that require no existing audience, measuring qualified views, intake starts and paid orders; (4) deliver the first paid audit within the same narrow scope, then test Managed separately through an actual paid pilot at a price set after measured cost.
 
-Gate: one paid audit delivered within 48 hours and four owner hours with Iskra in the execution path, and one of the first three buyers accepting a Managed design-partner proposal. Fifteen interviews and three budget conversations are no longer a gate; written answers through an Iskra-run intake may replace them, and five completed responses count as the qualitative evidence. The audit is a demand instrument, not the product: three consecutive audits requiring bespoke work stop the offer and reclassify it as consultancy. Details and failure rules are in `SESSION.md` "Interview-free demand ladder".
+Gate: one paid audit delivered within 48 hours and four owner hours with the existing Iskra path in execution. Productization requires either two paid audits requesting the same repeatable capability or one actual paid product pilot for that capability. Managed validation requires actual payment, not one of the first three audit buyers accepting a proposal. Fifteen interviews and three budget conversations are no longer a gate; written answers through an asynchronous intake may replace them, and five completed responses count as qualitative evidence only. Three consecutive audits requiring different bespoke work stop the fixed offer and reclassify it as consultancy. Details and failure rules are in `docs/research/iskra-survival-strategy.md` §6–10 and `SESSION.md` "Interview-free demand ladder".
 
 Z.AI officially supports GLM Coding Plan integration with Claude Code, and Russian-language setup/payment guides exist. No representative evidence has been found that most Russian developers are migrating to GLM. Treat GLM as an early Russian-speaking developer-community wedge and the next provider-compatibility candidate, never as the whole market thesis or a hard-coded default.
 
 ### Current technical dependency
 
-The approved Stage 2.5-A `delivery/v1` contract remains the current implementation target. The commercial and long-term architecture strategy does not replace it or start a parallel code Goal. Subsequent sequential cards cover provider compatibility, `outcome/v1`, `headless/v1`, scoped event projections, managed operation and only then bounded delegation/leases where required.
+The approved Stage 2.5-A `delivery/v1` contract remains the current implementation target. The commercial and long-term architecture strategy does not replace it or start a parallel code Goal. After its owner-run gate, prepare and test the narrow paid audit without adding new Core contracts. Only repeated paid demand opens a minimal `outcome/v1` plus deterministic `evidence/v1` card for one scenario. `headless/v1`, provider shootouts, ACP, scoped BYOUI projections, managed operation and delegation/leases each require their own demonstrated need, security review and explicit implementation approval; they are not an automatic sequence.
 
 ### Authority Hub and anti-absorption strategy
 
@@ -277,43 +281,41 @@ These measures are more aligned with the goal than downloads, stars, number of b
 
 ## 6. Go-to-market sequence
 
-### Phase A — demand and wedge evidence, Day 1–14
+### Phase A — current reliability and a fixed audit offer (P0–P1)
 
-- Collect at least eight dated public records of cross-vendor Agent operation pain, including at least three asking for a layer that owns state, authority or evidence across agents. Written evidence replaces scheduled interviews.
-- Record current providers, spend, switching reasons, laptop-off work, API clients, delivery/recovery failures and existing alternatives from those records and from asynchronous intake responses.
-- Ask who owns Task, permissions, outcome acceptance and result evidence today; why direct AgentField/CodeAF/OpenClaw/Vercel use is insufficient; and whether Iskra must sit in the execution path for a specific recurring Outcome.
-- Publish one buyable asynchronous Agent Ops Audit, list it on at most two channels that need no existing audience, and measure views, intake starts and paid orders.
-- Design three synthetic demonstrations: backend/CI → Outcome API → evidence/result; GLM versus another provider on the same labelled Outcome; scheduled/webhook work → approval → delivery/audit.
+- Finish the approved Stage 2.5-A `delivery/v1` cards and owner-run Telegram gate without adding Outcome, Evidence or ACP scope.
+- Create one synthetic duplicate-execution or duplicate-delivery sample through the existing Iskra CLI/Run/Session/Delivery path and a fixed local audit kit.
+- Limit the offer to one incident, one state/authority map, one reproduction fixture, one deterministic check and a short rerunnable evidence bundle.
+- Prepare the fixed-scope page, ten-question asynchronous intake and payment/refund/tax feasibility. Actual publication, payment setup and customer-data collection need separate owner approval.
 
-Gate: at least one paid audit delivered within four owner hours with Iskra in the path, and one of the first three buyers accepting a Managed design-partner proposal. GLM setup questions alone validate content demand, not Control Plane demand; zero orders at meaningful listing views changes the problem, offer or price rather than the feature set.
+Gate: the synthetic sample can be delivered again within four owner hours, with manual work explicitly recorded. No new Core contract, general log analyzer, Web UI or three-pack catalog is required.
 
-### Phase B — reliability and Headless Local v0, 0–3 months
+### Phase B — actual audit transactions (P2)
 
-- Implement the approved Stage 2.5-A `delivery/v1` first.
-- Add provider profiles and reproducible GLM/DeepSeek comparison gates with unknown cost/balance shown honestly.
-- Define `outcome/v1`: desired result, metric, acceptance, evidence, owner, budget and scope.
-- Add `headless/v1`: local-only authenticated Outcome API, idempotency, strict schemas, bounded requests and cursor-based event projections.
-- Prove that two different clients render the same authorized Outcome state without automatic restart replay.
+- After owner approval, list the **Agent Replay & Delivery Audit** under the $49 hypothesis on at most two channels that need no existing audience.
+- Measure qualified views, intake starts and paid orders separately by channel.
+- Deliver the first paid order within 48 hours and four owner hours using the same fixed scope and existing Iskra path.
+- Record repeated incident patterns, productization requests, owner time and manual repair without treating diagnosis revenue as Managed revenue.
 
-Gate: a new user defines an acceptance-bearing Outcome and obtains evidence within 15 minutes; existing tests/process checks, release/resource budgets and real provider checks pass.
+Gate: the initial experiment targets 200+ qualified views, 5+ intake starts and 1+ paid order. Zero orders at meaningful qualified views changes the incident, offer, price or channel—not the feature set. Core productization requires two paid audits requesting the same capability or one actual paid product pilot.
 
-### Phase C — MausBot-like Local Workbench, 2–6 months
+### Phase C — one paid-demand Outcome slice (P3)
 
-- Add one validated ACP coding-engine path, then only design-partner-required schedules/webhooks, MCP tools and Approval Broker slices.
-- Let an Intake Agent turn conversation into an Outcome Contract, a shadow Run and an approved Routine/Procedure; unsupported capabilities return an integration need or refusal.
-- Add verification, artifacts, evidence and reusable Procedures before a broad connector catalog.
-- Keep an official thin Outcome Board as one projection while allowing customer-generated read-only/sandboxed interfaces.
+- For only the scenario that passes the Phase B productization gate, define the minimum necessary `outcome/v1` and deterministic `evidence/v1` fields and one Outcome Pack.
+- Keep acceptance checks independent of the executing model. Approval records authorize effects but do not prove Outcome achievement.
+- Add provider comparison only if that paid scenario requires it, with unknown cost/balance shown honestly.
+- Open `headless/v1` only for an actual external-client requirement. Open ACP or delegation only when the built-in HTTP Agent cannot complete the paid work; neither is an automatic next Stage.
 
-Gate: real users repeatedly achieve Outcomes with less human intervention; external engines cannot bypass Core authority, and generated UIs cannot write stores directly.
+Gate: a new user can define the selected acceptance-bearing Outcome and reproduce its evidence within 15 minutes; existing tests/process checks, release/resource budgets and applicable real-provider checks pass. Additional packs, `doctor`, `export`, BYOUI and Procedures remain separate demand-backed cards.
 
-### Phase D — paid Managed Headless Workspace, 3–9 months
+### Phase D — paid Managed Headless Workspace (P4)
 
 - Sell only implemented and verified capabilities: a single-tenant always-on workspace, validated providers, one remote client integration, one recurring Outcome, backup/restore, delivery/usage evidence and termination export.
-- Start with a manually provisioned monthly beta for at most three design partners sharing the same Core and operations path. No private forks or one-time installation-only offer.
-- Use GLM/Russian-language technical content for adoption and Headless quickstarts/provider evaluations for English-speaking acquisition; attach paid conversion to always-on operation, policy and recovery.
+- Start only after local repeated Outcome success and product/security gates. A design-partner proposal acceptance is not a pass; Managed validation requires an actual paid pilot.
+- Use a manually provisioned monthly beta for at most three design partners sharing the same Core and operations path. No private forks or one-time installation-only offer.
 - Measure total model, external-engine, infrastructure, support and payment cost before final pricing.
 
-Gate: three partners actually pay, at least two remain active after four weeks, one recurring Outcome runs without manual repair for an agreed period, restore/export/deletion works, and target gross margin is at least 70% after stabilization. Twenty qualified contacts plus three concrete paid proposals with no purchase stops generic managed-cloud expansion.
+Expansion gate: three partners actually pay, at least two remain active after four weeks, one recurring Outcome runs without manual repair for an agreed period, restore/export/deletion works, and target gross margin is at least 70% after stabilization. Audit sales without an actual Managed purchase stop generic managed-cloud expansion and trigger audit-product or small-adapter positioning instead.
 
 ### Phase E — Headless Agent Control Plane, 6–18 months
 
@@ -332,9 +334,16 @@ Gate: customer work genuinely requires dynamic multi-Agent coordination and its 
 
 ## 7. Metrics and stop rules
 
-Track locally and, for any future hosted service, with explicit consent:
+Track locally and, for any future hosted service, with explicit consent. With only a few customers, report actual counts, elapsed time and repeated patterns before interpreting ratios.
 
-### Outcome efficiency
+### Early transaction and delivery evidence
+
+- Qualified views, intake starts and paid audit orders, reported separately by channel.
+- Owner hours and manual repair count per audit; the number of paid customers repeating the same incident and productization request.
+- Automatic reruns and duplicate deliveries observed under each failure-injection scenario, acceptance-check reproducibility, time to evidence and unknown-cost item count.
+- Actual Managed payments separately from audit revenue and proposal acceptance.
+
+### Outcome efficiency after repeated use
 
 - **Verified Outcome Rate:** Outcomes passing acceptance evidence / accepted Outcomes.
 - **Cost per Verified Outcome:** model + external engine + infrastructure + human intervention + support.
@@ -363,7 +372,10 @@ Stop or narrow expansion when:
 - Hosted usage grows but unit economics remain negative after price/allowance correction.
 - AgentField/CodeAF/OpenClaw already wins the customer's installation, Outcome, BYOUI, recovery or total-cost requirements without a practical Iskra advantage; reposition as an adapter instead of a generic Hub.
 - Users create Agents but do not retain or reuse successful workflows.
-- Three consecutive Agent Ops Audits require bespoke analysis instead of the same Iskra path; reclassify the offer as consultancy or narrow it to a small adapter.
+- Two hundred or more qualified listing views produce no order; change the incident, offer, price or channel rather than adding features.
+- Three consecutive fixed-scope audits require different bespoke analysis; stop the offer and reclassify it as consultancy or narrow it to a small adapter.
+- Paid audits do not repeat the same productization request; do not start Outcome or Headless Core expansion.
+- Audits sell but no actual Managed purchase follows; stop generic Managed expansion and evaluate the fixed audit or a small adapter as the product instead.
 - A new surface would violate the local binary, privacy, security, or dependency budgets without a separately approved reason.
 
 ## 8. Explicitly avoided strategies

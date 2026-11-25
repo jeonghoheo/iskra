@@ -75,6 +75,7 @@ define_keys!(
     StickiesDescription,
     ResumeDescription,
     StopDescription,
+    ResultDescription,
     HelpDescription,
     StartGreeting,
     HelpHeader,
@@ -107,6 +108,7 @@ define_keys!(
     ErrorMaxRoundtrips,
     ErrorEmpty,
     ErrorSession,
+    ErrorDeliveryStorage,
     ErrorOther,
     ReasonNotFound,
     ReasonAccessRefused,
@@ -133,6 +135,8 @@ define_keys!(
     StatusAgent,
     StatusQueue,
     StatusQueueUnavailable,
+    StatusDelivery,
+    StatusDeliveryUnavailable,
     QueueAccepted,
     ResumeDone,
     ResumeNone,
@@ -140,6 +144,11 @@ define_keys!(
     RouteUnavailable,
     RouteMalformed,
     RouteEmpty,
+    ResultUsage,
+    ResultUnknownRun,
+    ResultNotCompleted,
+    ResultAnswerMissing,
+    ResultUnavailable,
     UnknownCommand,
     InputTooLong,
 );
@@ -176,15 +185,20 @@ pub fn text(locale: Locale, key: Key) -> &'static str {
             "하던 일 멈추기",
             "Остановить текущую задачу",
         ),
+        Key::ResultDescription => (
+            "Read a saved answer by work number",
+            "작업 번호로 저장된 답변 다시 보기",
+            "Показать сохранённый ответ по номеру задачи",
+        ),
         Key::HelpDescription => (
             "List available commands",
             "명령어 목록 보기",
             "Показать список команд",
         ),
         Key::StartGreeting => (
-            "Hi, I'm Iskra.\nWhat I can do:\n• Chat, and remember what you tell me (\"remember how I take my coffee\")\n• Create and read files in my work folder\n• Pin notes to the sticky board (\"stick this on the board\")\nEverything I remember and every file stays on this computer.\nIf an extra agent is set up, start with @name to reach it.\nCommands: /status · /agents · /stickies · /resume · /stop · /help",
-            "안녕하세요, 이스크라예요.\n할 수 있는 일:\n• 대화하고, 알려 준 것을 기억해요 (\"내 커피 취향 기억해 줘\")\n• 작업 폴더에서 파일을 만들고 읽어요\n• 스티키 보드에 메모를 붙여요 (\"이거 보드에 붙여 줘\")\n기억과 파일은 모두 이 컴퓨터에만 저장돼요.\n추가 에이전트가 있으면 @이름으로 시작해 부를 수 있어요.\n명령어: /status 상태 · /agents 에이전트 · /stickies 보드 · /resume 재개 · /stop 멈추기 · /help 도움말",
-            "Привет, я Искра.\nЧто я умею:\n• Общаться и запоминать то, что вы рассказываете («запомни, какой кофе я пью»)\n• Создавать и читать файлы в рабочей папке\n• Прикреплять заметки на доску стикеров («прикрепи это на доску»)\nВсё, что я помню, и все файлы хранятся только на этом компьютере.\nЕсли настроен второй агент, начните с @имя, чтобы обратиться к нему.\nКоманды: /status · /agents · /stickies · /resume · /stop · /help",
+            "Hi, I'm Iskra.\nWhat I can do:\n• Chat, and remember what you tell me (\"remember how I take my coffee\")\n• Create and read files in my work folder\n• Pin notes to the sticky board (\"stick this on the board\")\nEverything I remember and every file stays on this computer.\nIf an extra agent is set up, start with @name to reach it.\nCommands: /status · /agents · /stickies · /resume · /stop · /result · /help",
+            "안녕하세요, 이스크라예요.\n할 수 있는 일:\n• 대화하고, 알려 준 것을 기억해요 (\"내 커피 취향 기억해 줘\")\n• 작업 폴더에서 파일을 만들고 읽어요\n• 스티키 보드에 메모를 붙여요 (\"이거 보드에 붙여 줘\")\n기억과 파일은 모두 이 컴퓨터에만 저장돼요.\n추가 에이전트가 있으면 @이름으로 시작해 부를 수 있어요.\n명령어: /status 상태 · /agents 에이전트 · /stickies 보드 · /resume 재개 · /stop 멈추기 · /result 결과 · /help 도움말",
+            "Привет, я Искра.\nЧто я умею:\n• Общаться и запоминать то, что вы рассказываете («запомни, какой кофе я пью»)\n• Создавать и читать файлы в рабочей папке\n• Прикреплять заметки на доску стикеров («прикрепи это на доску»)\nВсё, что я помню, и все файлы хранятся только на этом компьютере.\nЕсли настроен второй агент, начните с @имя, чтобы обратиться к нему.\nКоманды: /status · /agents · /stickies · /resume · /stop · /result · /help",
         ),
         Key::HelpHeader => (
             "Available commands:",
@@ -296,6 +310,11 @@ pub fn text(locale: Locale, key: Key) -> &'static str {
             "작업 공간을 안전하게 저장할 수 없어 멈췄어요. 기존 저장 내용은 바꾸지 않았어요.",
             "Не удалось безопасно сохранить рабочее пространство, поэтому я остановилась. Прежние сохранённые данные не изменены.",
         ),
+        Key::ErrorDeliveryStorage => (
+            "I couldn't safely save the record of this reply, so I didn't send it. The previous saved data was left unchanged.",
+            "답변 기록을 안전하게 저장할 수 없어 보내지 않았어요. 기존 저장 내용은 바꾸지 않았어요.",
+            "Не удалось безопасно сохранить запись ответа, поэтому я его не отправила. Прежние сохранённые данные не изменены.",
+        ),
         Key::ErrorOther => (
             "Something went wrong and I stopped. Please try again — /status shows what's going on.",
             "문제가 생겨서 멈췄어요. 다시 보내 주세요. 계속되면 /status로 상태를 확인할 수 있어요.",
@@ -404,6 +423,16 @@ pub fn text(locale: Locale, key: Key) -> &'static str {
         Key::StatusQueueUnavailable => {
             ("Work: unavailable", "작업: 확인 불가", "Работа: недоступно")
         }
+        Key::StatusDelivery => (
+            "Delivery: {} waiting, {} refused, {} uncertain · {} answer(s) not fully delivered",
+            "전달: 대기 {}, 거절 {}, 불확실 {} · 끝까지 전달되지 않은 답변 {}건",
+            "Доставка: в ожидании {}, отклонено {}, неясно {} · ответов доставлено не полностью: {}",
+        ),
+        Key::StatusDeliveryUnavailable => (
+            "Delivery: unavailable",
+            "전달: 확인 불가",
+            "Доставка: недоступна",
+        ),
         Key::QueueAccepted => (
             "Got it. {} is busy, so this will start when the current request finishes. Waiting: {}.",
             "접수했어요. {}가 지금 일하는 중이라, 끝나면 시작할게요. 기다리는 요청: {}개.",
@@ -438,6 +467,31 @@ pub fn text(locale: Locale, key: Key) -> &'static str {
             "Type your request after @name.",
             "@이름 뒤에 요청을 적어 주세요.",
             "Напишите запрос после @имя.",
+        ),
+        Key::ResultUsage => (
+            "Usage: /result <work number>",
+            "사용법: /result <작업 번호>",
+            "Использование: /result <номер задачи>",
+        ),
+        Key::ResultUnknownRun => (
+            "There is no work with number {}.",
+            "{}번 작업이 없어요.",
+            "Работы с номером {} нет.",
+        ),
+        Key::ResultNotCompleted => (
+            "Work {} isn't finished yet, so there is no saved answer.",
+            "{}번 작업은 아직 끝나지 않아 저장된 답변이 없어요.",
+            "Работа {} ещё не завершена, сохранённого ответа пока нет.",
+        ),
+        Key::ResultAnswerMissing => (
+            "The saved answer for work {} is unavailable.",
+            "{}번 작업의 저장된 답변을 불러올 수 없어요.",
+            "Сохранённый ответ для работы {} недоступен.",
+        ),
+        Key::ResultUnavailable => (
+            "I can't read saved answers right now. The saved data was left unchanged.",
+            "지금은 저장된 답변을 읽을 수 없어요. 저장된 내용은 바꾸지 않았어요.",
+            "Сейчас не удаётся прочитать сохранённые ответы. Сохранённые данные не изменены.",
         ),
         Key::UnknownCommand => (
             "Unknown command. Try /help.",

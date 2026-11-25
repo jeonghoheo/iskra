@@ -1,11 +1,17 @@
 use crate::brain::BalanceResponse;
+use crate::delivery::{
+    DeliveryChannel, DeliveryError, DeliveryOutcome, DeliveryState, DeliveryStore, DeliveryTicket,
+};
 use crate::health::{self, Health};
 use crate::locale::{self, Key, Locale};
 use crate::logging;
 use crate::memory;
 use crate::prompt;
 use crate::route::{self, RouteError};
-use crate::run::{Core, RunError, RunQueueStatus, RunState, RunTicket, RuntimeEventKind};
+use crate::run::{
+    Core, RunError, RunQueueStatus, RunState, RunTicket, RuntimeEventKind, TERMINAL_POLL_INTERVAL,
+    TerminalOutcome,
+};
 use crate::run_context::MAIN_AGENT_ID;
 use crate::runtime::AgentRuntime;
 use crate::session::FailureKind;
@@ -30,13 +36,14 @@ const TYPING_REFRESH_SECS: u64 = 4;
 const STARTUP_WINDOW_SECS: u64 = 20;
 const STARTUP_ATTEMPT_TIMEOUT_SECS: u64 = 5;
 const HEALTH_INTERVAL_SECS: u64 = 30;
-const COMMAND_KEYS: [(&str, Key); 7] = [
+const COMMAND_KEYS: [(&str, Key); 8] = [
     ("start", Key::StartDescription),
     ("status", Key::StatusDescription),
     ("agents", Key::AgentsDescription),
     ("stickies", Key::StickiesDescription),
     ("resume", Key::ResumeDescription),
     ("stop", Key::StopDescription),
+    ("result", Key::ResultDescription),
     ("help", Key::HelpDescription),
 ];
 
@@ -110,6 +117,13 @@ pub async fn run(core: Arc<Core>) -> Result<(), Box<dyn std::error::Error + Send
 
     logging::append("telegram_start");
     register_commands(&bot).await;
+    match core.delivery().counts() {
+        Ok(counts) => logging::append(&format!(
+            "telegram_delivery_start deliveries={} unresolved={}",
+            counts.records, counts.unresolved_records
+        )),
+        Err(error) => logging::append(&format!("telegram_delivery_start_error {error}")),
+    }
 
     let state = Arc::new(ChannelState {
         bot: bot.clone(),
@@ -423,6 +437,7 @@ async fn handle_message(bot: Bot, msg: Message, state: Arc<ChannelState>) -> Han
         "/stop" => stop_turn(&state, chat_id, &args, lang).await?,
         "/resume" => resume_turn(&state, chat_id, &args, lang).await?,
         "/status" => send_status(&state, chat_id, &args, lang).await?,
+        "/result" => send_result(&state, chat_id, &args, lang).await?,
         "/agents" => send_agents(&state, chat_id, lang).await?,
         _ => match route::select(&user_message, state.core.registry()) {
             Ok(route) => start_turn(&state, chat_id, &route.agent_id, &route.input, lang),
@@ -727,7 +742,7 @@ async fn handle_stickies_command(
     }
 }
 
-fn failure_text(lang: Locale, category: FailureKind, detail: &str) -> String {
+pub(crate) fn failure_text(lang: Locale, category: FailureKind, detail: &str) -> String {
     match category {
         FailureKind::Timeout | FailureKind::Connection => {
             locale::text(lang, Key::ErrorTimeout).to_string()
@@ -824,6 +839,17 @@ fn start_turn(
     }
 }
 
+/// Result of one durable-state check made while waiting for a RuntimeEvent.
+enum Recovery {
+    /// The Run is still active or not yet recorded.
+    Pending,
+    /// A terminal outcome was handled; the watcher must stop.
+    Handled,
+    /// The durable stores could not be read. The watcher stops without a
+    /// successful claim and without retrying the work.
+    Unavailable,
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn watch_turn(
     core: Arc<Core>,
@@ -843,8 +869,12 @@ async fn watch_turn(
     }
     let mut typing: Option<TypingGuard> = None;
     loop {
-        match events.recv().await {
-            Ok(event) if event.run_id == ticket.id => match event.kind {
+        // RuntimeEvents are hints. Each wait is bounded, and a timeout or a
+        // lagged stream falls back to the durable Run/Session projection so a
+        // missing event cannot hang the watcher or leave typing active.
+        let received = tokio::time::timeout(TERMINAL_POLL_INTERVAL, events.recv()).await;
+        match received {
+            Ok(Ok(event)) if event.run_id == ticket.id => match event.kind {
                 RuntimeEventKind::Started => {
                     logging::append(&format!(
                         "telegram_run_started run_id={} agent={} revision={} seq={}",
@@ -858,10 +888,7 @@ async fn watch_turn(
                 }
                 RuntimeEventKind::Completed { answer } => {
                     drop(typing.take());
-                    let text = attributed_reply(&agent_id, &answer);
-                    if let Err(e) = send_reply(&bot, chat_id, &text).await {
-                        logging::append(&format!("telegram_send_failed {e}"));
-                    }
+                    send_run_reply(&core, &bot, chat_id, ticket.id, &agent_id, &answer, lang).await;
                     sync_sticky_after_turn(&core, &bot, chat_id, lang).await;
                     break;
                 }
@@ -871,10 +898,8 @@ async fn watch_turn(
                         "telegram_turn_error run_id={} agent={agent_id} category={category:?}",
                         ticket.id
                     ));
-                    let text = attributed_reply(&agent_id, &failure_text(lang, category, &detail));
-                    if let Err(e) = send_reply(&bot, chat_id, &text).await {
-                        logging::append(&format!("telegram_send_failed {e}"));
-                    }
+                    let text = failure_text(lang, category, &detail);
+                    send_run_reply(&core, &bot, chat_id, ticket.id, &agent_id, &text, lang).await;
                     sync_sticky_after_turn(&core, &bot, chat_id, lang).await;
                     break;
                 }
@@ -886,25 +911,146 @@ async fn watch_turn(
                 RuntimeEventKind::StorageFailed => {
                     drop(typing.take());
                     logging::append(&format!("telegram_storage_failed run_id={}", ticket.id));
+                    // A storage failure may leave the Run non-terminal, so no valid
+                    // delivery identity can be attached to this notice.
                     let text = attributed_reply(&agent_id, locale::text(lang, Key::ErrorSession));
-                    if let Err(e) = send_reply(&bot, chat_id, &text).await {
-                        logging::append(&format!("telegram_send_failed {e}"));
-                    }
+                    send_notice(&bot, chat_id, &text).await;
                     break;
                 }
             },
-            Ok(_) => {}
-            Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+            Ok(Ok(_)) => {}
+            Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped))) => {
                 logging::append(&format!(
                     "telegram_event_lagged run_id={} skipped={skipped}",
                     ticket.id
                 ));
+                match recover_terminal(&core, &bot, chat_id, ticket.id, &agent_id, lang).await {
+                    Recovery::Pending => {}
+                    Recovery::Handled | Recovery::Unavailable => {
+                        drop(typing.take());
+                        break;
+                    }
+                }
             }
-            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+            Ok(Err(tokio::sync::broadcast::error::RecvError::Closed)) => {
                 drop(typing.take());
                 logging::append(&format!("telegram_event_closed run_id={}", ticket.id));
+                if !matches!(
+                    recover_terminal(&core, &bot, chat_id, ticket.id, &agent_id, lang).await,
+                    Recovery::Handled
+                ) {
+                    logging::append(&format!(
+                        "telegram_recovery_unavailable run_id={}",
+                        ticket.id
+                    ));
+                }
                 break;
             }
+            Err(_elapsed) => {
+                match recover_terminal(&core, &bot, chat_id, ticket.id, &agent_id, lang).await {
+                    Recovery::Pending => {}
+                    Recovery::Handled | Recovery::Unavailable => {
+                        drop(typing.take());
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Recovers a terminal outcome from the durable Run and Session records.
+///
+/// It only reads. Telegram is contacted only when the Run is terminal, the
+/// stored answer or category is available, and this Run has no delivery attempt
+/// for the same channel and target. A missing or unreadable answer is reported
+/// as a storage notice rather than a fabricated success.
+async fn recover_terminal(
+    core: &Core,
+    bot: &Bot,
+    chat_id: ChatId,
+    run_id: u64,
+    agent_id: &str,
+    lang: Locale,
+) -> Recovery {
+    let outcome = match core.terminal_outcome(run_id) {
+        Ok(Some(outcome)) => outcome,
+        Ok(None) => return Recovery::Pending,
+        Err(error) => {
+            logging::append(&format!("telegram_recovery_error run_id={run_id} {error}"));
+            return Recovery::Unavailable;
+        }
+    };
+    let state = match &outcome {
+        TerminalOutcome::Completed { .. } => "completed",
+        TerminalOutcome::Failed { .. } => "failed",
+        TerminalOutcome::Cancelled => "cancelled",
+        TerminalOutcome::Interrupted => "interrupted",
+    };
+    logging::append(&format!("telegram_recovered run_id={run_id} state={state}"));
+
+    match outcome {
+        TerminalOutcome::Completed {
+            answer: Some(answer),
+        } => {
+            if !recovered_delivery_allowed(core, bot, chat_id, run_id, lang).await {
+                return Recovery::Handled;
+            }
+            send_run_reply(core, bot, chat_id, run_id, agent_id, &answer, lang).await;
+            sync_sticky_after_turn(core, bot, chat_id, lang).await;
+        }
+        TerminalOutcome::Completed { answer: None } => {
+            logging::append(&format!("telegram_recovery_answer_missing run_id={run_id}"));
+            let text = attributed_reply(agent_id, locale::text(lang, Key::ErrorSession));
+            send_notice(bot, chat_id, &text).await;
+        }
+        TerminalOutcome::Failed { category } => {
+            if !recovered_delivery_allowed(core, bot, chat_id, run_id, lang).await {
+                return Recovery::Handled;
+            }
+            logging::append(&format!(
+                "telegram_turn_error run_id={run_id} agent={agent_id} category={category:?}"
+            ));
+            let text = failure_text(lang, category, "");
+            send_run_reply(core, bot, chat_id, run_id, agent_id, &text, lang).await;
+            sync_sticky_after_turn(core, bot, chat_id, lang).await;
+        }
+        TerminalOutcome::Cancelled | TerminalOutcome::Interrupted => {
+            logging::append(&format!(
+                "telegram_recovered_stop run_id={run_id} state={state}"
+            ));
+        }
+    }
+    Recovery::Handled
+}
+
+/// A recovery send is allowed only when no delivery attempt exists for this Run,
+/// channel, and target. An unresolved attempt is not retried automatically.
+async fn recovered_delivery_allowed(
+    core: &Core,
+    bot: &Bot,
+    chat_id: ChatId,
+    run_id: u64,
+    lang: Locale,
+) -> bool {
+    let target = chat_id.0.to_string();
+    match core
+        .delivery()
+        .existing_attempt(run_id, DeliveryChannel::Telegram, &target)
+    {
+        Ok(false) => true,
+        Ok(true) => {
+            logging::append(&format!(
+                "telegram_recovery_delivery_exists run_id={run_id}"
+            ));
+            false
+        }
+        Err(error) => {
+            logging::append(&format!(
+                "telegram_recovery_delivery_error run_id={run_id} error={error}"
+            ));
+            send_notice(bot, chat_id, locale::text(lang, Key::ErrorDeliveryStorage)).await;
+            false
         }
     }
 }
@@ -1179,6 +1325,135 @@ async fn send_status(
     Ok(())
 }
 
+/// Parses `/result`'s single work-number argument. Only one positive integer is
+/// accepted; anything else is a localized usage error at the call site.
+pub(crate) fn parse_run_id(args: &str) -> Option<u64> {
+    let args = args.trim();
+    if args.is_empty() || args.split_whitespace().count() != 1 {
+        return None;
+    }
+    args.parse::<u64>().ok().filter(|id| *id > 0)
+}
+
+/// Sends a completed Run's stored redacted answer as an explicit, tracked
+/// delivery. This reads Session without a model/tool call and never retries
+/// automatically; every invocation is a new owner action.
+async fn send_result(
+    state: &Arc<ChannelState>,
+    chat_id: ChatId,
+    args: &str,
+    lang: Locale,
+) -> HandlerResult {
+    let Some(run_id) = parse_run_id(args) else {
+        logging::append("telegram_result usage");
+        state
+            .bot
+            .send_message(chat_id, locale::text(lang, Key::ResultUsage))
+            .await?;
+        return Ok(());
+    };
+
+    let target = match state.core.run_target(run_id) {
+        Ok(Some(target)) => target,
+        Ok(None) => {
+            logging::append(&format!("telegram_result run_id={run_id} state=unknown"));
+            state
+                .bot
+                .send_message(chat_id, locale::with(lang, Key::ResultUnknownRun, run_id))
+                .await?;
+            return Ok(());
+        }
+        Err(error) => {
+            logging::append(&format!(
+                "telegram_result_error run_id={run_id} error={error}"
+            ));
+            state
+                .bot
+                .send_message(chat_id, locale::text(lang, Key::ResultUnavailable))
+                .await?;
+            return Ok(());
+        }
+    };
+
+    if target.state != RunState::Completed {
+        logging::append(&format!(
+            "telegram_result run_id={run_id} agent={} state={:?}",
+            target.agent_id, target.state
+        ));
+        state
+            .bot
+            .send_message(chat_id, locale::with(lang, Key::ResultNotCompleted, run_id))
+            .await?;
+        return Ok(());
+    }
+
+    let answer = match state.core.completed_answer(run_id) {
+        Ok(Some(answer)) => answer,
+        Ok(None) => {
+            logging::append(&format!(
+                "telegram_result run_id={run_id} agent={} state=answer_missing",
+                target.agent_id
+            ));
+            state
+                .bot
+                .send_message(
+                    chat_id,
+                    locale::with(lang, Key::ResultAnswerMissing, run_id),
+                )
+                .await?;
+            return Ok(());
+        }
+        Err(error) => {
+            logging::append(&format!(
+                "telegram_result_error run_id={run_id} error={error}"
+            ));
+            state
+                .bot
+                .send_message(chat_id, locale::text(lang, Key::ResultUnavailable))
+                .await?;
+            return Ok(());
+        }
+    };
+
+    logging::append(&format!(
+        "telegram_result run_id={run_id} agent={} state=completed",
+        target.agent_id
+    ));
+    if let Some(ticket) = send_run_reply(
+        &state.core,
+        &state.bot,
+        chat_id,
+        run_id,
+        &target.agent_id,
+        &answer,
+        lang,
+    )
+    .await
+    {
+        match state.core.delivery().get(ticket.id) {
+            Ok(Some(record)) => {
+                let sent = record
+                    .chunks
+                    .iter()
+                    .filter(|chunk| chunk.state == DeliveryState::Sent)
+                    .count();
+                logging::append(&format!(
+                    "telegram_result_delivery id={} run={run_id} chunks={} recorded={} sent={sent}",
+                    record.id,
+                    record.chunk_count,
+                    record.chunks.len()
+                ));
+            }
+            Ok(None) => {}
+            Err(error) => logging::append(&format!(
+                "telegram_result_delivery_error id={} error={error}",
+                ticket.id
+            )),
+        }
+    }
+    Ok(())
+}
+
 /// Composes the status text for one Agent. Shared by Telegram and the CLI.
 pub(crate) async fn agent_status_text(core: &Core, lang: Locale, agent_id: &str) -> Option<String> {
     let slot = core.registry().slot(agent_id)?;
@@ -1186,6 +1461,7 @@ pub(crate) async fn agent_status_text(core: &Core, lang: Locale, agent_id: &str)
         Ok(status) => queue_line(lang, &status),
         Err(_) => locale::text(lang, Key::StatusQueueUnavailable).to_string(),
     };
+    let delivery = delivery_line(core.delivery(), lang, agent_id);
     let agent = if agent_id == MAIN_AGENT_ID {
         None
     } else {
@@ -1204,6 +1480,7 @@ pub(crate) async fn agent_status_text(core: &Core, lang: Locale, agent_id: &str)
             unavailable,
             unavailable,
             &queue,
+            &delivery,
         ));
     };
 
@@ -1229,6 +1506,7 @@ pub(crate) async fn agent_status_text(core: &Core, lang: Locale, agent_id: &str)
         &cost,
         &balance,
         &queue,
+        &delivery,
     ))
 }
 
@@ -1245,6 +1523,30 @@ fn queue_line(lang: Locale, status: &RunQueueStatus) -> String {
     )
 }
 
+/// Delivery state is reported separately from Run/Queue state. An unreadable or
+/// poisoned store reports `unavailable`, never zero counts.
+fn delivery_line(store: &DeliveryStore, lang: Locale, agent_id: &str) -> String {
+    match store.counts_for_agent(agent_id) {
+        Ok(counts) => locale::with_values(
+            lang,
+            Key::StatusDelivery,
+            &[
+                counts.pending.to_string(),
+                counts.failed.to_string(),
+                counts.unknown.to_string(),
+                counts.unresolved_records.to_string(),
+            ],
+        ),
+        Err(error) => {
+            let detail = store.error().unwrap_or_else(|| error.to_string());
+            logging::append(&format!(
+                "delivery_status_error agent={agent_id} error={detail}"
+            ));
+            locale::text(lang, Key::StatusDeliveryUnavailable).to_string()
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn status_text(
     lang: Locale,
@@ -1256,6 +1558,7 @@ fn status_text(
     cost: &str,
     balance: &str,
     queue: &str,
+    delivery: &str,
 ) -> String {
     let mut lines = Vec::new();
     if let Some((display, id)) = agent {
@@ -1272,6 +1575,7 @@ fn status_text(
     lines.push(locale::with(lang, Key::StatusSession, session));
     lines.push(locale::with(lang, Key::StatusTokens, tokens));
     lines.push(queue.to_string());
+    lines.push(delivery.to_string());
     lines.join("\n")
 }
 
@@ -1513,33 +1817,235 @@ fn attributed_reply(agent_id: &str, text: &str) -> String {
     }
 }
 
-async fn send_reply(bot: &Bot, chat_id: ChatId, text: &str) -> Result<(), String> {
-    let chunks = split_message(text);
-    for chunk in &chunks {
-        send_chunk(bot, chat_id, chunk).await?;
+/// Classified Telegram send result for one logical chunk.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SendOutcome {
+    Sent {
+        message_id: i64,
+    },
+    /// Telegram definitively refused the Markdown entities; the message was not
+    /// accepted, so the single plain-text fallback is allowed.
+    MarkdownRejected,
+    /// A structured Bot API error proves the message was not accepted.
+    Rejected,
+    /// Timeout, connection loss, reset, or an unparseable response. The outcome
+    /// is unknown and must never be retried automatically.
+    Ambiguous,
+}
+
+impl SendOutcome {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Sent { .. } => "sent",
+            Self::MarkdownRejected => "markdown_rejected",
+            Self::Rejected => "rejected",
+            Self::Ambiguous => "ambiguous",
+        }
     }
-    logging::append(&format!("telegram_reply_sent chunks={}", chunks.len()));
-    Ok(())
+}
+
+#[derive(Default)]
+struct TrackedSendReport {
+    sent: u32,
+    failed: u32,
+    unknown: u32,
+    unattempted: u32,
+    /// A send returned success but its `sent` state could not be persisted.
+    delivered_unrecorded: u32,
+    storage_error: Option<DeliveryError>,
+}
+
+fn classify_send_error(error: &RequestError) -> SendOutcome {
+    match error {
+        RequestError::Api(ApiError::CantParseEntities(_)) => SendOutcome::MarkdownRejected,
+        // An unrecognized API description cannot prove the message was not
+        // accepted, so it stays ambiguous rather than becoming a clean failure.
+        RequestError::Api(ApiError::Unknown(_)) => SendOutcome::Ambiguous,
+        RequestError::Api(_) => SendOutcome::Rejected,
+        RequestError::RetryAfter(_) | RequestError::MigrateToChatId(_) => SendOutcome::Rejected,
+        RequestError::Network(_) | RequestError::InvalidJson { .. } | RequestError::Io(_) => {
+            SendOutcome::Ambiguous
+        }
+    }
 }
 
 #[allow(deprecated)]
-async fn send_chunk(bot: &Bot, chat_id: ChatId, text: &str) -> Result<(), String> {
-    match bot
-        .send_message(chat_id, text)
-        .parse_mode(ParseMode::Markdown)
-        .await
-    {
-        Ok(_) => Ok(()),
-        Err(first) => {
-            logging::append(&format!("telegram_send_retry first_err={first}"));
-            match bot.send_message(chat_id, text).await {
-                Ok(_) => Ok(()),
-                Err(second) => {
-                    logging::append(&format!("telegram_send_error err={second}"));
-                    Err(second.to_string())
+async fn send_telegram_chunk(
+    bot: &Bot,
+    chat_id: ChatId,
+    text: &str,
+    markdown: bool,
+) -> SendOutcome {
+    let request = bot.send_message(chat_id, text);
+    let request = if markdown {
+        request.parse_mode(ParseMode::Markdown)
+    } else {
+        request
+    };
+    match request.await {
+        Ok(message) => SendOutcome::Sent {
+            message_id: i64::from(message.id.0),
+        },
+        Err(error) => classify_send_error(&error),
+    }
+}
+
+/// Sends one already-attributed and already-localized run reply.
+///
+/// Attribution and localization happen before chunking, so every persisted
+/// chunk describes exactly what Telegram receives. A storage failure before the
+/// first chunk reaches Telegram is refused with a localized notice; a failure
+/// after some chunks were sent stops the remaining sends without a retry.
+async fn send_run_reply(
+    core: &Core,
+    bot: &Bot,
+    chat_id: ChatId,
+    run_id: u64,
+    agent_id: &str,
+    text: &str,
+    lang: Locale,
+) -> Option<DeliveryTicket> {
+    let text = attributed_reply(agent_id, text);
+    let chunks = split_message(&text);
+    if chunks.is_empty() {
+        return None;
+    }
+
+    let target = chat_id.0.to_string();
+    let ticket = match core.create_delivery(
+        run_id,
+        DeliveryChannel::Telegram,
+        &target,
+        chunks.len() as u32,
+    ) {
+        Ok(ticket) => ticket,
+        Err(error) => {
+            logging::append(&format!(
+                "telegram_delivery_refused run={run_id} error={error}"
+            ));
+            send_notice(bot, chat_id, locale::text(lang, Key::ErrorDeliveryStorage)).await;
+            return None;
+        }
+    };
+
+    let report = send_tracked_chunks(
+        core.delivery(),
+        bot,
+        chat_id,
+        ticket.id,
+        ticket.revision,
+        &chunks,
+    )
+    .await;
+
+    logging::append(&format!(
+        "telegram_delivery_report id={} run={run_id} chunks={} sent={} failed={} unknown={} unattempted={} unrecorded={}",
+        ticket.id,
+        chunks.len(),
+        report.sent,
+        report.failed,
+        report.unknown,
+        report.unattempted,
+        report.delivered_unrecorded
+    ));
+
+    if let Some(error) = &report.storage_error {
+        logging::append(&format!(
+            "telegram_delivery_storage_error id={} error={error}",
+            ticket.id
+        ));
+        let nothing_reached_telegram = report.sent == 0
+            && report.failed == 0
+            && report.unknown == 0
+            && report.delivered_unrecorded == 0;
+        if nothing_reached_telegram {
+            send_notice(bot, chat_id, locale::text(lang, Key::ErrorDeliveryStorage)).await;
+        }
+    }
+    Some(ticket)
+}
+
+/// Persists and sends chunks in order. Each chunk records `pending` and its
+/// attempt before the Bot API call; `sent` requires a returned message id.
+/// Only a definitive Markdown rejection opens the single recorded plain-text
+/// fallback. Any failed, ambiguous, or storage-aborted chunk stops later sends.
+async fn send_tracked_chunks(
+    store: &DeliveryStore,
+    bot: &Bot,
+    chat_id: ChatId,
+    delivery_id: u64,
+    mut revision: u64,
+    chunks: &[&str],
+) -> TrackedSendReport {
+    let mut report = TrackedSendReport::default();
+
+    for (position, chunk) in chunks.iter().enumerate() {
+        let index = position as u32;
+        revision = match store.begin_chunk(delivery_id, revision, index) {
+            Ok(revision) => revision,
+            Err(error) => {
+                report.unattempted = (chunks.len() - position) as u32;
+                report.storage_error = Some(error);
+                return report;
+            }
+        };
+
+        let mut outcome = send_telegram_chunk(bot, chat_id, chunk, true).await;
+        if outcome == SendOutcome::MarkdownRejected {
+            revision = match store.begin_fallback(delivery_id, revision, index) {
+                Ok(revision) => revision,
+                Err(error) => {
+                    report.unattempted = (chunks.len() - position) as u32;
+                    report.storage_error = Some(error);
+                    return report;
                 }
+            };
+            outcome = send_telegram_chunk(bot, chat_id, chunk, false).await;
+        }
+
+        let settlement = match outcome {
+            SendOutcome::Sent { message_id } => DeliveryOutcome::Sent { message_id },
+            SendOutcome::MarkdownRejected | SendOutcome::Rejected => DeliveryOutcome::Failed,
+            SendOutcome::Ambiguous => DeliveryOutcome::Unknown,
+        };
+        match store.settle_chunk(delivery_id, revision, index, settlement) {
+            Ok(next) => revision = next,
+            Err(error) => {
+                if matches!(outcome, SendOutcome::Sent { .. }) {
+                    report.delivered_unrecorded = 1;
+                }
+                report.unattempted = (chunks.len() - position - 1) as u32;
+                report.storage_error = Some(error);
+                return report;
             }
         }
+
+        logging::append(&format!(
+            "telegram_delivery_chunk id={delivery_id} chunk={index} class={}",
+            outcome.as_str()
+        ));
+        match outcome {
+            SendOutcome::Sent { .. } => report.sent += 1,
+            SendOutcome::MarkdownRejected | SendOutcome::Rejected => report.failed += 1,
+            SendOutcome::Ambiguous => report.unknown += 1,
+        }
+        if !matches!(outcome, SendOutcome::Sent { .. }) {
+            report.unattempted = (chunks.len() - position - 1) as u32;
+            return report;
+        }
+    }
+
+    report
+}
+
+/// Sends a plain notice that carries no delivery identity (for example when the
+/// delivery store refuses admission). Logs only its classification.
+async fn send_notice(bot: &Bot, chat_id: ChatId, text: &str) {
+    if let Err(error) = bot.send_message(chat_id, text).await {
+        logging::append(&format!(
+            "telegram_notice_error class={}",
+            classify_send_error(&error).as_str()
+        ));
     }
 }
 
@@ -1571,9 +2077,17 @@ fn split_message(text: &str) -> Vec<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::delivery::DeliveryState;
     use crate::runtime::RuntimeRegistry;
     use crate::session::Session;
     use std::sync::Mutex;
+
+    #[derive(Clone, Copy, Debug)]
+    enum MockReply {
+        Message(i64),
+        ApiError(&'static str),
+        Reset,
+    }
 
     struct MockBotApi {
         address: String,
@@ -1584,6 +2098,12 @@ mod tests {
 
     impl MockBotApi {
         fn start() -> Self {
+            Self::start_with(Vec::new())
+        }
+
+        /// Each request consumes the next scripted reply; after the script is
+        /// exhausted, requests receive a successful message with id 1.
+        fn start_with(script: Vec<MockReply>) -> Self {
             use std::io::{BufRead, BufReader, Read, Write};
             use std::net::TcpListener;
 
@@ -1592,6 +2112,8 @@ mod tests {
             let address = listener.local_addr().unwrap().to_string();
             let messages = Arc::new(Mutex::new(Vec::new()));
             let server_messages = Arc::clone(&messages);
+            let script = Arc::new(Mutex::new(script));
+            let server_script = Arc::clone(&script);
             let (stop, stopped) = std::sync::mpsc::channel();
             let handle = std::thread::spawn(move || {
                 while stopped.try_recv().is_err() {
@@ -1619,15 +2141,34 @@ mod tests {
                             reader.read_exact(&mut body).unwrap();
                             let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
                             server_messages.lock().unwrap().push(body);
-                            let response = serde_json::json!({
-                                "ok": true,
-                                "result": {
-                                    "message_id": 1,
-                                    "date": 0,
-                                    "chat": {"id": 42, "type": "private"},
-                                    "text": "ok"
-                                }
-                            });
+
+                            let reply = if server_script.lock().unwrap().is_empty() {
+                                MockReply::Message(1)
+                            } else {
+                                server_script.lock().unwrap().remove(0)
+                            };
+                            let response = match reply {
+                                MockReply::Message(message_id) => Some(serde_json::json!({
+                                    "ok": true,
+                                    "result": {
+                                        "message_id": message_id,
+                                        "date": 0,
+                                        "chat": {"id": 42, "type": "private"},
+                                        "text": "ok"
+                                    }
+                                })),
+                                MockReply::ApiError(description) => Some(serde_json::json!({
+                                    "ok": false,
+                                    "error_code": 400,
+                                    "description": description
+                                })),
+                                MockReply::Reset => None,
+                            };
+                            let Some(response) = response else {
+                                // Dropping the stream without a response models a
+                                // timeout or connection reset.
+                                continue;
+                            };
                             let response = serde_json::to_vec(&response).unwrap();
                             write!(
                                 writer,
@@ -1654,6 +2195,10 @@ mod tests {
 
         fn url(&self) -> reqwest::Url {
             reqwest::Url::parse(&format!("http://{}", self.address)).unwrap()
+        }
+
+        fn request_count(&self) -> usize {
+            self.messages.lock().unwrap().len()
         }
     }
 
@@ -1914,49 +2459,396 @@ mod tests {
 
     #[tokio::test]
     async fn a_helper_answer_is_labeled_with_its_agent_id() {
-        use crate::run::{RuntimeEvent, RuntimeEventKind};
-
         let dir = temp_dir("watcher-helper-label");
-        let model = MockModelApi::start(Duration::ZERO);
-        let registry = two_agent_registry(&dir, &model.url(), &model.url(), true);
+        let main_model = MockModelApi::start(Duration::ZERO);
+        let helper_model = MockModelApi::start(Duration::ZERO);
+        let registry = two_agent_registry(&dir, &main_model.url(), &helper_model.url(), true);
         let core = Core::new(registry).unwrap();
         let bot_api = MockBotApi::start();
-        let (sender, mut events) = tokio::sync::broadcast::channel(4);
+        let mut events = core.subscribe();
         let bot = Bot::new("test-token").set_api_url(bot_api.url());
-
+        let ticket = core.submit("helper", "answer this").unwrap();
+        let watcher_core = Arc::clone(&core);
         let watcher = tokio::spawn(async move {
             watch_turn(
-                core,
+                watcher_core,
                 bot,
                 ChatId(42),
                 "helper".to_string(),
-                RunTicket { id: 7, revision: 3 },
+                ticket,
                 Locale::En,
                 &mut events,
                 None,
             )
             .await;
         });
-        sender
-            .send(RuntimeEvent {
-                run_id: 7,
-                agent_id: "helper".to_string(),
-                revision: 3,
-                seq: 2,
-                kind: RuntimeEventKind::Completed {
-                    answer: "helper answer".to_string(),
-                },
-            })
-            .unwrap();
 
         tokio::time::timeout(Duration::from_secs(5), watcher)
             .await
             .expect("the watcher did not end after the answer")
             .unwrap();
         let messages = bot_messages(&bot_api);
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0]["text"].as_str(), Some("@helper\nhelper answer"));
+        let replies: Vec<_> = messages
+            .iter()
+            .filter(|message| message.get("text").is_some())
+            .collect();
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0]["text"].as_str(), Some("@helper\nlate answer"));
 
+        let counts = core.delivery().counts().unwrap();
+        assert_eq!(counts.sent, 1);
+        let delivery = core.delivery().get(1).unwrap().unwrap();
+        assert_eq!(delivery.agent_id, "helper");
+
+        drop(core);
+        drop(main_model);
+        drop(helper_model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn seed_session_answer(dir: &Path, answer: &str) -> u64 {
+        std::fs::create_dir_all(dir.join("memory")).unwrap();
+        let session = Session::load(&dir.join("memory/session.json"));
+        let mut work = session.begin("seeded request").unwrap();
+        let id = work.id();
+        work.complete(answer).unwrap();
+        id
+    }
+
+    fn seed_run(
+        dir: &Path,
+        id: u64,
+        agent_id: &str,
+        state: &str,
+        failure: Option<&str>,
+        session_work_id: Option<u64>,
+    ) {
+        std::fs::create_dir_all(dir.join("memory")).unwrap();
+        let mut record = serde_json::json!({
+            "id": id,
+            "agent_id": agent_id,
+            "input": "seeded request",
+            "state": state,
+            "revision": 1
+        });
+        if let Some(failure) = failure {
+            record["failure"] = serde_json::json!(failure);
+        }
+        if let Some(work) = session_work_id {
+            record["session_work_id"] = serde_json::json!(work);
+        }
+        std::fs::write(
+            dir.join("memory/runs.json"),
+            serde_json::json!({"version": 1, "next_run_id": id + 1, "runs": [record]}).to_string(),
+        )
+        .unwrap();
+    }
+
+    fn seeded_core(dir: &Path, model: &MockModelApi) -> Arc<Core> {
+        let registry = two_agent_registry(dir, &model.url(), &model.url(), true);
+        Core::new(registry).unwrap()
+    }
+
+    fn run_ticket(id: u64) -> RunTicket {
+        RunTicket { id, revision: 1 }
+    }
+
+    fn text_messages(api: &MockBotApi) -> Vec<String> {
+        bot_messages(api)
+            .into_iter()
+            .filter_map(|message| message["text"].as_str().map(str::to_string))
+            .collect()
+    }
+
+    async fn run_watcher(
+        core: &Arc<Core>,
+        bot: Bot,
+        ticket: RunTicket,
+        events: &mut tokio::sync::broadcast::Receiver<crate::run::RuntimeEvent>,
+    ) {
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            watch_turn(
+                Arc::clone(core),
+                bot,
+                ChatId(42),
+                MAIN_AGENT_ID.to_string(),
+                ticket,
+                Locale::En,
+                events,
+                None,
+            ),
+        )
+        .await
+        .expect("the watcher did not end");
+    }
+
+    #[tokio::test]
+    async fn recovery_sends_one_answer_when_the_completed_event_is_missing() {
+        let dir = temp_dir("recovery-missing");
+        let model = MockModelApi::start(Duration::ZERO);
+        let work = seed_session_answer(&dir, "recovered answer");
+        seed_run(&dir, 1, MAIN_AGENT_ID, "completed", None, Some(work));
+        let core = seeded_core(&dir, &model);
+        let bot_api = MockBotApi::start();
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+        let (_sender, mut events) = tokio::sync::broadcast::channel(4);
+
+        run_watcher(&core, bot, run_ticket(1), &mut events).await;
+
+        assert_eq!(text_messages(&bot_api), ["recovered answer"]);
+        let delivery = core.delivery().get(1).unwrap().unwrap();
+        assert_eq!(delivery.run_id, 1);
+        assert_eq!(delivery.chunks[0].state, DeliveryState::Sent);
+        assert_eq!(model.post_count(), 0, "recovery must not call the model");
+
+        drop(core);
+        drop(model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn recovery_after_a_lagged_stream_sends_the_stored_answer_once() {
+        let dir = temp_dir("recovery-lagged");
+        let model = MockModelApi::start(Duration::ZERO);
+        let work = seed_session_answer(&dir, "answer after lag");
+        seed_run(&dir, 1, MAIN_AGENT_ID, "completed", None, Some(work));
+        let core = seeded_core(&dir, &model);
+        let bot_api = MockBotApi::start();
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+        let (sender, mut events) = tokio::sync::broadcast::channel(1);
+        for seq in 1..=3 {
+            sender
+                .send(crate::run::RuntimeEvent {
+                    run_id: 99,
+                    agent_id: MAIN_AGENT_ID.to_string(),
+                    revision: 1,
+                    seq,
+                    kind: RuntimeEventKind::Started,
+                })
+                .unwrap();
+        }
+
+        run_watcher(&core, bot, run_ticket(1), &mut events).await;
+
+        assert_eq!(text_messages(&bot_api), ["answer after lag"]);
+        assert_eq!(core.delivery().counts().unwrap().records, 1);
+        assert_eq!(model.post_count(), 0);
+
+        drop(core);
+        drop(model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn recovery_after_a_closed_stream_handles_the_terminal_run_once() {
+        let dir = temp_dir("recovery-closed");
+        let model = MockModelApi::start(Duration::ZERO);
+        let work = seed_session_answer(&dir, "answer after close");
+        seed_run(&dir, 1, MAIN_AGENT_ID, "completed", None, Some(work));
+        let core = seeded_core(&dir, &model);
+        let bot_api = MockBotApi::start();
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+        let (sender, mut events) = tokio::sync::broadcast::channel(4);
+        drop(sender);
+
+        run_watcher(&core, bot, run_ticket(1), &mut events).await;
+
+        assert_eq!(text_messages(&bot_api), ["answer after close"]);
+        assert_eq!(core.delivery().counts().unwrap().records, 1);
+
+        drop(core);
+        drop(model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn a_closed_stream_without_a_terminal_run_ends_without_a_send() {
+        let dir = temp_dir("recovery-closed-pending");
+        let model = MockModelApi::start(Duration::ZERO);
+        seed_run(&dir, 1, MAIN_AGENT_ID, "queued", None, None);
+        let core = seeded_core(&dir, &model);
+        let bot_api = MockBotApi::start();
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+        let (sender, mut events) = tokio::sync::broadcast::channel(4);
+        drop(sender);
+
+        run_watcher(&core, bot, run_ticket(1), &mut events).await;
+
+        assert!(text_messages(&bot_api).is_empty());
+        assert_eq!(core.delivery().counts().unwrap().records, 0);
+
+        drop(core);
+        drop(model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn duplicated_terminal_events_send_only_once() {
+        let dir = temp_dir("recovery-duplicate");
+        let model = MockModelApi::start(Duration::ZERO);
+        let work = seed_session_answer(&dir, "stored answer");
+        seed_run(&dir, 7, MAIN_AGENT_ID, "completed", None, Some(work));
+        let core = seeded_core(&dir, &model);
+        let bot_api = MockBotApi::start();
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+        let (sender, mut events) = tokio::sync::broadcast::channel(4);
+        for (seq, answer) in [(1, "first answer"), (2, "second answer")] {
+            sender
+                .send(crate::run::RuntimeEvent {
+                    run_id: 7,
+                    agent_id: MAIN_AGENT_ID.to_string(),
+                    revision: 1,
+                    seq,
+                    kind: RuntimeEventKind::Completed {
+                        answer: answer.to_string(),
+                    },
+                })
+                .unwrap();
+        }
+
+        run_watcher(&core, bot, run_ticket(7), &mut events).await;
+
+        assert_eq!(text_messages(&bot_api), ["first answer"]);
+        assert_eq!(core.delivery().counts().unwrap().records, 1);
+
+        drop(core);
+        drop(model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn recovery_does_not_resend_when_a_delivery_attempt_exists() {
+        let dir = temp_dir("recovery-existing-delivery");
+        let model = MockModelApi::start(Duration::ZERO);
+        let work = seed_session_answer(&dir, "must not be resent");
+        seed_run(&dir, 1, MAIN_AGENT_ID, "completed", None, Some(work));
+        let core = seeded_core(&dir, &model);
+        let ticket = core
+            .create_delivery(1, DeliveryChannel::Telegram, "42", 1)
+            .unwrap();
+        let revision = core
+            .delivery()
+            .begin_chunk(ticket.id, ticket.revision, 0)
+            .unwrap();
+        core.delivery()
+            .settle_chunk(
+                ticket.id,
+                revision,
+                0,
+                DeliveryOutcome::Sent { message_id: 5 },
+            )
+            .unwrap();
+
+        let bot_api = MockBotApi::start();
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+        let (_sender, mut events) = tokio::sync::broadcast::channel(4);
+
+        run_watcher(&core, bot, run_ticket(1), &mut events).await;
+
+        assert!(text_messages(&bot_api).is_empty());
+        assert_eq!(core.delivery().counts().unwrap().records, 1);
+        assert_eq!(model.post_count(), 0);
+
+        drop(core);
+        drop(model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn recovery_reports_the_durable_failure_category() {
+        let dir = temp_dir("recovery-failed");
+        let model = MockModelApi::start(Duration::ZERO);
+        seed_run(&dir, 1, MAIN_AGENT_ID, "failed", Some("timeout"), None);
+        let core = seeded_core(&dir, &model);
+        let bot_api = MockBotApi::start();
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+        let (_sender, mut events) = tokio::sync::broadcast::channel(4);
+
+        run_watcher(&core, bot, run_ticket(1), &mut events).await;
+
+        assert_eq!(
+            text_messages(&bot_api),
+            [locale::text(Locale::En, Key::ErrorTimeout)]
+        );
+        let delivery = core.delivery().get(1).unwrap().unwrap();
+        assert_eq!(delivery.chunks[0].state, DeliveryState::Sent);
+
+        drop(core);
+        drop(model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn recovery_without_a_stored_answer_reports_storage_once() {
+        let dir = temp_dir("recovery-missing-answer");
+        let model = MockModelApi::start(Duration::ZERO);
+        seed_run(&dir, 1, MAIN_AGENT_ID, "completed", None, Some(9));
+        let core = seeded_core(&dir, &model);
+        let bot_api = MockBotApi::start();
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+        let (_sender, mut events) = tokio::sync::broadcast::channel(4);
+
+        run_watcher(&core, bot, run_ticket(1), &mut events).await;
+
+        assert_eq!(
+            text_messages(&bot_api),
+            [locale::text(Locale::En, Key::ErrorSession)]
+        );
+        assert_eq!(core.delivery().counts().unwrap().records, 0);
+        assert_eq!(model.post_count(), 0);
+
+        drop(core);
+        drop(model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn recovery_of_cancelled_work_sends_nothing() {
+        let dir = temp_dir("recovery-cancelled");
+        let model = MockModelApi::start(Duration::ZERO);
+        seed_run(&dir, 1, MAIN_AGENT_ID, "cancelled", None, None);
+        let core = seeded_core(&dir, &model);
+        let bot_api = MockBotApi::start();
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+        let (_sender, mut events) = tokio::sync::broadcast::channel(4);
+
+        run_watcher(&core, bot, run_ticket(1), &mut events).await;
+
+        assert!(text_messages(&bot_api).is_empty());
+        assert_eq!(core.delivery().counts().unwrap().records, 0);
+
+        drop(core);
+        drop(model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn a_started_run_that_misses_its_completed_event_still_ends_once() {
+        let dir = temp_dir("recovery-after-start");
+        let model = MockModelApi::start(Duration::ZERO);
+        let work = seed_session_answer(&dir, "answer after started");
+        seed_run(&dir, 1, MAIN_AGENT_ID, "completed", None, Some(work));
+        let core = seeded_core(&dir, &model);
+        let bot_api = MockBotApi::start();
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+        let (sender, mut events) = tokio::sync::broadcast::channel(4);
+        sender
+            .send(crate::run::RuntimeEvent {
+                run_id: 1,
+                agent_id: MAIN_AGENT_ID.to_string(),
+                revision: 1,
+                seq: 1,
+                kind: RuntimeEventKind::Started,
+            })
+            .unwrap();
+
+        run_watcher(&core, bot, run_ticket(1), &mut events).await;
+
+        assert_eq!(text_messages(&bot_api), ["answer after started"]);
+        assert_eq!(core.delivery().counts().unwrap().records, 1);
+
+        drop(core);
         drop(model);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -2123,7 +3015,7 @@ mod tests {
             assert_eq!(
                 names,
                 [
-                    "start", "status", "agents", "stickies", "resume", "stop", "help"
+                    "start", "status", "agents", "stickies", "resume", "stop", "result", "help"
                 ]
             );
             assert!(
@@ -2148,6 +3040,7 @@ mod tests {
             assert!(start_text(lang).contains("/stickies"));
             assert!(start_text(lang).contains("/resume"));
             assert!(start_text(lang).contains("/stop"));
+            assert!(start_text(lang).contains("/result"));
             assert!(start_text(lang).contains("/help"));
         }
     }
@@ -2155,6 +3048,8 @@ mod tests {
     #[test]
     fn status_lines_follow_the_approved_order() {
         let queue = queue_line(Locale::En, &RunQueueStatus::default());
+        let delivery =
+            "Delivery: 0 waiting, 0 refused, 0 uncertain · 0 answer(s) not fully delivered";
         let text = status_text(
             Locale::En,
             Some(("Helper", "helper")),
@@ -2165,6 +3060,7 @@ mod tests {
             "~$0.040000",
             "4.20 USD",
             &queue,
+            delivery,
         );
         let agent = text.find("Agent: Helper (@helper)").unwrap();
         let cost = text.find("Spent today:").unwrap();
@@ -2174,6 +3070,7 @@ mod tests {
         let session = text.find("Workspace:").unwrap();
         let tokens = text.find("Tokens today:").unwrap();
         let work = text.find("Work:").unwrap();
+        let delivery = text.find("Delivery:").unwrap();
         assert!(
             agent < cost
                 && cost < balance
@@ -2182,6 +3079,7 @@ mod tests {
                 && memory < session
                 && session < tokens
                 && tokens < work
+                && work < delivery
         );
     }
 
@@ -3032,6 +3930,604 @@ mod tests {
 
         drop(state);
         drop(core);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn seeded_registry(dir: &Path, url: &str) -> RuntimeRegistry {
+        RuntimeRegistry::load(dir, move |key| match key {
+            "LLM_API_KEY" => Some("dummy-model-key".to_string()),
+            "LLM_BASE_URL" => Some(url.to_string()),
+            "LLM_MODEL" => Some("test-model".to_string()),
+            _ => None,
+        })
+        .unwrap()
+    }
+
+    fn seed_completed_run(dir: &Path, id: u64, agent_id: &str) {
+        std::fs::create_dir_all(dir.join("memory")).unwrap();
+        std::fs::write(
+            dir.join("memory/runs.json"),
+            serde_json::json!({
+                "version": 1,
+                "next_run_id": id + 1,
+                "runs": [{
+                    "id": id,
+                    "agent_id": agent_id,
+                    "input": "seeded request",
+                    "state": "completed",
+                    "session_work_id": 1,
+                    "revision": 1
+                }]
+            })
+            .to_string(),
+        )
+        .unwrap();
+    }
+
+    fn poison_memory_dir(dir: &Path) {
+        let memory = dir.join("memory");
+        let _ = std::fs::remove_dir_all(&memory);
+        std::fs::write(&memory, b"not a directory").unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn delivery_admission_refusal_sends_no_answer() {
+        let dir = temp_dir("delivery-refused");
+        let registry = seeded_registry(&dir, "http://127.0.0.1:9/chat/completions");
+        seed_completed_run(&dir, 1, "main");
+        let core = Core::new(registry).unwrap();
+        let bot_api = MockBotApi::start();
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+        poison_memory_dir(&dir);
+
+        let answer = "the answer must never reach Telegram";
+        send_run_reply(&core, &bot, ChatId(42), 1, "main", answer, Locale::En).await;
+
+        let messages = bot_messages(&bot_api);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(
+            messages[0]["text"].as_str(),
+            Some(locale::text(Locale::En, Key::ErrorDeliveryStorage))
+        );
+        assert!(
+            !messages
+                .iter()
+                .any(|message| message["text"].as_str() == Some(answer)),
+            "the answer was sent despite a refused delivery"
+        );
+        assert!(core.delivery().error().is_some());
+
+        drop(core);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn tracked_delivery_persists_the_message_id() {
+        let dir = temp_dir("delivery-sent");
+        let registry = seeded_registry(&dir, "http://127.0.0.1:9/chat/completions");
+        seed_completed_run(&dir, 1, "main");
+        let core = Core::new(registry).unwrap();
+        let bot_api = MockBotApi::start_with(vec![MockReply::Message(77)]);
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+
+        send_run_reply(&core, &bot, ChatId(42), 1, "main", "hello", Locale::En).await;
+
+        let messages = bot_messages(&bot_api);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["text"].as_str(), Some("hello"));
+        assert_eq!(messages[0]["parse_mode"].as_str(), Some("Markdown"));
+
+        let delivery = core.delivery().get(1).unwrap().unwrap();
+        assert_eq!(delivery.run_id, 1);
+        assert_eq!(delivery.agent_id, "main");
+        assert_eq!(delivery.target, "42");
+        assert_eq!(delivery.chunk_count, 1);
+        assert_eq!(delivery.chunks[0].state, DeliveryState::Sent);
+        assert_eq!(delivery.chunks[0].message_id, Some(77));
+        assert_eq!(delivery.chunks[0].attempts, 1);
+        assert!(!delivery.chunks[0].fallback_used);
+
+        drop(core);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn markdown_rejection_uses_one_plain_fallback() {
+        let dir = temp_dir("delivery-markdown");
+        let registry = seeded_registry(&dir, "http://127.0.0.1:9/chat/completions");
+        seed_completed_run(&dir, 1, "main");
+        let core = Core::new(registry).unwrap();
+        let bot_api = MockBotApi::start_with(vec![
+            MockReply::ApiError(
+                "Bad Request: can't parse entities: Can't find end of the entity starting at byte offset 0",
+            ),
+            MockReply::Message(9),
+        ]);
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+
+        send_run_reply(&core, &bot, ChatId(42), 1, "main", "**broken", Locale::En).await;
+
+        let messages = bot_messages(&bot_api);
+        assert_eq!(messages.len(), 2, "exactly one fallback send is allowed");
+        assert_eq!(messages[0]["parse_mode"].as_str(), Some("Markdown"));
+        assert!(messages[1].get("parse_mode").is_none());
+        assert_eq!(messages[1]["text"].as_str(), Some("**broken"));
+
+        let delivery = core.delivery().get(1).unwrap().unwrap();
+        assert_eq!(delivery.chunks[0].state, DeliveryState::Sent);
+        assert_eq!(delivery.chunks[0].message_id, Some(9));
+        assert_eq!(delivery.chunks[0].attempts, 2);
+        assert!(delivery.chunks[0].fallback_used);
+
+        drop(core);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn definitive_rejection_is_failed_without_fallback() {
+        let dir = temp_dir("delivery-rejected");
+        let registry = seeded_registry(&dir, "http://127.0.0.1:9/chat/completions");
+        seed_completed_run(&dir, 1, "main");
+        let core = Core::new(registry).unwrap();
+        let bot_api =
+            MockBotApi::start_with(vec![MockReply::ApiError("Bad Request: chat not found")]);
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+
+        send_run_reply(&core, &bot, ChatId(42), 1, "main", "hello", Locale::En).await;
+
+        assert_eq!(bot_api.request_count(), 1, "no automatic retry is allowed");
+        let delivery = core.delivery().get(1).unwrap().unwrap();
+        assert_eq!(delivery.chunks[0].state, DeliveryState::Failed);
+        assert_eq!(delivery.chunks[0].message_id, None);
+        assert_eq!(delivery.chunks[0].attempts, 1);
+        assert!(!delivery.chunks[0].fallback_used);
+
+        drop(core);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn ambiguous_reset_is_unknown_without_retry() {
+        let dir = temp_dir("delivery-ambiguous");
+        let registry = seeded_registry(&dir, "http://127.0.0.1:9/chat/completions");
+        seed_completed_run(&dir, 1, "main");
+        let core = Core::new(registry).unwrap();
+        let bot_api = MockBotApi::start_with(vec![
+            MockReply::Reset,
+            MockReply::ApiError("Bad Request: something new"),
+        ]);
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+
+        send_run_reply(&core, &bot, ChatId(42), 1, "main", "hello", Locale::En).await;
+        assert_eq!(bot_api.request_count(), 1, "no automatic retry is allowed");
+        let delivery = core.delivery().get(1).unwrap().unwrap();
+        assert_eq!(delivery.chunks[0].state, DeliveryState::Unknown);
+        assert_eq!(delivery.chunks[0].message_id, None);
+        assert_eq!(delivery.chunks[0].attempts, 1);
+
+        send_run_reply(
+            &core,
+            &bot,
+            ChatId(42),
+            1,
+            "main",
+            "hello again",
+            Locale::En,
+        )
+        .await;
+        assert_eq!(bot_api.request_count(), 2, "no automatic retry is allowed");
+        let delivery = core.delivery().get(2).unwrap().unwrap();
+        assert_eq!(delivery.chunks[0].state, DeliveryState::Unknown);
+
+        drop(core);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn partial_send_records_only_attempted_chunks() {
+        let dir = temp_dir("delivery-partial");
+        let registry = seeded_registry(&dir, "http://127.0.0.1:9/chat/completions");
+        seed_completed_run(&dir, 1, "main");
+        let core = Core::new(registry).unwrap();
+        let bot_api = MockBotApi::start_with(vec![MockReply::Message(3), MockReply::Reset]);
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+
+        let answer = "a".repeat(MAX_MESSAGE_CHARS * 2 + 5);
+        send_run_reply(&core, &bot, ChatId(42), 1, "main", &answer, Locale::En).await;
+
+        assert_eq!(
+            bot_api.request_count(),
+            2,
+            "sending stops after the failure"
+        );
+        let delivery = core.delivery().get(1).unwrap().unwrap();
+        assert_eq!(delivery.chunk_count, 3);
+        assert_eq!(delivery.chunks.len(), 2);
+        assert_eq!(delivery.chunks[0].state, DeliveryState::Sent);
+        assert_eq!(delivery.chunks[0].message_id, Some(3));
+        assert_eq!(delivery.chunks[1].state, DeliveryState::Unknown);
+        assert!(delivery.chunks.iter().all(|chunk| chunk.index < 2));
+
+        let counts = core.delivery().counts().unwrap();
+        assert_eq!(counts.sent, 1);
+        assert_eq!(counts.unknown, 1);
+        assert_eq!(counts.pending, 0);
+        assert_eq!(counts.unresolved_records, 1);
+
+        drop(core);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn pending_write_failure_sends_no_answer() {
+        let dir = temp_dir("delivery-pending-write");
+        let registry = seeded_registry(&dir, "http://127.0.0.1:9/chat/completions");
+        seed_completed_run(&dir, 1, "main");
+        let core = Core::new(registry).unwrap();
+        let ticket = core
+            .create_delivery(1, DeliveryChannel::Telegram, "42", 1)
+            .unwrap();
+        let bot_api = MockBotApi::start();
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+        poison_memory_dir(&dir);
+
+        let report = send_tracked_chunks(
+            core.delivery(),
+            &bot,
+            ChatId(42),
+            ticket.id,
+            ticket.revision,
+            &["the answer must never reach Telegram"],
+        )
+        .await;
+
+        assert_eq!(bot_api.request_count(), 0);
+        assert!(report.storage_error.is_some());
+        assert_eq!(report.unattempted, 1);
+        assert_eq!(report.sent, 0);
+
+        drop(core);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn attribution_and_localization_apply_before_chunking() {
+        let dir = temp_dir("delivery-attribution");
+        let main_model = MockModelApi::start(Duration::ZERO);
+        let helper_model = MockModelApi::start(Duration::ZERO);
+        let registry = two_agent_registry(&dir, &main_model.url(), &helper_model.url(), true);
+        seed_completed_run(&dir, 1, "helper");
+        let core = Core::new(registry).unwrap();
+        let bot_api = MockBotApi::start();
+        let bot = Bot::new("test-token").set_api_url(bot_api.url());
+
+        let answer = "a".repeat(MAX_MESSAGE_CHARS + 1);
+        send_run_reply(&core, &bot, ChatId(42), 1, "helper", &answer, Locale::En).await;
+
+        let messages = bot_messages(&bot_api);
+        assert_eq!(messages.len(), 2);
+        let first = messages[0]["text"].as_str().unwrap();
+        let second = messages[1]["text"].as_str().unwrap();
+        assert!(first.starts_with("@helper\n"));
+        assert!(!second.starts_with("@helper"));
+        assert_eq!(format!("{first}{second}"), format!("@helper\n{answer}"));
+
+        let delivery = core.delivery().get(1).unwrap().unwrap();
+        assert_eq!(delivery.agent_id, "helper");
+        assert_eq!(delivery.chunk_count, 2);
+        assert!(
+            delivery
+                .chunks
+                .iter()
+                .all(|chunk| chunk.state == DeliveryState::Sent)
+        );
+
+        let failure = failure_text(Locale::Ko, FailureKind::Timeout, "");
+        send_run_reply(&core, &bot, ChatId(42), 1, "main", &failure, Locale::Ko).await;
+        let messages = bot_messages(&bot_api);
+        assert_eq!(
+            messages[2]["text"].as_str(),
+            Some(locale::text(Locale::Ko, Key::ErrorTimeout))
+        );
+
+        drop(core);
+        drop(main_model);
+        drop(helper_model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn parses_one_positive_result_number() {
+        assert_eq!(parse_run_id(" 12 "), Some(12));
+        assert_eq!(parse_run_id("1"), Some(1));
+        for invalid in ["", "  ", "0", "-3", "abc", "1 2", "1 extra", "1.0"] {
+            assert_eq!(parse_run_id(invalid), None, "{invalid}");
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn status_reports_delivery_counts_per_agent() {
+        let dir = temp_dir("status-delivery");
+        let model = MockModelApi::start(Duration::ZERO);
+        let work = seed_session_answer(&dir, "stored answer");
+        seed_run(&dir, 1, "main", "completed", None, Some(work));
+        let registry = two_agent_registry(&dir, &model.url(), &model.url(), true);
+        let core = Core::new(registry).unwrap();
+
+        let waiting = core
+            .create_delivery(1, DeliveryChannel::Telegram, "42", 2)
+            .unwrap();
+        let revision = core
+            .delivery()
+            .begin_chunk(waiting.id, waiting.revision, 0)
+            .unwrap();
+        core.delivery()
+            .begin_chunk(waiting.id, revision, 1)
+            .unwrap();
+
+        let refused = core
+            .create_delivery(1, DeliveryChannel::Telegram, "42", 1)
+            .unwrap();
+        let revision = core
+            .delivery()
+            .begin_chunk(refused.id, refused.revision, 0)
+            .unwrap();
+        core.delivery()
+            .settle_chunk(refused.id, revision, 0, DeliveryOutcome::Failed)
+            .unwrap();
+
+        let status = agent_status_text(&core, Locale::En, MAIN_AGENT_ID)
+            .await
+            .unwrap();
+        assert!(
+            status.contains(
+                "Delivery: 2 waiting, 1 refused, 0 uncertain · 2 answer(s) not fully delivered"
+            ),
+            "{status}"
+        );
+        assert!(
+            status.contains("Work: 0 running, 0 waiting, 0 paused, 0 interrupted"),
+            "{status}"
+        );
+
+        let helper = agent_status_text(&core, Locale::En, "helper")
+            .await
+            .unwrap();
+        assert!(
+            helper.contains(
+                "Delivery: 0 waiting, 0 refused, 0 uncertain · 0 answer(s) not fully delivered"
+            ),
+            "{helper}"
+        );
+
+        drop(core);
+        drop(model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn poisoned_delivery_store_is_unavailable_in_status() {
+        let dir = temp_dir("status-delivery-poisoned");
+        std::fs::create_dir_all(dir.join("memory")).unwrap();
+        std::fs::write(dir.join("memory/deliveries.json"), b"{not-json").unwrap();
+        let model = MockModelApi::start(Duration::ZERO);
+        let registry = two_agent_registry(&dir, &model.url(), &model.url(), true);
+        let core = Core::new(registry).unwrap();
+
+        let status = agent_status_text(&core, Locale::Ko, MAIN_AGENT_ID)
+            .await
+            .unwrap();
+        assert!(
+            status.contains(locale::text(Locale::Ko, Key::StatusDeliveryUnavailable)),
+            "{status}"
+        );
+        assert!(!status.contains("전달: 대기 0"), "{status}");
+
+        drop(core);
+        drop(model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn telegram_result_sends_a_completed_answer_as_tracked_delivery() {
+        let dir = temp_dir("result-telegram");
+        let model = MockModelApi::start(Duration::ZERO);
+        let work = seed_session_answer(&dir, "the stored redacted answer");
+        seed_run(&dir, 1, "main", "completed", None, Some(work));
+        let registry = two_agent_registry(&dir, &model.url(), &model.url(), true);
+        let runs_before = std::fs::read(dir.join("memory/runs.json")).unwrap();
+        let session_before = std::fs::read(dir.join("memory/session.json")).unwrap();
+        let core = Core::new(registry).unwrap();
+        let bot_api = MockBotApi::start_with(vec![MockReply::Message(55)]);
+        let state = Arc::new(ChannelState {
+            bot: Bot::new("test-token").set_api_url(bot_api.url()),
+            core: Arc::clone(&core),
+            allowed_user_id: 1,
+        });
+
+        send_result(&state, ChatId(42), "1", Locale::En)
+            .await
+            .unwrap();
+
+        let messages = bot_messages(&bot_api);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(
+            messages[0]["text"].as_str(),
+            Some("the stored redacted answer")
+        );
+        let delivery = core.delivery().get(1).unwrap().unwrap();
+        assert_eq!(delivery.run_id, 1);
+        assert_eq!(delivery.agent_id, "main");
+        assert_eq!(delivery.chunk_count, 1);
+        assert_eq!(delivery.chunks[0].state, DeliveryState::Sent);
+        assert_eq!(delivery.chunks[0].message_id, Some(55));
+
+        // A repeat is a new explicit owner action: one new record and one new
+        // send, never an automatic retry of the first delivery.
+        send_result(&state, ChatId(42), "1", Locale::En)
+            .await
+            .unwrap();
+        assert_eq!(bot_api.request_count(), 2);
+        assert!(core.delivery().get(2).unwrap().is_some());
+        assert_eq!(
+            model.post_count(),
+            0,
+            "reading a result must not call the model"
+        );
+
+        assert_eq!(
+            std::fs::read(dir.join("memory/runs.json")).unwrap(),
+            runs_before,
+            "reading a result must not rewrite the Run store"
+        );
+        assert_eq!(
+            std::fs::read(dir.join("memory/session.json")).unwrap(),
+            session_before,
+            "reading a result must not rewrite the Session"
+        );
+
+        drop(state);
+        drop(core);
+        drop(model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn telegram_result_keeps_an_ambiguous_send_unknown_without_retry() {
+        let dir = temp_dir("result-ambiguous");
+        let model = MockModelApi::start(Duration::ZERO);
+        let work = seed_session_answer(&dir, "stored answer");
+        seed_run(&dir, 1, "main", "completed", None, Some(work));
+        let registry = two_agent_registry(&dir, &model.url(), &model.url(), true);
+        let core = Core::new(registry).unwrap();
+        let bot_api = MockBotApi::start_with(vec![MockReply::Reset]);
+        let state = Arc::new(ChannelState {
+            bot: Bot::new("test-token").set_api_url(bot_api.url()),
+            core: Arc::clone(&core),
+            allowed_user_id: 1,
+        });
+
+        send_result(&state, ChatId(42), "1", Locale::En)
+            .await
+            .unwrap();
+        assert_eq!(bot_api.request_count(), 1);
+        let delivery = core.delivery().get(1).unwrap().unwrap();
+        assert_eq!(delivery.chunks[0].state, DeliveryState::Unknown);
+        assert_eq!(delivery.chunks[0].message_id, None);
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            bot_api.request_count(),
+            1,
+            "an ambiguous result send must not be retried automatically"
+        );
+
+        drop(state);
+        drop(core);
+        drop(model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn telegram_result_reports_localized_errors_without_an_answer() {
+        let dir = temp_dir("result-errors");
+        let model = MockModelApi::start(Duration::ZERO);
+        let work = seed_session_answer(&dir, "an answer that must not leak on errors");
+        std::fs::create_dir_all(dir.join("memory")).unwrap();
+        std::fs::write(
+            dir.join("memory/runs.json"),
+            serde_json::json!({
+                "version": 1,
+                "next_run_id": 4,
+                "runs": [
+                    {"id": 1, "agent_id": "main", "input": "done", "state": "completed", "session_work_id": work, "revision": 1},
+                    {"id": 2, "agent_id": "main", "input": "still queued", "state": "queued", "revision": 1},
+                    {"id": 3, "agent_id": "main", "input": "done without a stored answer", "state": "completed", "session_work_id": work + 1, "revision": 1}
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let registry = two_agent_registry(&dir, &model.url(), &model.url(), true);
+        let core = Core::new(registry).unwrap();
+        let bot_api = MockBotApi::start_with(Vec::new());
+        let state = Arc::new(ChannelState {
+            bot: Bot::new("test-token").set_api_url(bot_api.url()),
+            core: Arc::clone(&core),
+            allowed_user_id: 1,
+        });
+
+        for args in ["", "0", "2 extra"] {
+            send_result(&state, ChatId(42), args, Locale::En)
+                .await
+                .unwrap();
+        }
+        send_result(&state, ChatId(42), "99", Locale::Ko)
+            .await
+            .unwrap();
+        send_result(&state, ChatId(42), "2", Locale::Ru)
+            .await
+            .unwrap();
+        send_result(&state, ChatId(42), "3", Locale::En)
+            .await
+            .unwrap();
+
+        let expected = [
+            locale::text(Locale::En, Key::ResultUsage).to_string(),
+            locale::text(Locale::En, Key::ResultUsage).to_string(),
+            locale::text(Locale::En, Key::ResultUsage).to_string(),
+            locale::with(Locale::Ko, Key::ResultUnknownRun, 99),
+            locale::with(Locale::Ru, Key::ResultNotCompleted, 2),
+            locale::with(Locale::En, Key::ResultAnswerMissing, 3),
+        ];
+        let messages = text_messages(&bot_api);
+        assert_eq!(messages, expected);
+        assert!(
+            !messages.iter().any(|text| text.contains("must not leak")),
+            "{messages:?}"
+        );
+        assert_eq!(model.post_count(), 0);
+
+        drop(state);
+        drop(core);
+        drop(model);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn telegram_result_with_poisoned_delivery_store_sends_no_answer() {
+        let dir = temp_dir("result-poisoned");
+        let model = MockModelApi::start(Duration::ZERO);
+        let work = seed_session_answer(&dir, "answer that must not reach Telegram");
+        seed_run(&dir, 1, "main", "completed", None, Some(work));
+        let registry = two_agent_registry(&dir, &model.url(), &model.url(), true);
+        let core = Core::new(registry).unwrap();
+        let bot_api = MockBotApi::start_with(Vec::new());
+        let state = Arc::new(ChannelState {
+            bot: Bot::new("test-token").set_api_url(bot_api.url()),
+            core: Arc::clone(&core),
+            allowed_user_id: 1,
+        });
+        poison_memory_dir(&dir);
+
+        send_result(&state, ChatId(42), "1", Locale::En)
+            .await
+            .unwrap();
+
+        let messages = text_messages(&bot_api);
+        assert_eq!(
+            messages,
+            vec![locale::text(Locale::En, Key::ErrorDeliveryStorage).to_string()]
+        );
+        assert!(core.delivery().error().is_some());
+        assert_eq!(model.post_count(), 0);
+
+        drop(state);
+        drop(core);
+        drop(model);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

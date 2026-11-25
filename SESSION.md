@@ -1005,7 +1005,7 @@ The post-R3 live checklist exposed a presentation gap: `watch_turn` sent every f
 
 ## Stage 2.5 design — `delivery/v1` (2026-11-24)
 
-Status: **architecture approved and recorded; no Goal card committed, no implementation, and no new automated or live verification.**
+Status: **architecture and four sequential Goal cards approved and recorded; no implementation Goal started, no code changed, and no new automated or live verification.**
 
 ### Decision
 
@@ -1024,14 +1024,303 @@ The authoritative contract is now `docs/ARCHITECTURE.md` §3 invariant 10, §7 "
 
 ### Current state and next step
 
-- `master` HEAD `7b281cb`; the tree was clean before this design record. Stage 2, including the reply-attribution patch, is committed as `3d3c98f`; `7b281cb` reflects v2 progress in architecture, README, and the site. The architecture, README/site roadmap, and Stage 2.5 records are now uncommitted documentation changes.
-- Latest recorded test baseline remains **215 passed, 0 failed** (206 unit + 9 real CLI process) from 2026-11-24. It was not rerun for this design record.
-- No Goal was created. The next step is to commit the compact Stage 2.5-A task card after owner review; implementation requires a separate explicit start command.
+- `master` HEAD `5df42f8`; the tree was clean before these approved task cards were recorded. Stage 2, including the reply-attribution patch, is committed as `3d3c98f`.
+- Latest recorded test baseline remains **215 passed, 0 failed** (206 unit + 9 real CLI process) from 2026-11-24. It was not rerun for this card record.
+- The owner approved the four cards below on 2026-11-25. No Goal was created. The next step is a new DeepSeek Goal session for Goal 1 after a separate explicit implementation start command. Goals 1–4 preserve the same working tree sequentially; owner-run Telegram verification remains outside all Goals.
 
 ### Record correction
 
 Earlier entries say the post-live patch was not committed. That was accurate when written; the Stage 2 work, including the patch, was later committed as `3d3c98f`, and documentation was committed as `7b281cb`. Historical entries are preserved rather than rewritten.
 
+### Stage 2.5-A execution cards (approved 2026-11-25)
+
+Run the four cards below in separate sequential DeepSeek Goal sessions on the same working tree. Do not use worktrees or revert inherited changes. Run focused checks at each handoff and the full milestone once in Goal 4 unless a failure requires another pass. Delivery retention limits and recovery polling intervals are internal code constants covered by bound tests; stop if they require a product-contract decision. No Goal may add dependencies, change Session/Run/registry schemas, contact real Telegram/providers, commit, or push.
+
+### Goal 1 — Core-owned delivery store
+
+- **Outcome**: Add a strict, bounded `delivery/v1` store owned by Core, plus read-only Run/Session queries needed to resolve delivery targets and stored redacted answers. No channel sending or user-facing command changes.
+- **Spec**: `docs/ARCHITECTURE.md` §3 invariant 10, §7 "Delivery projection (`delivery/v1`)", §9 delivery storage, §12 Stage 2.5-A, and §13 delivery-store requirements.
+- **Files**: Allowed: new `src/delivery.rs`; `src/run.rs`, `src/session.rs`, and `src/main.rs` for Core ownership, module registration, and query APIs; related inline Rust tests; `SESSION.md` and `SESSION-LOG.md` for the card/result. Forbidden: `Cargo.toml`, `Cargo.lock`, registry/schema changes, `src/channel.rs`, `src/locale.rs`, real `memory/`, `workspace/`, `logs/`, and external calls.
+- **Proof**: `cargo test delivery::`, `cargo test run::`, and `cargo test session::` each exit 0 with 0 failed; tests cover allowed/forbidden transitions, message-id-required `sent`, restart `pending → unknown` without sending, explicit resend/reconciliation, strict invalid-data preservation, atomic `0600` writes, bounded retention without unresolved pruning, and absence of answer/prompt/tool text in delivery records. `rustfmt --edition 2024 --check src/delivery.rs src/run.rs src/session.rs src/main.rs` exits 0.
+- **Current**: `master` HEAD `5df42f8`, clean before this card record and tracking `origin/master`. The latest recorded test result is **215 passed, 0 failed** from 2026-11-24, not rerun for this card. Goal 1 has no implementation predecessor.
+- **Stop**: Stop if Session/Run/registry schemas must change, a dependency becomes necessary, retention cannot preserve unresolved records, or the same approach fails twice. Do not add a partial channel integration to continue.
+- **Live**: No Telegram or real-provider verification belongs to this Goal.
+
+Goal-mode contract:
+
+```text
+Implement Stage 2.5-A Goal 1 from docs/ARCHITECTURE.md §3 invariant 10,
+§7 Delivery projection, §9, §12 Stage 2.5-A, and §13.
+
+Done when:
+- Core owns a strict version-1 memory/deliveries.json projection with bounded
+  records, atomic private writes, revision/ID/reference validation, and no
+  duplicated answer, prompt, tool output, credential, or raw error text.
+- Every allowed and forbidden delivery transition is tested; sent requires a
+  Telegram message id and restart maps unresolved pending to unknown without
+  sending, settling, or rerunning work.
+- Corrupt, invalid-UTF-8, unknown-version, and unknown-field data fail closed
+  while preserving the original file; retention never discards unresolved state.
+- Core exposes the required Run/Agent lookup and Session exposes only the
+  completed work's stored redacted answer, without changing either schema.
+- cargo test delivery::, cargo test run::, and cargo test session:: each exit 0
+  with 0 failed, and changed Rust files pass rustfmt --edition 2024 --check.
+
+Scope: delivery storage and query primitives only. New edits are limited to
+src/delivery.rs, src/run.rs, src/session.rs, src/main.rs, their related tests,
+and result records in SESSION.md/SESSION-LOG.md. Preserve all inherited changes.
+Exclude channel sending, event recovery, new commands, dependencies, schema
+changes, real runtime data, external calls, commits, and pushes.
+
+Loop: write transition and failure tests first; run focused delivery/run/session
+checks while iterating and formatting once at handoff. Record actual counts.
+
+Stop: on a required schema/dependency change, unresolved product decision,
+owner-input requirement, or two failed approaches, record the blocker and stop.
+
+Live: do not contact Telegram or a real provider and do not claim live proof.
+Do not commit or push.
+```
+
+### Result (2026-11-25)
+
+Status: **completed; focused automated verification passed; not committed.**
+
+- Changed: new `src/delivery.rs`; `src/run.rs`, `src/session.rs`, and `src/main.rs` for Core ownership, module registration, and read-only queries.
+- `memory/deliveries.json` is a strict version-1 projection. Each record carries delivery identity, Run/Agent identity, channel and owner-facing target, `chunk_count`, per-chunk state, attempt count, fallback flag, optional message id, and revision. No answer, prompt, tool output, credential, or raw error text is stored.
+- Chunk state follows `pending → sent | failed | unknown`; `failed → pending` only through an explicit resend; `unknown → sent | failed` only through reconciliation. `sent` requires a positive message id. Chunk attempts are appended in send order, so unattempted chunks stay absent instead of being misreported as attempted.
+- `DeliveryStore::open` maps every unresolved `pending` chunk to `unknown` in one atomic write, with no send, settlement, or Run work. A missing store is empty and creates nothing; corrupt JSON, invalid UTF-8, unsupported versions, unknown fields, and invalid references fail closed while preserving the original bytes. Any later write failure poisons the store until reload.
+- Retention is bounded at 200 records and prunes only fully sent records. If unresolved `pending`/`failed`/`unknown` records leave no room, creation is refused with `RetentionFull` and the file is untouched.
+- `RunStore::run_target` exposes Agent, state, and Session work reference. `Session::completed_answer` returns only a completed work item's stored redacted answer. `Core` owns the delivery store and exposes `run_target`, `create_delivery` (Agent taken from the Run; terminal Runs only), `completed_answer`, and `delivery()` for later stages.
+- `cargo test delivery::`: **17 passed, 0 failed**. `cargo test run::`: **24 passed, 0 failed** (including the new run-target and Core query assertions). `cargo test session::`: **17 passed, 0 failed** (including the completed-answer query).
+- `rustfmt --edition 2024 --check src/delivery.rs src/run.rs src/session.rs src/main.rs`: clean.
+- The full suite, channel integration, real CLI delivery, Telegram/provider behavior, and milestone budget/warning gates were not run in Goal 1; they remain Goal 2–4 scope. The new Core/delivery APIs are not yet called by production code, so the binary reports expected dead-code warnings until Goal 2 wires delivery sends.
+- Next: Stage 2.5-A Goal 2 — Telegram send classification and chunk tracking.
+
+### Goal 2 — Telegram send classification and chunk tracking
+
+- **Outcome**: Route Telegram replies through Core's delivery authority, preserving returned message ids and tracking every chunk. Only a definitive Markdown rejection receives one plain-text fallback; ambiguous outcomes become `unknown` without automatic retry.
+- **Spec**: `docs/ARCHITECTURE.md` §7 delivery transitions/rules, §12 Stage 2.5-A send classification, and §13 pre-send/chunk/no-leak requirements.
+- **Files**: Allowed: `src/channel.rs`, `src/locale.rs` for delivery/storage messages, and Goal 1 files only for integration fixes; related inline tests; `SESSION.md` and `SESSION-LOG.md`. Forbidden: new dependencies, schema changes, `/status` delivery counts, `/result`, durable watcher recovery, real Telegram/provider calls, and runtime data changes.
+- **Proof**: `cargo test channel::` and `cargo test delivery::` each exit 0 with 0 failed. Mock Bot API tests prove no API call after pre-send write failure, `sent` only with a message id, one Markdown-only fallback, definitive `failed`, ambiguous `unknown` with no retry, poisoned-store admission refusal, per-chunk partial truth, and Agent attribution/localization before chunking. Changed Rust files pass `rustfmt --edition 2024 --check`.
+- **Current**: Starts only after Goal 1's focused proof is recorded; its uncommitted changes must be preserved. The repository baseline for these cards is `5df42f8`; **215 passed, 0 failed** is an older 2026-11-24 measurement, not a current run.
+- **Stop**: Stop if Telegram's API cannot distinguish the required outcomes without a new dependency or an unresolved mapping decision. Never convert ambiguity into automatic retry or success. Stop after two failed approaches.
+- **Live**: Mock Bot API success is not live delivery proof; owner-run Telegram checks remain after Goal 4.
+
+Goal-mode contract:
+
+```text
+Implement Stage 2.5-A Goal 2 from docs/ARCHITECTURE.md §7 Delivery projection,
+§12 Stage 2.5-A, and §13, building on Goal 1 without reverting its changes.
+
+Done when:
+- Every Telegram chunk persists pending and its attempt before the external
+  send; an initial write failure produces zero Bot API send calls.
+- Telegram results preserve message ids and are classified as sent, definitive
+  Markdown rejection, definitive rejection, or ambiguous.
+- Only a definitive Markdown rejection permits one newly recorded plain-text
+  fallback for the same logical chunk; timeout, connection loss, reset, and
+  ambiguous HTTP/API outcomes become unknown with no automatic second send.
+- Agent attribution and localization are applied before chunking, and partial
+  sends report sent plus unresolved/unattempted chunks rather than full success.
+- Poisoned delivery storage refuses Telegram admission and sending with a
+  localized storage error; logs contain IDs and classifications, not raw content.
+- cargo test channel:: and cargo test delivery:: exit 0 with 0 failed and all
+  changed Rust files pass rustfmt --edition 2024 --check.
+
+Scope: Telegram delivery integration only. New edits are limited to
+src/channel.rs, src/locale.rs, integration fixes in Goal 1 files, related tests,
+and SESSION.md/SESSION-LOG.md. Exclude watcher recovery, /status enhancements,
+/result, dependencies, schema changes, real accounts, commits, and pushes.
+
+Loop: use scriptable mock Bot API tests for each outcome and chunk sequence;
+run focused channel/delivery tests while iterating and formatting at handoff.
+
+Stop: if outcome classification needs an unresolved API/design decision or new
+dependency, or after two failed approaches, record the blocker and stop. Never
+keep moving by blindly retrying an ambiguous send.
+
+Live: perform no real Telegram/provider call. Mock success is not live proof.
+Do not commit or push.
+```
+
+### Result (2026-11-25)
+
+Status: **completed; focused automated verification passed; not committed.**
+
+- Changed: new send classification and tracking in `src/channel.rs`; one delivery-storage string in `src/locale.rs`; channel tests. Goal 1 files were preserved unchanged.
+- Transition order per terminal Telegram reply: build the final text (Agent attribution for non-`main`, localized failure text) → split into 4,096-character chunks → `Core::create_delivery` (Run-derived Agent, target = chat id) → per chunk `begin_chunk` (`pending`, attempts = 1) → Bot API send → `settle_chunk`. Chunks not yet attempted are absent from the record.
+- Send classes: `sent` (returned message id, required positive), `markdown_rejected` (`ApiError::CantParseEntities`; the only path to the single recorded plain-text fallback for the same chunk), `rejected` (recognized structured Bot API errors, rate-limit, chat migration), and `ambiguous` (network/timeout/reset, invalid JSON, unrecognized API description). `ambiguous` settles as `unknown` and never triggers a second send.
+- A failed, unknown, or storage-aborted chunk stops all later chunks, so a partial answer persists as sent plus unresolved/unattempted progress instead of full success. The channel logs `telegram_delivery_chunk`, `telegram_delivery_report`, `telegram_delivery_refused`, `telegram_delivery_storage_error`, and `telegram_notice_error` with IDs and classifications only, never reply text.
+- If delivery admission or the first pre-send write fails, no reply chunk is sent and the channel sends one localized storage notice (`ErrorDeliveryStorage`) instead. If the store fails mid-answer, later sends stop and no notice is added over already-visible content.
+- `StorageFailed` notices and command/board messages stay outside delivery tracking: a storage-failed Run may not be terminal, so no valid delivery identity exists for that notice. This is the only intentional untracked run-facing send.
+- Existing behavior preserved: `/stop`, queued notices, resume, sticky board, commands, and en/ko/ru text. A helper reply rewrite now runs a real Run instead of injecting a synthetic Run id.
+- `cargo test channel::`: **37 passed, 0 failed** (+8 new tests). `cargo test delivery::`: **17 passed, 0 failed** (unchanged from Goal 1). Full suite: **233 unit + 9 real CLI process tests = 242 passed, 0 failed** (baseline 215).
+- New coverage: admission refusal with no answer send, message-id persistence, one Markdown-only fallback, definitive failure without retry, ambiguous reset and unrecognized API description as `unknown` without retry, three-chunk partial truth (sent + unknown + unattempted), zero Bot API calls after a pre-send write failure, and attribution/localization before chunking.
+- `rustfmt --edition 2024 --check` on `src/channel.rs`, `src/locale.rs`, `src/delivery.rs`, `src/run.rs`, `src/session.rs`, `src/main.rs`: clean. `cargo clippy --all-targets` adds no warnings beyond the recorded pre-existing ones and Goal 1's expected dead-code notes for not-yet-wired queries. `cargo build --release` exits 0 with 5 Iskra dead-code warnings, all on Goal 1 primitives reserved for Goal 3–4; none in Goal 2 code.
+- Not verified in this Goal: real Telegram delivery, owner-run rendering/localization, `/status` delivery counts, `/result`, durable watcher recovery, full milestone budgets. Mock success is not live proof. No commit or push was performed.
+- Next: Stage 2.5-A Goal 3 — durable terminal recovery.
+
+### Goal 3 — Durable terminal recovery
+
+- **Outcome**: Recover completed results from durable Run/Session/delivery records when RuntimeEvents are missing, lagged, or closed, without rerunning work, duplicating delivery, or leaving typing/watchers active.
+- **Spec**: `docs/ARCHITECTURE.md` §7 RuntimeEvents recovery rule, §12 Stage 2.5-A recovery requirement, and §13 terminal-recovery verification.
+- **Files**: Allowed: `src/channel.rs`, `src/main.rs`, `src/run.rs`, `src/session.rs`, `src/delivery.rs` only for recovery integration, `tests/session_cli.rs`, related inline tests, and result records. Forbidden: new commands, provider/model changes, automatic restart watchers/resends, dependencies, schemas, and real external calls.
+- **Proof**: `cargo test channel::`, `cargo test run::`, and `cargo test --test session_cli` each exit 0 with 0 failed. Tests cover missing, lagged, closed, and duplicated terminal events; exactly one terminal handling per watcher; zero new model/tool calls during recovery; no duplicate Telegram send or CLI output; typing cleanup on every terminal/error path; and no automatic watcher/send after process restart. Changed Rust files pass `rustfmt --edition 2024 --check`.
+- **Current**: Requires Goals 1–2 completed with focused proofs and their changes preserved. No recovery implementation or new verification exists at the `5df42f8` card baseline.
+- **Stop**: Stop if exactly-once recovery cannot be proven, durable authority becomes duplicated, a polling/recovery contract requires an architectural decision, or two approaches fail. Do not hide the problem with an unconditional resend.
+- **Live**: Restart behavior here means automated local processes only; owner-driven Telegram restart checks remain outside the Goal.
+
+Goal-mode contract:
+
+```text
+Implement Stage 2.5-A Goal 3 from docs/ARCHITECTURE.md §7, §12 Stage 2.5-A,
+and §13, preserving the completed Goal 1–2 working tree.
+
+Done when:
+- Telegram watch_turn and CLI print_run_result recover terminal outcomes from
+  durable Run, Session, and delivery records when events are missing, lagged,
+  or closed, using bounded polling rather than waiting indefinitely.
+- Recovery creates no Run, model call, tool call, or automatic post-restart
+  watcher/send; a fresh or resumed Run retains the existing delivery projection.
+- Each watcher handles a terminal result at most once, so event delivery and
+  durable recovery cannot duplicate Telegram sends or CLI output.
+- Typing and watcher cleanup occurs on completed, failed, cancelled,
+  storage-failed, and recovery-error paths.
+- cargo test channel::, cargo test run::, and cargo test --test session_cli
+  each exit 0 with 0 failed; changed Rust files pass rustfmt --edition 2024
+  --check. Real CLI tests use only local mock servers and dummy credentials.
+
+Scope: durable terminal recovery only. New edits are limited to src/channel.rs,
+src/main.rs, recovery integration in src/run.rs/src/session.rs/src/delivery.rs,
+tests/session_cli.rs, related tests, and SESSION.md/SESSION-LOG.md. Exclude
+/status and /result UI work, dependencies, schema changes, automatic replay,
+real Telegram/provider calls, commits, and pushes.
+
+Loop: test each event ordering and restart case separately; run focused
+channel/run/real-CLI checks while iterating and formatting once at handoff.
+
+Stop: if duplicate-free recovery or cleanup cannot be proven, a new authority
+or contract decision appears, owner input is required, or two approaches fail,
+record the actual blocker and stop.
+
+Live: do not claim owner-run Telegram recovery from automated process tests.
+Do not commit or push.
+```
+
+### Result (2026-11-25)
+
+Status: **completed; focused automated verification passed; not committed.**
+
+- Changed: `src/run.rs` (read-only `TerminalOutcome` projection, `RunTarget.failure`, `TERMINAL_POLL_INTERVAL`), `src/delivery.rs` (`existing_attempt`), `src/channel.rs` (bounded wait with durable fallback on timeout/lag/close, one terminal handling per watcher, delivery-attempt dedupe, typing cleanup), `src/main.rs` (`wait_for_run`/`recover_run`, core-aware result printing), and `tests/session_cli.rs`.
+- RuntimeEvents remain hints. A missing, lagged, or closed stream falls back to the durable Run and stored Session answer; recovery makes no Run, model, or tool call. A terminal outcome is handled at most once per watcher; an existing delivery attempt suppresses a second send, including unresolved `unknown` outcomes. Cancelled and interrupted recovery sends nothing; a missing stored answer sends one localized storage notice.
+- CLI and Telegram share the same 500 ms bounded poll. CLI prints/uses the stored answer once; the new real-process test proves a restart neither reprints nor resends completed work.
+- `cargo test channel::`: **47 passed, 0 failed** (+10). `cargo test run::`: **27 passed, 0 failed** (+3). `cargo test delivery::`: **18 passed, 0 failed** (+1). CLI wait unit tests: **5 passed**. `cargo test --test session_cli`: **10 passed, 0 failed** (+1).
+- Full suite: **252 unit + 10 real CLI = 262 passed, 0 failed**.
+- `rustfmt --edition 2024 --check` on all changed files: clean. `cargo clippy --all-targets`: the same four pre-existing warnings; no new ones. `cargo build --release`: exit 0 with only the four inherited Goal 1 dead-code warnings.
+- No schema change, dependency, new command, automatic restart watcher/send, or automatic retry. Owner-run Telegram verification and the Goal 4 milestone/budget gates remain.
+- Next: Stage 2.5-A Goal 4 — localized delivery-aware `/status`, model-free `/result <run-id>`, and the full automated milestone.
+
+### Goal 4 — Localized status/result and milestone proof
+
+- **Outcome**: Add delivery-aware `/status [@agent]` and model-free `/result <run-id>` to Telegram and CLI, then complete the full Stage 2.5-A automated milestone.
+- **Spec**: `docs/ARCHITECTURE.md` §7 status/result rules, §12 Stage 2.5-A command contract, and all Stage 2.5-A checks in §13.
+- **Files**: Allowed: `src/channel.rs`, `src/locale.rs`, `src/main.rs`, integration fixes in `src/delivery.rs`, `src/run.rs`, and `src/session.rs`, related inline tests, `tests/session_cli.rs`, `SESSION.md`, and `SESSION-LOG.md`. Forbidden: dependency/schema changes, automatic unknown resend, answer duplication, provider/approval/context/tool/ACP changes, real external calls, commits, and pushes.
+- **Proof**: `cargo fmt --all -- --check` exits 0; `cargo test` exits 0 with 0 failed, including real CLI tests; `cargo clippy --all-targets` exits 0 with no new warnings beyond the four recorded pre-existing warnings; `cargo build --release` exits 0 with zero Iskra warnings. `strip -x -o target/tmp/iskra-stripped target/release/iskra && stat -f%z target/tmp/iskra-stripped` reports at most 20,971,520 bytes; dummy-config CLI idle `ps -o rss= -p "$PID"` reports at most 30,720 KiB; `cargo metadata --no-deps --format-version 1` confirms 7 direct dependencies and at most 15.
+- **Current**: Requires Goals 1–3 and their focused evidence. Full tests, formatting, clippy, release build, and budgets have intentionally not been run for these cards; the only baseline is the recorded 2026-11-24 result of **215 passed, 0 failed**, 6.40 MiB stripped binary, 4.06 MiB idle RSS, and 7 dependencies.
+- **Stop**: Complete automated work and stop if owner interaction is required. Any unrelated pre-existing gate failure must be recorded, not silently fixed or waived. Stop after two failed approaches.
+- **Live**: After this Goal, the owner performs one normal-mode Telegram checklist covering successful/partial/unknown delivery, `/status`, `/result`, localization, attribution, and restart recovery. Automated mocks must not be reported as live success.
+
+Goal-mode contract:
+
+```text
+Implement Stage 2.5-A Goal 4 from docs/ARCHITECTURE.md §7, §12 Stage 2.5-A,
+and §13, preserving all Goal 1–3 changes.
+
+Done when:
+- /status [@agent] reports pending, failed, unknown, and partial/unresolved
+  delivery counts separately from Run state; poisoned storage reports localized
+  unavailable rather than zero.
+- Telegram and CLI /result <run-id> accept only a completed Run and read its
+  stored redacted Session answer with zero model/tool calls. CLI prints it;
+  Telegram applies attribution and creates a separate tracked explicit delivery.
+- Unknown runs, incomplete Runs, missing answers, and malformed arguments produce
+  localized en/ko/ru errors; help and Telegram command registration include
+  /result without changing existing owner/private-chat gates.
+- Tests cover status counts, explicit result delivery, no duplicate/automatic
+  retry, localization, real CLI zero-model/tool behavior, secret/prompt/tool
+  canaries, and unchanged Session/Run/registry schemas.
+- cargo fmt --all -- --check exits 0; cargo test exits 0 with 0 failed;
+  cargo clippy --all-targets adds no warnings; cargo build --release has zero
+  Iskra warnings; stripped binary <=20 MiB, dummy-config idle RSS <=30 MiB,
+  and direct dependencies <=15.
+
+Scope: localized delivery status/result commands and final integration/milestone
+verification only. New edits are limited to src/channel.rs, src/locale.rs,
+src/main.rs, integration fixes in src/delivery.rs/src/run.rs/src/session.rs,
+related tests, tests/session_cli.rs, SESSION.md, and SESSION-LOG.md. Exclude
+new dependencies, schema changes, automatic retry, provider/approval/context/
+tool/ACP work, real external calls, commits, and pushes.
+
+Loop: run focused locale/channel/result checks while iterating. Run the full
+suite, formatting, clippy, release build, and resource measurements once at the
+milestone unless a failure requires another pass. Record actual counts and sizes.
+
+Stop: when owner interaction is needed, on an unresolved contract decision or
+unrelated pre-existing gate failure, or after two failed approaches, record the
+blocker and stop. Do not widen scope to repair unrelated code.
+
+Live: owner-run Telegram delivery, rendering, localization, and restart checks
+remain a separate normal-mode gate. Do not claim them from mock results.
+Do not commit or push.
+```
+
+### Goal 4 — state and transitions (written before implementation, 2026-11-25)
+
+`/status [@agent]` delivery projection:
+
+- `delivery store readable` → show `pending`, `failed`, `unknown`, and not-fully-delivered record counts for the selected Agent, on its own line separate from Run/Queue state.
+- `delivery store unreadable or poisoned` → show the localized `unavailable` line; never report zero counts for a store that cannot be read. Run/Queue and the rest of the status stay unchanged.
+
+`/result <run-id>` (Telegram and CLI):
+
+- Input: `missing` or `malformed` (non-numeric, extra tokens, zero) → localized usage error; no store read beyond argument parsing.
+- `unknown run id` → localized unknown-work error.
+- `run state not completed` (queued/paused/preparing/running/failed/cancelled/interrupted) → localized not-finished error; no answer returned.
+- `completed run without a stored answer` → localized answer-unavailable error; no model/tool call.
+- `completed run with a stored redacted answer` → CLI prints it once; Telegram applies the existing non-main attribution and creates one new explicit `delivery/v1` record before sending, then classifies each chunk as already implemented (`sent` requires a message id; ambiguous → `unknown`; no automatic retry).
+- Each `/result` invocation is an explicit owner action: it may create a new delivery record even when a previous record exists. It never mutates Session, Run, or registry data, and it never creates a Run or calls the model/tool.
+- Store read failure → localized read-unavailable error; no send and no fabricated answer.
+
+Help and command menu gain `/result` with an en/ko/ru plain-language description; the existing owner-only and private-chat gates are unchanged.
+
+### Result (2026-11-25)
+
+Status: **completed; full Stage 2.5-A automated milestone passed; not committed or pushed.** Goals 1–3 changes were preserved.
+
+- Changed: `src/locale.rs` (delivery-status and `/result` keys in en/ko/ru, command list), `src/channel.rs` (delivery line in `/status`, Telegram `/result`, command registration), `src/main.rs` (CLI `/result`, help), `src/delivery.rs` (documented contract annotations only), `tests/session_cli.rs`, this record.
+- `/status [@agent]` now ends with a per-Agent delivery line (`waiting`, `refused`, `uncertain`, and answers not fully delivered) after the Work line. Run/Queue, memory, Session, usage, cost, and balance lines are unchanged. A poisoned or invalid delivery store reports the localized `unavailable` line and logs `delivery_status_error`; it never reports zero counts.
+- `/result <run-id>` accepts exactly one positive integer. Missing, malformed, zero, unknown, non-completed, and missing-answer inputs produce localized en/ko/ru errors with no answer and no model call. A completed Run returns only its stored redacted Session answer.
+- CLI `/result` prints the stored answer once and writes nothing: Run and Session files stay byte-identical, and the real-process test proves no model request. Logs record `cli_result run_id=… state=…` only, never the answer.
+- Telegram `/result` applies the existing non-`main` attribution before chunking and creates one new explicit tracked `delivery/v1` record per invocation; `sent` still requires a message id, an ambiguous send settles as `unknown` with no automatic retry, and a poisoned store sends one localized storage notice instead of the answer. A repeat invocation is a new owner action, not an automatic retry.
+- Command registration, `/help`, the `/start` tail, and CLI help all include `/result`; the owner and private-chat gates are unchanged.
+- `cargo test channel::`: **54 passed, 0 failed** (+7). Delivery/run/session suites stay at **18 / 27 / 17 passed**. CLI wait units: **5 passed**. `cargo test --test session_cli`: **11 passed, 0 failed** (+1).
+- Full suite: **259 unit + 11 real CLI = 270 passed, 0 failed** (252 + 10 before Goal 4).
+- New coverage: per-Agent delivery counts; poisoned-store `unavailable`; explicit `/result` delivery with a persisted message id; repeated invocation without an automatic retry; ambiguous `/result` send as `unknown`; usage/unknown/non-completed/missing-answer errors in en/ko/ru; no answer leak; poisoned-store `/result` refusal; real CLI `/result` with unchanged Run/Session bytes, zero model requests, and an answer-free log.
+- `cargo fmt --all -- --check`: exit 0. `cargo clippy --all-targets`: the same four pre-existing warnings (`channel.rs:368`, `locale.rs:19`, `memory.rs:108`, `memory.rs:133`); none in new code.
+- `cargo build --release`: exit 0 with zero Iskra warnings. Wiring `counts`/`error`/`get` removed the Goal 1 dead-code notes; `Reconciliation`, `reconcile_chunk`, and `resend_chunk` keep documented `#[allow(dead_code)]` annotations because the approved contract requires those transitions but Stage 2.5-A adds no resend/reconciliation command. They remain test-covered; this is an intentional annotation, not a behavior change.
+- Budgets: stripped binary **7,140,448 bytes = 6.81 MiB** (≤ 20 MiB); dummy-config CLI idle RSS **4,192 KB = 4.09 MiB** (≤ 30 MiB); direct dependencies **7** (≤ 15).
+- Unverified: owner-run Telegram `/status` delivery counts, `/result`, successful/partial/unknown delivery rendering, localization, attribution, and restart recovery. Mock Bot API results are not live proof. No commit or push was performed.
+- Next: the owner-run Telegram checklist in normal mode after this Goal; no further Stage starts automatically.
+
+### Owner-run Telegram verification (2026-11-25)
+
+Status: **live gate passed; no commit or push.** Full evidence is recorded in `SESSION-LOG.md`.
+
+- Successful delivery (run 19 → delivery 1, `message_id 368`), Korean `/status` with a separate Delivery line, Korean `/help` and command menu, repeated `/result` as new tracked records, localized usage/unknown/not-finished errors, and `@second` delivery plus `/status @second` were confirmed live.
+- A two-chunk answer (run 22) was killed mid-send with chunk 0 `sent` and chunk 1 `pending`. Restart mapped `pending → unknown` with no automatic send, settlement, or Run replay; `/status` reported `1 uncertain · 1 answer not fully delivered`; `/result 22` resent both chunks as a new tracked delivery (id 7, messages 397/398).
+- Live idle RSS was 19,936 KB. Localization was live-checked in Korean only; `en`/`ru` were confirmed as registered command menus, not in-app renders. The `@second` reply prefix itself was not separately quoted by the owner.
+- The test instance was stopped after verification. Next: owner decision on committing Stage 2.5-A.
 
 ---
 
@@ -1097,7 +1386,7 @@ Do not start all productization slices as one autonomous Goal. Owner-only paymen
 
 ## Outcome-first Headless Control Plane strategy (2026-11-24)
 
-Status: **approved business/architecture direction recorded; no new code Goal, paid launch, provider account, customer outreach or deployment is started by this entry.** Stage 2.5-A `delivery/v1` remains the current implementation target. The earlier Commercial validation P0 `$300 installation` offer and the rejected vertical-service-first draft are superseded for future work; their historical records are preserved.
+Status: **approved business/architecture direction recorded; no new code Goal, paid launch, provider account, customer outreach or deployment is started by this entry.** Stage 2.5-A `delivery/v1` remains the current implementation target. The earlier Commercial validation P0 `$300 installation` offer and the rejected vertical-service-first draft are superseded for future work; their historical records are preserved. **2026-11-25 revision:** the long-term Outcome/Authority Hub direction remains, but the sequential technical cards, broad audit scope, future-Headless delivery prerequisite and Managed proposal-acceptance gate below are superseded by "Transaction-first survival strategy revision" at the end of this file.
 
 ### Source of truth and product direction
 
@@ -1204,7 +1493,7 @@ Stop or reposition when:
 
 ## Interview-free demand ladder (2026-11-24)
 
-Status: **owner constraint recorded — one-to-one interviews with strangers are not feasible for this owner, so the demand gate is replaced by a transaction-first ladder. No payment account, listing, publication, outreach or customer-data collection has been started by this entry.** Stage 2.5-A `delivery/v1` remains the current implementation target.
+Status: **owner constraint recorded — one-to-one interviews with strangers are not feasible for this owner, so the demand gate is replaced by a transaction-first ladder. No payment account, listing, publication, outreach or customer-data collection has been started by this entry.** Stage 2.5-A `delivery/v1` remains the current implementation target. **2026-11-25 revision:** the interview-free constraint and transaction-first principle remain, but the broad G2 audit scope, mandatory future Headless path, G4 proposal-acceptance pass and immediate product-path expansion below are superseded by "Transaction-first survival strategy revision" at the end of this file.
 
 ### Why the 15-interview gate is replaced
 
@@ -1275,3 +1564,39 @@ Five conversational confirmations and three budget discussions are no longer req
 ### Live
 
 Owner approves the price, payment/tax route, listing text, channel and any publication separately. No account creation, listing, posting or outreach happens merely because this ladder exists. Publishing product claims requires the corresponding verified behavior or an explicit planned label.
+
+
+---
+
+## Transaction-first survival strategy revision (2026-11-25)
+
+Status: **approved documentation strategy; synchronized with the current business/architecture sources. Stage 2.5-A Goals 1–2's existing uncommitted implementations and recorded automated verification are preserved. No P1–P4 implementation, external offer, payment, deployment, commit or push is started by this entry.**
+
+### Decision and sources
+
+The long-term target remains the smallest Outcome-verified Authority Hub with Free Local → Managed → Team. Initial market entry changes to **transaction first, one incident, one productization path**. The detailed strategy is `docs/research/iskra-survival-strategy.md` §5–10; the active commercial gates are in `docs/BUSINESS.md` §0/§6/§7 and the technical boundaries are in `docs/ARCHITECTURE.md` §5/§12.
+
+The initial customer is a technical owner already running coding agents unattended or repeatedly who has one reproducible restart duplicate-execution or duplicate-delivery incident. Multiple providers and GLM are acquisition channels, not required customer qualifications or the permanent product identity. Resource budgets remain engineering guardrails rather than the customer value proposition.
+
+### Superseded rules
+
+- The broad `$49 Agent Ops Audit` covering permissions, cost, provider migration and three Outcomes is replaced by the fixed-scope **Agent Replay & Delivery Audit**: one incident, one state/authority map, one reproduction fixture, one deterministic check and a short rerunnable evidence bundle. The name and `$49` remain hypotheses.
+- The audit no longer requires the unimplemented `headless/v1` or future Outcome execution path. After Stage 2.5-A it uses the existing Iskra CLI/Run/Session/Delivery path and a fixed local audit kit, with manual work and owner time recorded. Paid diagnosis does not prove Outcome API, Headless or Managed demand.
+- Core productization requires **two paid audits requesting the same repeatable capability or one actual paid product pilot**. Only then may a minimal `outcome/v1`, deterministic `evidence/v1` and one Outcome Pack receive a separate design/implementation card.
+- Stage 3 ACP/delegation is not automatic after Stage 2.5-A. ACP requires evidence that the built-in HTTP Agent cannot complete paid-validated work. `headless/v1` requires an actual external-client need; BYOUI, Team, additional packs, `doctor` and `export` remain separate demand-backed cards.
+- Managed design-partner proposal acceptance no longer passes a revenue gate. Managed validation requires an actual paid pilot. Expansion still requires three paying workspaces, two retained after four weeks, recurring Outcome operation without manual repair, working restore/export/deletion and measured total cost.
+- Approval records authorize privileged effects; they are not acceptance evidence. Outcome achievement requires declared non-LLM acceptance checks and required evidence.
+
+### Current card and next action
+
+- **Outcome**: Finish the existing delivery-reliability stage before opening new product code, then test one fixed-scope paid incident audit rather than building the future Hub upfront.
+- **Spec**: `docs/research/iskra-survival-strategy.md` §5–10; `docs/BUSINESS.md` §0/§6/§7; `docs/ARCHITECTURE.md` §5/§12/§13.
+- **Files**: This strategy revision changes documentation only. Existing Stage 2.5-A Goals 1–2 changes in `src/delivery.rs`, `src/run.rs`, `src/session.rs`, `src/main.rs`, `src/channel.rs` and `src/locale.rs` remain inherited work, not part of this strategy patch.
+- **Proof**: Documentation diff/link/stale-rule checks are recorded in `SESSION-LOG.md`. No new Rust test or build result is claimed from this documentation work.
+- **Current**: Stage 2.5-A Goals 1–4 are recorded as complete with automated checks. Owner-run Telegram delivery, rendering, localization, and restart verification remain the only incomplete gate.
+- **Stop**: Do not add Outcome/Evidence/ACP scope to Goal 3. No new product Core card without the applicable paid-demand gate. Zero paid orders after meaningful qualified views changes the incident, offer, price or channel rather than adding features. Three consecutive different bespoke audits stop the fixed offer.
+- **Live**: Owner separately approves and performs real Telegram/provider checks, publication, payment/tax setup, customer-data collection, deployment, commits and pushes.
+
+Next code action: **none inside Stage 2.5-A** — its automated milestone is complete; the owner-run Telegram checklist follows in normal mode. Next business action after P0: prepare one synthetic fixed-scope audit sample and the offer/intake/payment draft as a separate normal-mode task.
+
+2026-11-25 update: the Stage 2.5-A owner-run Telegram checklist passed (successful/partial/unknown delivery, `/status`, `/result`, Korean localization, `@second` delivery, restart recovery); evidence is in "Owner-run Telegram verification" above and `SESSION-LOG.md`. No commit or push was performed. The next code action is an owner commit decision, not a new Stage.

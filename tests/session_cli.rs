@@ -370,6 +370,40 @@ fn cli_replays_owner_and_assistant_context_after_process_restart() {
 }
 
 #[test]
+fn cli_restart_does_not_reprint_or_resend_completed_work() {
+    let dir = temp_dir("restart-no-replay");
+    let server = MockServer::start("completed-once-answer", Duration::ZERO);
+
+    let first = run_cli(&dir, &server.url(), "finish this work\nexit\n");
+    let first_stdout = String::from_utf8_lossy(&first.stdout);
+    assert_eq!(
+        first_stdout.matches("completed-once-answer").count(),
+        1,
+        "the completed answer must be printed exactly once: {first_stdout}"
+    );
+    assert_eq!(server.post_bodies().len(), 1);
+
+    let second = run_cli(&dir, &server.url(), "exit\n");
+    let second_stdout = String::from_utf8_lossy(&second.stdout);
+    assert!(
+        !second_stdout.contains("completed-once-answer"),
+        "a restart must not reprint a finished answer: {second_stdout}"
+    );
+    assert_eq!(
+        server.post_bodies().len(),
+        1,
+        "a restart must not call the model for finished work"
+    );
+
+    let runs: serde_json::Value =
+        serde_json::from_slice(&fs::read(dir.join("memory/runs.json")).unwrap()).unwrap();
+    assert_eq!(runs["runs"].as_array().unwrap().len(), 1);
+    assert_eq!(runs["runs"][0]["state"], "completed");
+
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn killed_work_recovers_as_interrupted_without_any_new_model_call() {
     let dir = temp_dir("interrupted");
     let server = MockServer::start("This answer must not arrive.", Duration::from_millis(500));
@@ -705,6 +739,78 @@ fn invalid_routes_fail_before_any_model_call() {
         "{stdout}"
     );
     assert_eq!(server.post_bodies().len(), 0);
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn cli_result_prints_a_stored_answer_without_a_model_call() {
+    let dir = temp_dir("cli-result");
+    let server = MockServer::start("stored-cli-answer-31", Duration::ZERO);
+    let first = run_cli(&dir, &server.url(), "finish this work\nexit\n");
+    let first_stdout = String::from_utf8_lossy(&first.stdout);
+    assert_eq!(
+        first_stdout.matches("stored-cli-answer-31").count(),
+        1,
+        "{first_stdout}"
+    );
+    assert_eq!(server.post_bodies().len(), 1);
+
+    let runs_before = fs::read(dir.join("memory/runs.json")).unwrap();
+    let session_before = fs::read(dir.join("memory/session.json")).unwrap();
+
+    let result = run_cli(&dir, &server.url(), "/result 1\nexit\n");
+    assert!(result.status.success());
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert_eq!(
+        stdout.matches("stored-cli-answer-31").count(),
+        1,
+        "{stdout}"
+    );
+    assert_eq!(
+        server.post_bodies().len(),
+        1,
+        "reading a result must not call the model"
+    );
+    assert_eq!(
+        fs::read(dir.join("memory/runs.json")).unwrap(),
+        runs_before,
+        "reading a result must not rewrite the Run store"
+    );
+    assert_eq!(
+        fs::read(dir.join("memory/session.json")).unwrap(),
+        session_before,
+        "reading a result must not rewrite the Session"
+    );
+
+    let log = fs::read_to_string(dir.join("logs/agent.log")).unwrap();
+    assert!(log.contains("cli_result run_id=1"), "{log}");
+    assert!(
+        !log.contains("stored-cli-answer-31"),
+        "the stored answer leaked into the log: {log}"
+    );
+
+    let bad = run_cli(
+        &dir,
+        &server.url(),
+        "/result\n/result 0\n/result nope\n/result 99\nexit\n",
+    );
+    assert!(bad.status.success());
+    let bad_stdout = String::from_utf8_lossy(&bad.stdout);
+    assert_eq!(
+        bad_stdout.matches("Usage: /result <work number>").count(),
+        3,
+        "{bad_stdout}"
+    );
+    assert!(
+        bad_stdout.contains("There is no work with number 99."),
+        "{bad_stdout}"
+    );
+    assert_eq!(
+        server.post_bodies().len(),
+        1,
+        "result errors must not call the model"
+    );
+
     fs::remove_dir_all(&dir).unwrap();
 }
 

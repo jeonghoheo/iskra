@@ -2,10 +2,14 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
+use crate::delivery::{
+    DELIVERY_STORE_FILE, DeliveryChannel, DeliveryError, DeliveryStore, DeliveryTicket,
+};
 use crate::logging;
 use crate::loop_;
 use crate::memory;
@@ -22,6 +26,11 @@ pub const MAX_QUEUED_PER_AGENT: usize = 20;
 pub const MAX_INPUT_CHARS: usize = 8_000;
 pub const MAX_ACTIVE_RUNS: usize = 2;
 const EVENT_BUFFER: usize = 128;
+
+/// How often a channel re-checks the durable Run state while waiting for a
+/// RuntimeEvent. RuntimeEvents are hints; this bound keeps a missing, lagged, or
+/// closed event from leaving a watcher or typing indicator waiting forever.
+pub const TERMINAL_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -41,7 +50,7 @@ impl RunState {
         matches!(self, Self::Preparing | Self::Running)
     }
 
-    fn is_terminal(self) -> bool {
+    pub(crate) fn is_terminal(self) -> bool {
         matches!(
             self,
             Self::Completed | Self::Failed | Self::Cancelled | Self::Interrupted
@@ -85,6 +94,30 @@ impl Default for RunData {
 pub struct RunTicket {
     pub id: u64,
     pub revision: u64,
+}
+
+/// Read-only Run reference used to resolve delivery targets and stored answers.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RunTarget {
+    pub id: u64,
+    pub agent_id: String,
+    pub state: RunState,
+    pub failure: Option<FailureKind>,
+    pub session_work_id: Option<u64>,
+    pub revision: u64,
+}
+
+/// A terminal outcome projected from durable Run and Session records.
+///
+/// Channels use it only when a RuntimeEvent was missing, lagged, or lost. It
+/// never creates work: the answer comes from the stored Session projection, and
+/// failure detail stays out of the durable Run log.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TerminalOutcome {
+    Completed { answer: Option<String> },
+    Failed { category: FailureKind },
+    Cancelled,
+    Interrupted,
 }
 
 #[derive(Clone, Debug)]
@@ -599,6 +632,27 @@ impl RunStore {
             .map(|record| record.state))
     }
 
+    /// Read-only lookup of the Run's Agent and Session work reference.
+    pub fn run_target(&self, id: u64) -> Result<Option<RunTarget>, RunError> {
+        let inner = self.lock()?;
+        let state = inner
+            .data
+            .as_ref()
+            .map_err(|error| RunError::Store(error.clone()))?;
+        Ok(state
+            .runs
+            .iter()
+            .find(|record| record.id == id)
+            .map(|record| RunTarget {
+                id: record.id,
+                agent_id: record.agent_id.clone(),
+                state: record.state,
+                failure: record.failure,
+                session_work_id: record.session_work_id,
+                revision: record.revision,
+            }))
+    }
+
     pub fn queue_status(&self, agent_id: &str) -> Result<RunQueueStatus, RunError> {
         let inner = self.lock()?;
         let state = inner
@@ -781,7 +835,7 @@ fn validate(data: &RunData) -> Result<(), String> {
     Ok(())
 }
 
-fn valid_agent_id(id: &str) -> bool {
+pub(crate) fn valid_agent_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 64
         && id.chars().all(|character| {
@@ -832,6 +886,7 @@ pub enum RuntimeEventKind {
 /// through this type. Channels only project `RuntimeEvent` values.
 pub struct Core {
     store: RunStore,
+    delivery: DeliveryStore,
     registry: Arc<RuntimeRegistry>,
     supervisor: RunSupervisor,
     events: broadcast::Sender<RuntimeEvent>,
@@ -891,10 +946,14 @@ impl Core {
         if let Some(error) = store.error() {
             return Err(error);
         }
+        // A missing delivery store is empty and creates nothing. An invalid
+        // store poisons delivery only; Run and conversation startup continue.
+        let delivery = DeliveryStore::open(&registry.main().paths.memory.join(DELIVERY_STORE_FILE));
         let (events, _) = broadcast::channel(EVENT_BUFFER);
         logging::append(&format!("core_ready agents={}", known.len()));
         Ok(Arc::new(Self {
             store,
+            delivery,
             registry: Arc::new(registry),
             supervisor: RunSupervisor::default(),
             events,
@@ -1027,6 +1086,91 @@ impl Core {
 
     pub fn run_state(&self, id: u64) -> Result<Option<RunState>, RunError> {
         self.store.run_state(id)
+    }
+
+    /// Read-only Run identity lookup for delivery targets.
+    pub fn run_target(&self, id: u64) -> Result<Option<RunTarget>, RunError> {
+        self.store.run_target(id)
+    }
+
+    /// Core-owned delivery authority. Channels use it, but do not own it.
+    pub fn delivery(&self) -> &DeliveryStore {
+        &self.delivery
+    }
+
+    /// Creates the delivery identity for a terminal Run. The Agent reference is
+    /// taken from the Run record, never from the caller.
+    pub fn create_delivery(
+        &self,
+        run_id: u64,
+        channel: DeliveryChannel,
+        target: &str,
+        chunk_count: u32,
+    ) -> Result<DeliveryTicket, DeliveryError> {
+        let run = self
+            .store
+            .run_target(run_id)
+            .map_err(|error| DeliveryError::Store(error.to_string()))?
+            .ok_or(DeliveryError::UnknownRun(run_id))?;
+        if !run.state.is_terminal() {
+            return Err(DeliveryError::InvalidTransition(format!(
+                "Run {run_id} is not terminal"
+            )));
+        }
+        self.delivery
+            .create(run_id, &run.agent_id, channel, target, chunk_count)
+    }
+
+    /// Read-only durable terminal projection for channel recovery.
+    ///
+    /// Returns `None` while the Run is unknown or not terminal. A completed Run
+    /// yields its stored redacted Session answer (`None` when that projection is
+    /// missing); failed Runs yield only the structured category. This performs
+    /// no Run, model, or tool work.
+    pub fn terminal_outcome(&self, run_id: u64) -> Result<Option<TerminalOutcome>, String> {
+        let Some(run) = self
+            .store
+            .run_target(run_id)
+            .map_err(|error| error.to_string())?
+        else {
+            return Ok(None);
+        };
+        match run.state {
+            RunState::Completed => {
+                let answer = self.completed_answer(run_id)?;
+                Ok(Some(TerminalOutcome::Completed { answer }))
+            }
+            RunState::Failed => Ok(Some(TerminalOutcome::Failed {
+                category: run.failure.unwrap_or(FailureKind::Other),
+            })),
+            RunState::Cancelled => Ok(Some(TerminalOutcome::Cancelled)),
+            RunState::Interrupted => Ok(Some(TerminalOutcome::Interrupted)),
+            _ => Ok(None),
+        }
+    }
+
+    /// Returns a completed Run's stored redacted answer. Failed, stopped,
+    /// interrupted, active, and unknown Runs return `None`; no model or tool
+    /// call is involved.
+    pub fn completed_answer(&self, run_id: u64) -> Result<Option<String>, String> {
+        let Some(run) = self
+            .store
+            .run_target(run_id)
+            .map_err(|error| error.to_string())?
+        else {
+            return Ok(None);
+        };
+        if run.state != RunState::Completed {
+            return Ok(None);
+        }
+        let Some(work_id) = run.session_work_id else {
+            return Ok(None);
+        };
+        let runtime = self
+            .registry
+            .runtime(&run.agent_id)
+            .ok_or_else(|| format!("Agent '{}' is unavailable", run.agent_id))?;
+        runtime.session.completed_answer(work_id)
     }
 
     #[cfg(test)]
@@ -1634,6 +1778,47 @@ mod tests {
     }
 
     #[test]
+    fn run_target_exposes_the_agent_and_session_reference() {
+        let dir = temp_dir("run-target");
+        let store = RunStore::load(&dir.join("memory/runs.json"));
+        assert_eq!(store.run_target(99).unwrap(), None);
+
+        let ticket = enqueue(&store, "main", "target me");
+        assert_eq!(
+            store.run_target(ticket.id).unwrap().unwrap(),
+            RunTarget {
+                id: ticket.id,
+                agent_id: "main".to_string(),
+                state: RunState::Queued,
+                failure: None,
+                session_work_id: None,
+                revision: 1,
+            }
+        );
+
+        let claim = claim(&store, &["main"]);
+        let target = store.run_target(ticket.id).unwrap().unwrap();
+        assert_eq!(target.state, RunState::Preparing);
+        assert_eq!(target.revision, claim.revision);
+
+        let revision = start_claim(&store, &claim, 7);
+        let target = store.run_target(ticket.id).unwrap().unwrap();
+        assert_eq!(target.state, RunState::Running);
+        assert_eq!(target.session_work_id, Some(7));
+        assert_eq!(target.revision, revision);
+
+        let revision = store
+            .settle(ticket.id, revision, RunState::Completed, None)
+            .unwrap();
+        let target = store.run_target(ticket.id).unwrap().unwrap();
+        assert_eq!(target.state, RunState::Completed);
+        assert_eq!(target.session_work_id, Some(7));
+        assert_eq!(target.revision, revision);
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn empty_and_oversized_inputs_are_refused_without_records() {
         let dir = temp_dir("limits");
         let store = RunStore::load(&dir.join("memory/runs.json"));
@@ -2085,6 +2270,155 @@ mod tests {
         );
         assert_eq!(core.registry().main().session.status().unwrap().stored, 1);
         assert_eq!(model.posts().len(), 1);
+
+        let target = core.run_target(ticket.id).unwrap().unwrap();
+        assert_eq!(target.agent_id, "main");
+        assert_eq!(target.state, RunState::Completed);
+        let work_id = target.session_work_id.unwrap();
+        assert_eq!(
+            core.completed_answer(ticket.id).unwrap().as_deref(),
+            Some("ok answer")
+        );
+        assert_eq!(
+            core.registry()
+                .main()
+                .session
+                .completed_answer(work_id)
+                .unwrap()
+                .as_deref(),
+            Some("ok answer")
+        );
+        assert_eq!(core.completed_answer(999).unwrap(), None);
+
+        let delivery = core
+            .create_delivery(ticket.id, DeliveryChannel::Telegram, "12345", 2)
+            .unwrap();
+        assert_eq!(delivery.revision, 1);
+        assert_eq!(
+            core.delivery().get(delivery.id).unwrap().unwrap().run_id,
+            ticket.id
+        );
+        assert_eq!(core.delivery().counts().unwrap().records, 1);
+        assert_eq!(
+            core.create_delivery(999, DeliveryChannel::Telegram, "1", 1),
+            Err(DeliveryError::UnknownRun(999))
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn terminal_outcome_reads_the_completed_answer_without_a_model_call() {
+        let dir = temp_dir("terminal-completed");
+        let model = MockModel::start("completed durably", Duration::ZERO);
+        let registry = main_registry(&dir, &model.url());
+        let core = Core::new(registry).unwrap();
+        let mut events = core.subscribe();
+        let ticket = core.submit("main", "finish this").unwrap();
+        let kind = await_terminal(&mut events, ticket.id).await;
+        assert!(matches!(kind, RuntimeEventKind::Completed { .. }));
+        let posts = model.posts().len();
+
+        assert_eq!(
+            core.terminal_outcome(ticket.id).unwrap(),
+            Some(TerminalOutcome::Completed {
+                answer: Some("completed durably".to_string())
+            })
+        );
+        assert_eq!(core.terminal_outcome(999).unwrap(), None);
+        assert_eq!(
+            model.posts().len(),
+            posts,
+            "reading a durable outcome must not call the model"
+        );
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn terminal_outcome_projects_failed_cancelled_and_interrupted_records() {
+        let dir = temp_dir("terminal-states");
+        write_store(
+            &dir,
+            json!({
+                "version": 1, "next_run_id": 5,
+                "runs": [
+                    {
+                        "id": 1, "agent_id": "main", "input": "a",
+                        "state": "failed", "failure": "timeout", "revision": 2
+                    },
+                    {
+                        "id": 2, "agent_id": "main", "input": "b",
+                        "state": "cancelled", "revision": 1
+                    },
+                    {
+                        "id": 3, "agent_id": "main", "input": "c",
+                        "state": "interrupted", "revision": 1
+                    },
+                    {
+                        "id": 4, "agent_id": "main", "input": "d",
+                        "state": "completed", "session_work_id": 9, "revision": 1
+                    }
+                ]
+            }),
+        );
+        let registry = main_registry(&dir, "http://127.0.0.1:9/chat/completions");
+        let core = Core::new(registry).unwrap();
+        let mut events = core.subscribe();
+
+        assert_eq!(
+            core.terminal_outcome(1).unwrap(),
+            Some(TerminalOutcome::Failed {
+                category: FailureKind::Timeout
+            })
+        );
+        assert_eq!(
+            core.terminal_outcome(2).unwrap(),
+            Some(TerminalOutcome::Cancelled)
+        );
+        assert_eq!(
+            core.terminal_outcome(3).unwrap(),
+            Some(TerminalOutcome::Interrupted)
+        );
+        assert_eq!(
+            core.terminal_outcome(4).unwrap(),
+            Some(TerminalOutcome::Completed { answer: None })
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), events.recv())
+                .await
+                .is_err(),
+            "restart must not publish terminal events for old Runs"
+        );
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn terminal_outcome_is_none_while_a_run_is_still_active() {
+        let dir = temp_dir("terminal-active");
+        let model = MockModel::start("slow answer", Duration::from_millis(600));
+        let registry = main_registry(&dir, &model.url());
+        let core = Core::new(registry).unwrap();
+        let mut events = core.subscribe();
+        let ticket = core.submit("main", "take your time").unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while core.run_state(ticket.id).unwrap() != Some(RunState::Running) {
+            assert!(Instant::now() < deadline, "the run never started");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(core.terminal_outcome(ticket.id).unwrap(), None);
+
+        assert!(matches!(
+            await_terminal(&mut events, ticket.id).await,
+            RuntimeEventKind::Completed { .. }
+        ));
+        assert_eq!(
+            core.terminal_outcome(ticket.id).unwrap(),
+            Some(TerminalOutcome::Completed {
+                answer: Some("slow answer".to_string())
+            })
+        );
 
         fs::remove_dir_all(&dir).unwrap();
     }

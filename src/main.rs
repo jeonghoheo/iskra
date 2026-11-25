@@ -1,5 +1,6 @@
 mod brain;
 mod channel;
+mod delivery;
 mod health;
 mod instance;
 mod locale;
@@ -27,7 +28,9 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::locale::{Key, Locale};
-use crate::run::{Core, RunState, RuntimeEvent, RuntimeEventKind};
+use crate::run::{
+    Core, RunState, RuntimeEvent, RuntimeEventKind, TERMINAL_POLL_INTERVAL, TerminalOutcome,
+};
 use crate::run_context::MAIN_AGENT_ID;
 use crate::run_lock::DispatcherLock;
 use crate::runtime::RuntimeRegistry;
@@ -125,6 +128,7 @@ async fn run_cli(core: &Arc<Core>) -> Result<(), Box<dyn std::error::Error + Sen
             match command.as_str() {
                 "/agents" => println!("{}", channel::agents_text(core, Locale::En)),
                 "/status" => print_status(core, &args).await,
+                "/result" => print_result(core, &args),
                 "/stop" => stop_agent(core, &args),
                 "/resume" => resume_agent(core, &args).await,
                 "/help" => println!("{CLI_HELP}"),
@@ -175,51 +179,128 @@ async fn run_cli(core: &Arc<Core>) -> Result<(), Box<dyn std::error::Error + Sen
             );
         }
 
-        print_run_result(&mut events, ticket.id).await;
+        print_run_result(core, ticket.id, &mut events).await;
     }
 
     Ok(())
 }
 
-async fn print_run_result(
-    events: &mut tokio::sync::broadcast::Receiver<RuntimeEvent>,
+/// One terminal CLI result. Produced exactly once per observed Run.
+#[derive(Debug, Eq, PartialEq)]
+enum CliOutcome {
+    Answer(String),
+    Stopped(String),
+}
+
+enum CliRecovery {
+    Pending,
+    Terminal(CliOutcome),
+    Unavailable,
+}
+
+/// Waits for a Run's terminal result, bounded by the durable-state poll
+/// interval. RuntimeEvents are hints: a timeout, a lagged stream, or a closed
+/// stream falls back to the stored Run/Session projection. The first terminal
+/// observation ends the wait, so an event and a recovery cannot print twice.
+async fn wait_for_run(
+    core: &Core,
     run_id: u64,
-) {
+    events: &mut tokio::sync::broadcast::Receiver<RuntimeEvent>,
+) -> CliOutcome {
     loop {
-        match events.recv().await {
-            Ok(event) if event.run_id == run_id => match event.kind {
+        match tokio::time::timeout(TERMINAL_POLL_INTERVAL, events.recv()).await {
+            Ok(Ok(event)) if event.run_id == run_id => match event.kind {
                 RuntimeEventKind::Started => {}
-                RuntimeEventKind::Completed { answer } => {
-                    println!("{answer}");
-                    break;
-                }
+                RuntimeEventKind::Completed { answer } => return CliOutcome::Answer(answer),
                 RuntimeEventKind::Failed { category, detail } => {
                     logging::append(&format!("cli_turn_error category={category:?}"));
-                    eprintln!("Stopped: {detail}");
-                    break;
+                    return CliOutcome::Stopped(detail);
                 }
-                RuntimeEventKind::Cancelled => {
-                    eprintln!("Stopped: cancelled");
-                    break;
-                }
+                RuntimeEventKind::Cancelled => return CliOutcome::Stopped("cancelled".to_string()),
                 RuntimeEventKind::StorageFailed => {
-                    eprintln!("Stopped: run store write failed");
-                    break;
+                    return CliOutcome::Stopped("the run store write failed".to_string());
                 }
             },
-            Ok(_) => {}
-            Err(RecvError::Lagged(skipped)) => {
+            Ok(Ok(_)) => {}
+            Ok(Err(RecvError::Lagged(skipped))) => {
                 logging::append(&format!("cli_event_lagged skipped={skipped}"));
+                match recover_run(core, run_id) {
+                    CliRecovery::Pending => {}
+                    CliRecovery::Terminal(outcome) => return outcome,
+                    CliRecovery::Unavailable => {
+                        return CliOutcome::Stopped(
+                            "the run result could not be recovered".to_string(),
+                        );
+                    }
+                }
             }
-            Err(RecvError::Closed) => {
-                eprintln!("Stopped: event stream closed");
-                break;
+            Ok(Err(RecvError::Closed)) => {
+                logging::append(&format!("cli_event_closed run_id={run_id}"));
+                return match recover_run(core, run_id) {
+                    CliRecovery::Terminal(outcome) => outcome,
+                    CliRecovery::Unavailable => {
+                        CliOutcome::Stopped("the run result could not be recovered".to_string())
+                    }
+                    CliRecovery::Pending => {
+                        CliOutcome::Stopped("the event stream closed".to_string())
+                    }
+                };
             }
+            Err(_elapsed) => match recover_run(core, run_id) {
+                CliRecovery::Pending => {}
+                CliRecovery::Terminal(outcome) => return outcome,
+                CliRecovery::Unavailable => {
+                    return CliOutcome::Stopped(
+                        "the run result could not be recovered".to_string(),
+                    );
+                }
+            },
         }
     }
 }
 
-const CLI_HELP: &str = "Commands: /agents · /status [@agent] · /stop [@agent] · /resume [@agent] · /help\nStart a request with @name to reach another agent.";
+/// Reads a terminal outcome from the durable Run and Session records without a
+/// model or tool call.
+fn recover_run(core: &Core, run_id: u64) -> CliRecovery {
+    let outcome = match core.terminal_outcome(run_id) {
+        Ok(Some(outcome)) => outcome,
+        Ok(None) => return CliRecovery::Pending,
+        Err(error) => {
+            logging::append(&format!("cli_recovery_error run_id={run_id} {error}"));
+            return CliRecovery::Unavailable;
+        }
+    };
+    let outcome = match outcome {
+        TerminalOutcome::Completed {
+            answer: Some(answer),
+        } => CliOutcome::Answer(answer),
+        TerminalOutcome::Completed { answer: None } => {
+            logging::append(&format!("cli_recovery_answer_missing run_id={run_id}"));
+            CliOutcome::Stopped("the stored answer is unavailable".to_string())
+        }
+        TerminalOutcome::Failed { category } => {
+            CliOutcome::Stopped(channel::failure_text(Locale::En, category, ""))
+        }
+        TerminalOutcome::Cancelled => CliOutcome::Stopped("cancelled".to_string()),
+        TerminalOutcome::Interrupted => {
+            CliOutcome::Stopped("interrupted; it will not resume automatically".to_string())
+        }
+    };
+    CliRecovery::Terminal(outcome)
+}
+
+async fn print_run_result(
+    core: &Core,
+    run_id: u64,
+    events: &mut tokio::sync::broadcast::Receiver<RuntimeEvent>,
+) {
+    match wait_for_run(core, run_id, events).await {
+        CliOutcome::Answer(answer) => println!("{answer}"),
+        CliOutcome::Stopped(text) => eprintln!("Stopped: {text}"),
+    }
+}
+
+const CLI_HELP: &str = "Commands: /agents · /status [@agent] · /result <work number> · /stop [@agent] · /resume [@agent] · /help\nStart a request with @name to reach another agent.";
 
 fn cli_command(text: &str) -> Option<(String, String)> {
     let (first, rest) = match text.split_once(char::is_whitespace) {
@@ -254,6 +335,68 @@ async fn print_status(core: &Arc<Core>, args: &str) {
             "{}",
             locale::with(Locale::En, Key::RouteUnknownAgent, agent_id)
         ),
+    }
+}
+
+/// Prints a completed Run's stored redacted answer. Reads Run and Session only:
+/// no Run, model, or tool call is made, and nothing is written.
+fn print_result(core: &Arc<Core>, args: &str) {
+    let Some(run_id) = channel::parse_run_id(args) else {
+        println!("{}", locale::text(Locale::En, Key::ResultUsage));
+        return;
+    };
+
+    let target = match core.run_target(run_id) {
+        Ok(Some(target)) => target,
+        Ok(None) => {
+            logging::append(&format!("cli_result run_id={run_id} state=unknown"));
+            println!(
+                "{}",
+                locale::with(Locale::En, Key::ResultUnknownRun, run_id)
+            );
+            return;
+        }
+        Err(error) => {
+            logging::append(&format!("cli_result_error run_id={run_id} error={error}"));
+            println!("{}", locale::text(Locale::En, Key::ResultUnavailable));
+            return;
+        }
+    };
+
+    if target.state != RunState::Completed {
+        logging::append(&format!(
+            "cli_result run_id={run_id} agent={} state={:?}",
+            target.agent_id, target.state
+        ));
+        println!(
+            "{}",
+            locale::with(Locale::En, Key::ResultNotCompleted, run_id)
+        );
+        return;
+    }
+
+    match core.completed_answer(run_id) {
+        Ok(Some(answer)) => {
+            logging::append(&format!(
+                "cli_result run_id={run_id} agent={} state=completed",
+                target.agent_id
+            ));
+            println!("{answer}");
+        }
+        Ok(None) => {
+            logging::append(&format!(
+                "cli_result run_id={run_id} agent={} state=answer_missing",
+                target.agent_id
+            ));
+            println!(
+                "{}",
+                locale::with(Locale::En, Key::ResultAnswerMissing, run_id)
+            );
+        }
+        Err(error) => {
+            logging::append(&format!("cli_result_error run_id={run_id} error={error}"));
+            println!("{}", locale::text(Locale::En, Key::ResultUnavailable));
+        }
     }
 }
 
@@ -302,9 +445,168 @@ async fn resume_agent(core: &Arc<Core>, args: &str) {
                 )
             );
             for ticket in resumed {
-                print_run_result(&mut events, ticket.id).await;
+                print_run_result(core, ticket.id, &mut events).await;
             }
         }
         Err(error) => eprintln!("Stopped: {error}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::RuntimeRegistry;
+    use crate::session::Session;
+    use std::path::{Path, PathBuf};
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "iskra-main-{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn core_for(dir: &Path) -> Arc<Core> {
+        let registry = RuntimeRegistry::load(dir, |key| match key {
+            "LLM_API_KEY" => Some("dummy-main-key".to_string()),
+            "LLM_BASE_URL" => Some("http://127.0.0.1:9/chat/completions".to_string()),
+            "LLM_MODEL" => Some("main-test-model".to_string()),
+            _ => None,
+        })
+        .unwrap();
+        Core::new(registry).unwrap()
+    }
+
+    fn seed_completed_run(dir: &Path, answer: &str) {
+        fs::create_dir_all(dir.join("memory")).unwrap();
+        let session = Session::load(&dir.join("memory/session.json"));
+        let mut work = session.begin("seeded request").unwrap();
+        let id = work.id();
+        work.complete(answer).unwrap();
+        fs::write(
+            dir.join("memory/runs.json"),
+            serde_json::json!({
+                "version": 1, "next_run_id": 2,
+                "runs": [{
+                    "id": 1, "agent_id": "main", "input": "seeded request",
+                    "state": "completed", "session_work_id": id, "revision": 1
+                }]
+            })
+            .to_string(),
+        )
+        .unwrap();
+    }
+
+    fn started_event(run_id: u64, seq: u64) -> RuntimeEvent {
+        RuntimeEvent {
+            run_id,
+            agent_id: "main".to_string(),
+            revision: 1,
+            seq,
+            kind: RuntimeEventKind::Started,
+        }
+    }
+
+    #[tokio::test]
+    async fn cli_wait_recovers_a_missing_terminal_event_from_durable_state() {
+        let dir = temp_dir("cli-recovery");
+        seed_completed_run(&dir, "stored answer");
+        let core = core_for(&dir);
+        let (_sender, mut events) = tokio::sync::broadcast::channel(4);
+
+        assert_eq!(
+            wait_for_run(&core, 1, &mut events).await,
+            CliOutcome::Answer("stored answer".to_string())
+        );
+
+        drop(core);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn cli_wait_keeps_the_first_terminal_event_and_ignores_duplicates() {
+        let dir = temp_dir("cli-duplicates");
+        let core = core_for(&dir);
+        let (sender, mut events) = tokio::sync::broadcast::channel(4);
+        for (seq, answer) in [(1, "first"), (2, "second")] {
+            sender
+                .send(RuntimeEvent {
+                    run_id: 3,
+                    agent_id: "main".to_string(),
+                    revision: 1,
+                    seq,
+                    kind: RuntimeEventKind::Completed {
+                        answer: answer.to_string(),
+                    },
+                })
+                .unwrap();
+        }
+
+        assert_eq!(
+            wait_for_run(&core, 3, &mut events).await,
+            CliOutcome::Answer("first".to_string())
+        );
+
+        drop(core);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn cli_wait_recovers_after_a_lagged_stream() {
+        let dir = temp_dir("cli-lagged");
+        seed_completed_run(&dir, "answer after lag");
+        let core = core_for(&dir);
+        let (sender, mut events) = tokio::sync::broadcast::channel(1);
+        for seq in 1..=3 {
+            sender.send(started_event(99, seq)).unwrap();
+        }
+
+        assert_eq!(
+            wait_for_run(&core, 1, &mut events).await,
+            CliOutcome::Answer("answer after lag".to_string())
+        );
+
+        drop(core);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn cli_wait_after_a_closed_stream_uses_the_durable_state() {
+        let dir = temp_dir("cli-closed");
+        seed_completed_run(&dir, "answer after close");
+        let core = core_for(&dir);
+        let (sender, mut events) = tokio::sync::broadcast::channel(4);
+        drop(sender);
+
+        assert_eq!(
+            wait_for_run(&core, 1, &mut events).await,
+            CliOutcome::Answer("answer after close".to_string())
+        );
+
+        drop(core);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn cli_wait_on_a_closed_stream_without_a_terminal_run_stops_once() {
+        let dir = temp_dir("cli-closed-pending");
+        let core = core_for(&dir);
+        let (sender, mut events) = tokio::sync::broadcast::channel(4);
+        drop(sender);
+
+        assert_eq!(
+            wait_for_run(&core, 1, &mut events).await,
+            CliOutcome::Stopped("the event stream closed".to_string())
+        );
+
+        drop(core);
+        let _ = fs::remove_dir_all(&dir);
     }
 }

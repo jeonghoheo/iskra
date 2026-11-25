@@ -1,7 +1,7 @@
 # Iskra Agent Workbench Architecture
 
-Status: **approved target design including the future Outcome-first Headless Control Plane; the Stage 2 two-Agent slice is committed as `3d3c98f`, and Stage 2.5-A `delivery/v1` is approved but not implemented. Outcome/Headless/BYOUI/Lease, Stage 3 and later are not implemented**.
-Date: 2026-11-24.
+Status: **approved target design including the future Outcome-first Headless Control Plane; the Stage 2 two-Agent slice is committed as `3d3c98f`, and Stage 2.5-A `delivery/v1` is in progress with Goals 1–2 implemented and automatically checked. Outcome/Headless/BYOUI/Lease, Stage 3 and later are not implemented**.
+Date: 2026-11-25.
 
 This document defines the architecture for turning Iskra from one persistent personal agent into a model-neutral workbench and, behind later gates, an Outcome-first Headless Control Plane. It preserves the existing Rust core, local data ownership, fail-closed tools, and single-binary distribution.
 
@@ -68,7 +68,7 @@ Outcome
               └── Event / Artifact / Evidence / Delivery
 ```
 
-A vague objective without a metric or acceptance is not promoted into an Outcome; Intake asks a bounded question or keeps it as a Task. Target states are `draft → proposed → active → evaluating → achieved`, with `blocked`, `failed` and `cancelled`. Task/Run completion never automatically achieves an Outcome. External ambiguity remains `unknown`, and reopening requires explicit evidence/event history rather than a silent reset.
+A vague objective without a metric or acceptance is not promoted into an Outcome; Intake asks a bounded question or keeps it as a Task. Target states are `draft → proposed → active → evaluating → achieved`, with `blocked`, `failed` and `cancelled`. Task/Run completion never automatically achieves an Outcome. Approval records authorize privileged effects but are not acceptance evidence; achievement requires the declared non-LLM acceptance checks and required evidence. External ambiguity remains `unknown`, and reopening requires explicit evidence/event history rather than a silent reset.
 
 ### Agent
 
@@ -509,9 +509,11 @@ queued_paused -> queued            (explicit /resume only)
 - `/start`, `/help`, the Telegram command menu, and queue acceptance/start/completion/failure/cancellation messages include the new behavior in `en/ko/ru`.
 - CLI uses the same Core Agent-selection API and supports `@agent`, `/agents`, `/status [@agent]`, `/stop [@agent]`, and `/resume [@agent]` so real-process tests can exercise the vertical slice.
 
-### Stage 2.5 — delivery reliability before Stage 3
+### Stage 2.5 — delivery reliability before further expansion
 
 Delivery reliability is a prerequisite for external engines because an ACP turn is another indeterminate side-effect boundary. The stage is sequenced as delivery, then bounded context/resources, then execution-outcome uncertainty. Only Stage 2.5-A is approved for implementation now; later slices require their own cards and measurements.
+
+After Stage 2.5-A's owner-run gate, no later Stage starts automatically. The next code card follows the transaction and repeated-paid-demand gates in `docs/BUSINESS.md` §0 and §6. A fixed-scope Agent Replay & Delivery Audit uses the existing CLI/Run/Session/Delivery path and does not require a future Outcome or Headless API.
 
 #### Stage 2.5-A — `delivery/v1`
 
@@ -525,18 +527,21 @@ Delivery reliability is a prerequisite for external engines because an ACP turn 
 
 Stage 2.5-A acceptance requires automated transition, failure, restart, event-lag, chunking, localization, and real CLI process coverage; zero secret/prompt/tool-argument leakage; full formatting, clippy, release-build, and budget gates; and a separate owner-run Telegram check. A passing mock Bot API test is not live proof.
 
-### Stage 3 — ACP and bounded delegation
+### Stage 3 — ACP and bounded delegation behind a demonstrated-need gate
 
-- Implement one validated ACP path behind core approval and sandbox boundaries.
-- If delegation is later approved, use depth 1, bounded child count/time/tokens, and one accountable primary Agent.
+- Implement one validated ACP path behind core approval and sandbox boundaries only when the built-in HTTP Agent cannot complete work for which actual payment has been validated.
+- If delegation is separately justified and approved, use depth 1, bounded child count/time/tokens, and one accountable primary Agent.
 
-### Stage 4 — Outcome, Headless and product surfaces
+### Stage 4 — Outcome, Headless and product surfaces behind separate gates
 
-- Add provider profiles and labelled cross-provider/cross-engine Outcome evaluations. GLM is an early compatibility candidate, not a hard-coded product identity.
-- Define `outcome/v1`, `adapter/v1`, `capability/v1`, `policy/v1`, `event/v1` and `evidence/v1`, then add a local authenticated `headless/v1` with idempotency, strict schemas, request bounds and cursor-based authorized event projections.
-- Add `verification/v1`, reusable Procedures/Routines, credential-free portable packages and the Intake → Outcome Contract → shadow Run → approval flow.
-- Implement an official thin Outcome Board as one BYOUI projection. Generated UIs run outside Core and begin read-only; approvals use Core commands only.
-- Add managed always-on, schedules/webhooks, backup/restore and remote access only after local reliability and retention are demonstrated.
+The Stage numbers name design layers, not authorization to implement them in sequence. Outcome, Headless, BYOUI and Managed are not one mandatory MVP bundle.
+
+- After the commercial productization gate, define only the minimum `outcome/v1` and deterministic `evidence/v1` fields needed by one repeatedly requested scenario and one Outcome Pack. Do not pre-build three packs or split all six future contracts merely for symmetry.
+- Add provider profiles and labelled cross-provider/cross-engine evaluations only when that selected scenario requires them. GLM is an early compatibility candidate, not a hard-coded product identity.
+- Add a local authenticated `headless/v1` with idempotency, strict schemas, request bounds and cursor-based authorized event projections only when an actual external client must submit or observe Outcomes. It is a separate card from Outcome/Evidence.
+- Add `adapter/v1`, `capability/v1`, `policy/v1`, `event/v1`, `verification/v1`, reusable Procedures/Routines, credential-free portable packages and Intake flows only as separately justified cards rather than one upfront abstraction program.
+- Implement an official thin Outcome Board as one BYOUI projection only after a real interface need. Generated UIs run outside Core and begin read-only; approvals use Core commands only.
+- Add managed always-on, schedules/webhooks, backup/restore and remote access only after local reliability and retention are demonstrated. Commercial Managed validation requires actual payment, not proposal acceptance.
 - Treat Vercel Board as an optional future communication adapter rather than cloning its message store. Add leases only for an actual multi-dispatcher/Agent claim requirement.
 - Evaluate rules and decision-model routing only against explicit/default baselines.
 
