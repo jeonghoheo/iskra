@@ -1315,12 +1315,12 @@ Status: **completed; full Stage 2.5-A automated milestone passed; not committed 
 
 ### Owner-run Telegram verification (2026-11-25)
 
-Status: **live gate passed; no commit or push.** Full evidence is recorded in `SESSION-LOG.md`.
+Status: **live gate passed; committed as `bd62255` and pushed to `origin/master` on 2026-11-25.** Full evidence is recorded in `SESSION-LOG.md`.
 
 - Successful delivery (run 19 → delivery 1, `message_id 368`), Korean `/status` with a separate Delivery line, Korean `/help` and command menu, repeated `/result` as new tracked records, localized usage/unknown/not-finished errors, and `@second` delivery plus `/status @second` were confirmed live.
 - A two-chunk answer (run 22) was killed mid-send with chunk 0 `sent` and chunk 1 `pending`. Restart mapped `pending → unknown` with no automatic send, settlement, or Run replay; `/status` reported `1 uncertain · 1 answer not fully delivered`; `/result 22` resent both chunks as a new tracked delivery (id 7, messages 397/398).
 - Live idle RSS was 19,936 KB. Localization was live-checked in Korean only; `en`/`ru` were confirmed as registered command menus, not in-app renders. The `@second` reply prefix itself was not separately quoted by the owner.
-- The test instance was stopped after verification. Next: owner decision on committing Stage 2.5-A.
+- The test instance was stopped after verification. The work was committed as `bd62255` and pushed to `origin/master`; the tree is clean.
 
 ---
 
@@ -1597,6 +1597,6 @@ The initial customer is a technical owner already running coding agents unattend
 - **Stop**: Do not add Outcome/Evidence/ACP scope to Goal 3. No new product Core card without the applicable paid-demand gate. Zero paid orders after meaningful qualified views changes the incident, offer, price or channel rather than adding features. Three consecutive different bespoke audits stop the fixed offer.
 - **Live**: Owner separately approves and performs real Telegram/provider checks, publication, payment/tax setup, customer-data collection, deployment, commits and pushes.
 
-Next code action: **none inside Stage 2.5-A** — its automated milestone is complete; the owner-run Telegram checklist follows in normal mode. Next business action after P0: prepare one synthetic fixed-scope audit sample and the offer/intake/payment draft as a separate normal-mode task.
+Next code action: **none inside Stage 2.5-A** — its automated milestone and owner-run Telegram checklist are complete. Next business action after P0: prepare one synthetic fixed-scope audit sample and the offer/intake/payment draft as a separate normal-mode task.
 
-2026-11-25 update: the Stage 2.5-A owner-run Telegram checklist passed (successful/partial/unknown delivery, `/status`, `/result`, Korean localization, `@second` delivery, restart recovery); evidence is in "Owner-run Telegram verification" above and `SESSION-LOG.md`. No commit or push was performed. The next code action is an owner commit decision, not a new Stage.
+2026-11-25 update: the Stage 2.5-A owner-run Telegram checklist passed (successful/partial/unknown delivery, `/status`, `/result`, Korean localization, `@second` delivery, restart recovery); evidence is in "Owner-run Telegram verification" above and `SESSION-LOG.md`. Committed as `bd62255` and pushed to `origin/master` on 2026-11-25; the next code action requires separate approval, not an automatic new Stage.

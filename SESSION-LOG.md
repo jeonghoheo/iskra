@@ -1637,3 +1637,7 @@ Status: **live gate passed; no commit or push.** Working tree: `master` `aac5656
 - Localization was verified live in Korean only; `en`/`ru` were confirmed as registered command menus at startup, not as in-app language renders.
 - The extra `/status`, `/help`, and `/result` calls were explicit owner actions; no other live command was exercised.
 - No commit or push. Next: owner decision on committing Stage 2.5-A.
+
+### Commit (2026-11-25)
+
+- Committed as `bd62255` and pushed to `origin/master` at 2026-11-25 16:12:45 +0300; the working tree is clean. This supersedes the "No commit or push" status above and closes Stage 2.5-A.
