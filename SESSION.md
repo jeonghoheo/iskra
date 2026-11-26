@@ -1638,6 +1638,13 @@ Prove the smallest external surface that lets one owner submit one work item and
 5. **Evidence:** mechanical values only — exit code, artifact hashes, Run/Delivery identity, explicit "unknown" where a value cannot be known. Never the model's completion claim.
 6. **Dependencies:** any new crate needs its own approval with name, purpose, and size impact. Budgets remain 15 direct dependencies, 20 MB stripped, 30 MB idle RSS.
 
+### Design principles (from `docs/research/product-theses.md`)
+
+- **T1:** three endpoints maximum; never expose tool features as API surface.
+- **T2:** no RBAC, SSO, policy editor, or approval UI; owner token and loopback only.
+- **T3:** restart duplicate execution must be zero — this is the differentiator.
+- **T4:** evidence is mechanical (exit code, hashes, Run/Delivery id); `unknown` stays `unknown`.
+
 ### Out of scope
 
 Multi-tenant or org accounts, billing/metering, SDKs, ACP, delegation, automatic routing, web UI, Outcome Packs, generalization of the six contracts, hosted mode, and any change to CLI or Telegram behavior.
