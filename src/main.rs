@@ -1,7 +1,9 @@
 mod brain;
 mod channel;
 mod delivery;
+mod headless;
 mod health;
+mod idempotency;
 mod instance;
 mod locale;
 mod logging;
@@ -68,6 +70,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     };
     let memory = memory::load_from(&registry.main().paths.memory);
+    let headless_profile = plan.headless.clone();
+    let headless_memory = registry.main().paths.memory.clone();
     for warning in registry.warnings().iter().chain(memory.warnings.iter()) {
         logging::append(&format!("context_warning {warning}"));
         println!("Notice: {warning}");
@@ -95,6 +99,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         )),
         Err(error) => logging::append(&format!("run_store_error {error}")),
     }
+
+    // Optional headless/v1 surface. A configured surface that cannot start
+    // (missing token, unavailable bind, second owner of the data directory)
+    // exits instead of silently running without authentication.
+    let _headless = match headless_profile {
+        Some(profile) => match headless::start(Arc::clone(&core), &headless_memory, &profile).await
+        {
+            Ok(server) => {
+                logging::append(&format!("headless_ready bind={}", server.local_addr()));
+                Some(server)
+            }
+            Err(error) => {
+                logging::append(&format!("headless_error {error}"));
+                eprintln!("Headless error: {error}");
+                std::process::exit(1);
+            }
+        },
+        None => None,
+    };
 
     if std::env::args().any(|arg| arg == "--cli") {
         println!("iskra — file-tool conversation loop. Type exit to quit.");

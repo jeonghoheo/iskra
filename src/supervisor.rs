@@ -66,6 +66,17 @@ impl RunSupervisor {
         self.active.lock().unwrap().len()
     }
 
+    /// Removes every handle without aborting it so a test can model a process
+    /// kill: the caller aborts them and no Run settlement is written.
+    #[cfg(test)]
+    pub fn take_all(&self) -> Vec<JoinHandle<()>> {
+        let mut active = self.active.lock().unwrap();
+        std::mem::take(&mut *active)
+            .into_values()
+            .map(|run| run.handle)
+            .collect()
+    }
+
     #[cfg(test)]
     pub fn contains(&self, run_id: u64) -> bool {
         self.active.lock().unwrap().contains_key(&run_id)

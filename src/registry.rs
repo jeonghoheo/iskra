@@ -1,4 +1,5 @@
 use std::fs;
+use std::net::SocketAddr;
 use std::path::Path;
 
 use serde::Deserialize;
@@ -9,6 +10,7 @@ use crate::run_context::MAIN_AGENT_ID;
 pub const REGISTRY_FILE: &str = "iskra.json";
 pub const VERSION: u32 = 1;
 pub const MAX_AGENTS: usize = 2;
+pub const DEFAULT_HEADLESS_BIND: &str = "127.0.0.1:8787";
 const MAX_AGENT_ID_CHARS: usize = 32;
 const MAX_ENGINE_ID_CHARS: usize = 64;
 const MAX_ENV_NAME_CHARS: usize = 128;
@@ -44,11 +46,23 @@ pub enum RegistrySource {
     File,
 }
 
+/// Optional owner configuration for the `headless/v1` HTTP surface.
+///
+/// The bearer token itself never lives in the registry: `token_env` names the
+/// environment variable the server reads at startup.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HeadlessProfile {
+    pub bind: String,
+    pub token_env: String,
+    pub allow_non_loopback: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct RegistryPlan {
     pub source: RegistrySource,
     pub engines: Vec<EngineProfile>,
     pub agents: Vec<AgentProfile>,
+    pub headless: Option<HeadlessProfile>,
 }
 
 #[derive(Deserialize)]
@@ -57,6 +71,18 @@ struct RawRegistry {
     version: u32,
     engines: Vec<RawEngine>,
     agents: Vec<RawAgent>,
+    #[serde(default)]
+    headless: Option<RawHeadless>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawHeadless {
+    #[serde(default)]
+    bind: Option<String>,
+    token_env: String,
+    #[serde(default)]
+    allow_non_loopback: bool,
 }
 
 #[derive(Deserialize)]
@@ -113,6 +139,7 @@ pub fn parse(text: &str) -> Result<RegistryPlan, String> {
     for agent in raw.agents {
         agents.push(validate_agent(agent)?);
     }
+    let headless = raw.headless.map(validate_headless).transpose()?;
 
     if engines.is_empty() {
         return Err("Registry must contain at least one engine".to_string());
@@ -164,6 +191,7 @@ pub fn parse(text: &str) -> Result<RegistryPlan, String> {
         source: RegistrySource::File,
         engines,
         agents,
+        headless,
     })
 }
 
@@ -186,6 +214,7 @@ pub fn synthesized() -> RegistryPlan {
             engine_id: "main-engine".to_string(),
             role: "Personal assistant".to_string(),
         }],
+        headless: None,
     }
 }
 
@@ -281,6 +310,33 @@ fn validate_agent(raw: RawAgent) -> Result<AgentProfile, String> {
         display_name: display_name.to_string(),
         engine_id: raw.engine_id,
         role: role.to_string(),
+    })
+}
+
+fn validate_headless(raw: RawHeadless) -> Result<HeadlessProfile, String> {
+    if !valid_env_name(&raw.token_env) {
+        return Err(
+            "headless token_env must be an environment-variable name, not a credential".to_string(),
+        );
+    }
+    let bind = raw
+        .bind
+        .as_deref()
+        .unwrap_or(DEFAULT_HEADLESS_BIND)
+        .trim()
+        .to_string();
+    let address: SocketAddr = bind
+        .parse()
+        .map_err(|error| format!("headless bind '{bind}' is not a socket address: {error}"))?;
+    if !address.ip().is_loopback() && !raw.allow_non_loopback {
+        return Err(format!(
+            "headless bind {address} is not loopback; set headless.allow_non_loopback=true to confirm an owner-configured non-loopback bind"
+        ));
+    }
+    Ok(HeadlessProfile {
+        bind: address.to_string(),
+        token_env: raw.token_env,
+        allow_non_loopback: raw.allow_non_loopback,
     })
 }
 
@@ -563,5 +619,53 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), contents);
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn headless_defaults_to_loopback_and_requires_a_token_env_name() {
+        let text = valid_registry().replace(
+            "\"agents\": [",
+            "\"headless\": { \"token_env\": \"ISKRA_OWNER_TOKEN\" },\n            \"agents\": [",
+        );
+        let plan = parse(&text).unwrap();
+        let headless = plan.headless.expect("headless configuration");
+        assert_eq!(headless.bind, DEFAULT_HEADLESS_BIND);
+        assert!(
+            headless
+                .bind
+                .parse::<SocketAddr>()
+                .unwrap()
+                .ip()
+                .is_loopback()
+        );
+        assert_eq!(headless.token_env, "ISKRA_OWNER_TOKEN");
+
+        let credential = valid_registry().replace(
+            "\"agents\": [",
+            "\"headless\": { \"token_env\": \"sk-live-secret\" },\n            \"agents\": [",
+        );
+        assert!(
+            parse(&credential)
+                .unwrap_err()
+                .contains("token_env must be an environment-variable name")
+        );
+    }
+
+    #[test]
+    fn headless_rejects_a_non_loopback_bind_without_confirmation() {
+        let text = valid_registry().replace(
+            "\"agents\": [",
+            "\"headless\": { \"bind\": \"0.0.0.0:8787\", \"token_env\": \"ISKRA_OWNER_TOKEN\" },\n            \"agents\": [",
+        );
+        assert!(parse(&text).unwrap_err().contains("is not loopback"));
+
+        let confirmed = valid_registry().replace(
+            "\"agents\": [",
+            "\"headless\": { \"bind\": \"0.0.0.0:8787\", \"token_env\": \"ISKRA_OWNER_TOKEN\", \"allow_non_loopback\": true },\n            \"agents\": [",
+        );
+        assert_eq!(
+            parse(&confirmed).unwrap().headless.unwrap().bind,
+            "0.0.0.0:8787"
+        );
     }
 }

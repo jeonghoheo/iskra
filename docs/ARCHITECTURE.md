@@ -395,7 +395,11 @@ The implementation is split into three sequential, machine-verifiable goals: reg
 
 #### Registry and isolated AgentRuntime
 
-The local `iskra.json` registry is strict `version: 1` JSON with only `engines` and `agents`. The public `iskra.example.json` contains credential-free examples only.
+The local `iskra.json` registry is strict `version: 1` JSON with `engines` and `agents`, plus the optional `headless` block added by headless/v1 G1 (`bind`, `token_env`, `allow_non_loopback`). The bearer token itself stays in the named environment variable. The public `iskra.example.json` contains credential-free examples only.
+
+headless/v1 G2 adds a Core-owned, restart-safe dedupe index at `memory/idempotency.json`: one client `idempotency_key` maps to exactly one Run, the mapping is persisted before the Run under the admission lock, and it leaves `runs.json` and `session/v1` unchanged. The HTTP layer still has no dispatch, execution, or Run-state write authority; a duplicate submit returns the existing Run id and creates nothing.
+
+headless/v1 G3 adds the read side. `GET /v1/runs/{run_id}` projects the stored redacted Session answer only for a completed Run, and `GET /v1/runs/{run_id}/evidence` returns mechanical values only. Because `runs.json` persists no timestamps, exit code, artifact hashes, delivery reference, or model-call count, those evidence values stay `unknown` (artifacts as an empty list) rather than being estimated from logs, tool output, or model text. Reads make no model or tool call, write no store, and change no usage counter.
 
 ```json
 {
@@ -440,6 +444,7 @@ memory/
   session.json                     # existing main session/v1, unchanged
   stickies.md / board_state.json   # existing main only
   runs.json                        # global Run/Queue authority, version 1
+  idempotency.json                 # headless/v1 dedupe index (Core-owned, bounded)
   deliveries.json                  # global delivery/v1 projection, version 1
   dispatcher.lock                  # persistent private single-dispatcher flock target
   agents/<agent-id>/

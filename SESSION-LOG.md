@@ -1677,3 +1677,248 @@ Status: **local execution package prepared; automated checks passed; no external
 - Publication remains blocked on owner review, real form/payment/refund/tax/settlement setup, replacement of all public placeholders, removal of the DRAFT notice, deployed-link checks, and separate approval for external action and any commit/push.
 - Actual customer demand, repeated productization demand, a four-owner-hour rerun, and Managed payment remain unverified.
 - Next: owner executes `docs/AUDIT-LAUNCH.md`; no next Core implementation is approved.
+
+---
+
+## Headless/v1 design review — strategy judgment, source pass, price anchors (2026-11-26)
+
+Status: **design-only session; no code, dependency, commit or push. Baseline `master` `0d31697`, clean. `cargo test` not rerun (recorded 270 passed, 0 failed).**
+
+### What changed
+
+- Recorded the design brief in `SESSION.md`'s headless/v1 card: zero new state transitions (reuses ARCHITECTURE §7), the `headless/v1` contract (three endpoints, strict schema, error codes), a six-line threat model, G1–G3 proof/stop additions, and dependency candidates.
+- Appended source-level competitive findings to `docs/research/iskra-survival-strategy.md` §11.4.
+- Added price anchors to `docs/AUDIT-LAUNCH.md` (Step 3.5).
+- Updated `NOW.md` next action and baseline.
+
+### Strategy judgment
+
+- GO for the approved headless/v1 slice. T3 is the most load-bearing thesis: if a competitor ships external-effect safety by default and buyers find it sufficient, both the slice's wedge and §5's single product promise collapse.
+- Source pass facts: AgentField requires PostgreSQL 15+, defaults to all-interface bind, and has durable execution events, leases and signed execution VCs with input/output hashes — so "they lack durability or evidence" is false and must not be claimed. Their documented posture clears `idempotency_key` on inbound replays so dedup does not reject re-dispatch (`migrations/032...`), and restarts create a new execution linked via `restarted_as_execution_id` (`036...`). Herdr's resume types the agent's own resume command into the restored pane (`src/agent_resume.rs`); no external-effect layer exists in that scope. A public comparison may claim posture difference (replay-by-default vs no-invisible-replay) only after a runtime bake-off.
+- Price desk research (2026-11-26, search-result snippets; the FAULTLINE page was unreachable): nearest agent-audit comparable is FAULTLINE Rapid Diagnostic at $500 one-time; ayfar quotes $150–300/month monitoring; Omium and AgentShield offer free audits as lead magnets; Upwork 2026 intermediate developer rates are $40–70/hr with an AI median around $30/hr; one blog example prices a wrong $4,200 refund at $7,300 total cost. Self-hosted one-time license precedents are $99–500 (spryn, MailFlow). Managed-instance anchors are $10–20/month, and managed OpenClaw hosting already exists. Verdict: keep $49 for the first three transactions (demand proof, not margin); the $150–500 band gives market support for later audit pricing and the $99–500 band for the box license, but only P3 gate data may fix them.
+
+### Limits
+
+- No installation, execution, or runtime reproduction of either competitor; no code copied. AgentField's crash-recovery policy for in-flight executions remains unverified (application code not read). Herdr #5231 remains a user report. FAULTLINE tier details remain unverified beyond the snippet.
+- External search failed twice with HTTP 403 and two price pages timed out before a later search succeeded; the price figures above come from search snippets, not full-page verification.
+
+### Next
+
+- Owner approves one HTTP server dependency (axum recommended; size impact to be measured in G1), then G1 starts in its own session.
+
+---
+
+## headless/v1 G1 — HTTP surface and token admission (2026-11-26)
+
+Status: **G1 complete; automated verification and a local smoke run passed; not committed or pushed.** Baseline `master` `0d31697` with the design-session documentation changes preserved.
+
+### Scope and behavior
+
+- Added `src/headless.rs` and registered it in `src/main.rs`. The server starts only when `iskra.json` contains an optional `headless` block; a missing registry keeps the compatibility `main` behavior and starts no HTTP surface.
+- `headless` configuration: `{ "bind": "127.0.0.1:8787", "token_env": "ISKRA_OWNER_TOKEN", "allow_non_loopback": false }`. `bind` defaults to `127.0.0.1:8787`; the bearer token is read from the named environment variable and never stored in `iskra.json`. A non-loopback bind is rejected unless `allow_non_loopback` is explicitly true. A missing or empty token, an unavailable bind, or a second server on the same data directory stops startup instead of running unauthenticated.
+- Endpoints: `POST /v1/runs`, `GET /v1/runs/{run_id}`, `GET /v1/runs/{run_id}/evidence`. Requests require `Authorization: Bearer <token>`, compared in constant time. Unknown fields, missing fields, and malformed JSON return 400; bodies over 64 KiB return 413; unknown paths and run ids return 404; wrong methods return 405.
+- `POST /v1/runs` validates `prompt` and the required `idempotency_key`, then admits exactly one Run through the existing Core path with `Core::admit`. `admit` shares `submit`'s checks, `RunStore::enqueue`, and `dispatch_locked`; it only avoids reporting a post-admission dispatch failure as a failed admission. The HTTP layer never dispatches, executes tools, or writes Run state itself. `QueueFull` maps to 429 and a RunStore failure maps to 503.
+- `GET` handlers read the persisted Run projection only. G1 intentionally omits timestamps and result fields because `runs.json` stores neither, and it reports `unknown` for every evidence value that G3 will later compute. No model call, tool call, or usage-counter change occurs on a read.
+- `idempotency_key` is required and bounded but **not deduplicated** in G1 (G2). Restart recovery stays the existing Core behavior; this Goal adds no new state transition.
+- `src/registry.rs` gained the strict optional `headless` block validation; `src/run.rs` gained the shared admission helper. `docs/ARCHITECTURE.md` §12 now states the optional `headless` registry block. No `runs.json` or `session/v1` schema change, no CLI/Telegram code change, no new dependency beyond the approved `axum`.
+
+### Proof (actual results)
+
+```text
+cargo test headless_
+  -> 12 passed, 0 failed
+     required: headless_wrong_token_401, headless_missing_token_401,
+               headless_malformed_body_400, headless_oversized_body_413,
+               headless_unknown_path_404, headless_binds_loopback_by_default,
+               headless_second_bind_fails_closed
+     extra:    headless_unknown_fields_400, headless_wrong_method_405,
+               headless_valid_submit_returns_201_without_echoing_the_body,
+               registry headless default/loopback and non-loopback confirmation tests
+
+cargo test
+  -> 271 unit passed, 0 failed
+  -> 11 real CLI process tests passed, 0 failed
+  -> 282 total passed, 0 failed (recorded baseline 270)
+
+cargo test --test cli
+  -> no test target named `cli`; the real CLI process suite is `tests/session_cli.rs`
+cargo test --test session_cli
+  -> 11 passed, 0 failed
+
+rustfmt --edition 2024 --check src/headless.rs src/main.rs src/registry.rs src/run.rs
+  -> clean
+
+cargo clippy --all-targets
+  -> 4 pre-existing warnings (channel.rs:368, locale.rs:19, memory.rs:108, memory.rs:133)
+  -> none in the changed or new files
+
+cargo build --release
+  -> zero Iskra warnings; the existing transitive proc-macro-error2 v2.0.1 future-incompatibility note remains
+
+stripped release binary
+  -> 7,280,536 bytes = 6.94 MiB (baseline 6,328,272 bytes = 6.32 MiB; +0.62 MiB)
+  -> axum added axum, axum-core, httpdate, and matchit to the lock; hyper/tower/http were already present
+
+dummy-config CLI idle RSS, isolated temporary directory, after 2 s waiting on stdin
+  -> 4,480 KB = 4.38 MiB (baseline 4.06 MiB)
+
+direct dependencies
+  -> 8 (limit 15; previous 7)
+```
+
+- All hard budgets pass: stripped binary 6.94 MiB ≤ 20 MB, idle RSS 4.38 MiB ≤ 30 MB, direct dependencies 8 ≤ 15.
+- Local smoke run outside the test suite, with a synthetic `iskra.json`, a dummy model URL on loopback, and a temporary data directory: `headless_ready bind=127.0.0.1:18787`; `POST /v1/runs` without a token -> 401; with the owner token -> 201 `{run_id:1, state:"queued"}`; `GET /v1/runs/1` -> persisted `running` state. The dummy model endpoint was loopback port 9; no provider or Telegram request was made.
+- Token and request bodies are not logged or echoed; the 401/201 tests assert the token and prompt are absent from response bodies.
+
+### Limits and next
+
+- G2 owns idempotency dedupe, the duplicate-submit proof, and restart-safety proof through this surface. G3 owns stored results and mechanical evidence values; G1 returns only persisted state and explicit `unknown`.
+- `created_at` is returned on the 201 because admission time is known at that moment; `GET` omits timestamps because `runs.json` has no timestamp fields and this Goal may not change that schema.
+- The headless surface is opt-in through `iskra.json`; the compatibility registry-less startup is unchanged. No owner-run external-client or real-provider check was performed.
+- No commit or push was performed.
+
+Next: G2 in its own Goal session — submit through Core and restart safety.
+
+## headless/v1 G2 — Core-owned idempotent submit and restart proof (2026-11-26)
+
+Status: **G2 complete; automated verification and a real SIGKILL process proof passed; not committed or pushed.** Baseline `master` `0d31697` with the G1 and design-session changes preserved.
+
+### Scope and behavior
+
+- Added `src/idempotency.rs`: a `Core`-owned `IdempotencyStore` over `memory/idempotency.json`. It is a separate side store, not a `runs.json` or `session/v1` schema change, and it is not a second execution authority. The strict `version: 1` file is atomically written with private permissions, capped at 256 keys, and loaded at startup. An unreadable, invalid, or unsupported index poisons headless submit only; a submit that needs a durable dedupe decision returns 503 instead of creating a duplicate.
+- Added `Core::admit_idempotent`, which reuses the existing queue admission (`RunStore::enqueue`) and dispatch path. Under the Core admission lock it checks the key, reserves the next Run id in the dedupe index, then creates the Run. The reservation-before-Run order means a persisted Run always has its dedupe entry; a crash between the two writes leaves a key that points to no Run, and the next submit treats it as a miss and reuses the id. A duplicate key returns the persisted Run id and `deduplicated:true` without enqueueing.
+- `POST /v1/runs` returns 201 for the winning admission and 200 `{schema, run_id, state, deduplicated:true}` for a duplicate. The stored state is reported for a duplicate, because the original may have advanced or been interrupted since admission. A RunStore or dedupe persist failure returns 503 `storage_unavailable` and releases the reservation; admission full stays 429. The HTTP layer still does not dispatch, execute, or write Run state.
+- Restart behavior is unchanged: startup recovery performs `queued -> queued_paused` and `preparing/running -> interrupted` with zero model or tool calls, and resume remains the explicit CLI/Telegram owner action. The dedupe index is restart-safe, so a duplicate after restart returns the original Run id.
+- Log privacy is unchanged in shape and now covers submit: ids, states, and a deduplicated flag only. The prompt, token, idempotency key, and request body are not logged. `MAX_IDEMPOTENCY_KEY_CHARS` now references the store's single 256-character bound.
+- No CLI or Telegram behavior change, no `src/channel.rs` change, no registry or delivery-store change, no dependency change, and no real Telegram or provider call. Both mock model endpoints were loopback.
+
+### Proof (actual results)
+
+```text
+cargo test headless_
+  -> 16 passed, 0 failed (12 G1 + 4 G2)
+     headless_duplicate_submit_creates_no_second_run
+     headless_storage_failure_returns_503_and_creates_nothing
+     headless_submit_then_kill_leaves_interrupted_with_zero_model_calls
+     headless_submitted_prompt_never_logged
+     (the real process test also matches this filter: headless_process_kill_never_replays_submitted_work)
+
+cargo test restart
+  -> 8 passed, 0 failed (5 unit + 3 real CLI process tests)
+
+cargo test
+  -> 275 unit passed, 0 failed
+  -> 12 real CLI process tests passed, 0 failed
+  -> 287 total passed, 0 failed (G1 baseline 282; +4 unit +1 process)
+
+cargo test --test session_cli
+  -> 12 passed, 0 failed, including:
+     headless_process_kill_never_replays_submitted_work
+       real process: POST 201 run 1 -> running; POST 201 run 2 -> queued;
+       duplicate 200 run 1; SIGKILL; restart; GET run 1 = interrupted,
+       GET run 2 = queued_paused, duplicate still 200 run 1; model posts stay 1.
+
+rustfmt --edition 2024 --check src/headless.rs src/idempotency.rs src/main.rs src/run.rs src/supervisor.rs tests/session_cli.rs
+  -> clean
+
+cargo clippy --all-targets
+  -> 4 pre-existing warnings only (channel.rs:368, locale.rs:19, memory.rs:108, memory.rs:133)
+  -> none in the changed or new files
+
+cargo build --release
+  -> zero Iskra warnings; existing transitive proc-macro-error2 v2.0.1 note remains
+
+stripped release binary
+  -> 7,313,656 bytes = 6.97 MiB (G1 7,280,536 bytes = 6.94 MiB; +0.03 MiB)
+
+dummy-config CLI idle RSS, isolated temporary directory, after 2 s waiting on stdin
+  -> 4,448 KB = 4.34 MiB (G1 4,480 KB = 4.38 MiB)
+
+direct dependencies
+  -> 8 (limit 15; unchanged)
+```
+
+- Concurrent duplicates are covered inside `headless_duplicate_submit_creates_no_second_run`: eight simultaneous submits of one fresh key produce exactly one 201, seven duplicate 200s, one Run id, two Run records total (including the earlier sequential case), and `next_run_id = 3`.
+- `headless_storage_failure_returns_503_and_creates_nothing` covers both directions: a corrupt dedupe index returns 503 before any Run write and leaves the original file untouched; a blocked `runs.json` path returns 503, creates no Run, and releases the reserved key (`entries: []`).
+- `headless_submitted_prompt_never_logged` primes `logs/agent.log`, asserts the submit path wrote its own line, and asserts the unique prompt, idempotency key, token, and whole request body are absent. `headless_submit_then_kill_leaves_interrupted_with_zero_model_calls` holds a model request open, aborts in-flight execution without settlement, reloads the data directory, and asserts `interrupted`/`queued_paused` with the model-call count unchanged and zero active handles.
+
+### Limits and next
+
+- The dedupe index is bounded to 256 keys and a key whose Run left the bounded 100-Run store is treated as a miss; idempotency is therefore bounded, not permanent. Reusing an old key after Run-store pruning creates a new Run.
+- The dedupe key is stored in the private `memory/idempotency.json`; only logs and responses are proven free of it.
+- The real process test models a submit, SIGKILL, and restart on one host. It does not cover kernel-level disk failure, a full disk, or an owner-run external client.
+- G3 owns stored results and mechanical evidence values; G1/G2 still return persisted state and explicit `unknown` for not-yet-computed evidence.
+- No commit or push was performed.
+
+Next: G3 in its own Goal session — persisted result and mechanical evidence without a model call or usage-counter change.
+
+---
+
+## headless/v1 G3 — Stored result and mechanical evidence reads (2026-11-26)
+
+Status: **G3 complete; automated verification passed; not committed or pushed.** Baseline `master` `0d31697` with the G1, G2, and design-session changes preserved; G3's baseline was G2's recorded 287 passed / 0 failed, 6.97 MiB stripped, 4.34 MiB idle RSS, and 8 direct dependencies.
+
+### Scope and behavior
+
+- `GET /v1/runs/{run_id}` adds the completed Run's stored redacted Session answer as `result`, read through `Core::completed_answer` — the same projection `/result` uses — so the HTTP layer gains no new read authority and no write authority. Unfinished, failed, cancelled, interrupted, and unknown Runs skip the Session read and omit `result`; a completed Run whose Session projection is missing also omits it. `created_at` and `updated_at` are `"unknown"` because `runs.json` persists no timestamps, and `finished_at` is never invented.
+- `GET /v1/runs/{run_id}/evidence` keeps the design-brief shape with mechanical values only: `exit_code` `"unknown"`, `artifact_hashes` `[]`, `delivery` `{id, state, message_id}` all `"unknown"`, and `usage` `{model_calls: "unknown", cost_known: false}`. Nothing is estimated, parsed out of logs or tool output, or taken from the model's completion claim.
+- Gaps recorded in the card instead of adding persisted state: no per-Run exit code or timestamps in `runs.json`; no artifact broker or artifact hashes; no by-Run delivery read contract exposed to headless (a delivery-store change would be required); no persisted per-Run model-call count (log-derived counts are explicitly excluded as evidence).
+- Authentication, bind rules, error codes, the G1/G2 submit path, CLI, and Telegram behavior are unchanged. No new dependency, no approval, no `runs.json` / `session/v1` / delivery-store schema change, no new persisted field, and no fourth endpoint. Both mock model endpoints were loopback.
+- The read tests use a second registry Agent with a unique id per test. Usage counters are log-derived per Agent, so the unique id makes the counter snapshot isolated from every other test in the same process; the real Run still uses the existing Core admission and dispatch path.
+
+### Proof (actual results)
+
+```text
+cargo test headless_read_
+  -> 4 passed, 0 failed
+     headless_read_returns_stored_answer_with_zero_model_calls
+     headless_read_omits_result_for_unfinished_work
+     headless_read_evidence_reports_unknown_without_estimating
+     headless_read_does_not_change_usage_counters
+  (all three design-brief labels carry the headless_read_ prefix so this filter
+   matches them; the unfinished-result test is additive)
+
+cargo test restart
+  -> 8 passed, 0 failed (5 unit + 3 real CLI process tests)
+
+cargo test
+  -> 279 unit passed, 0 failed
+  -> 12 real CLI process tests passed, 0 failed
+  -> 291 total passed, 0 failed (G2 baseline 287; +4 unit)
+
+cargo test --test session_cli
+  -> 12 passed, 0 failed
+
+rustfmt --edition 2024 --check src/headless.rs src/idempotency.rs src/main.rs src/run.rs src/supervisor.rs tests/session_cli.rs
+  -> clean
+
+cargo clippy --all-targets
+  -> 4 pre-existing warnings only (channel.rs:368, locale.rs:19, memory.rs:108, memory.rs:133)
+  -> none in the changed or new files
+
+cargo build --release
+  -> zero Iskra warnings; existing transitive proc-macro-error2 v2.0.1 note remains
+
+stripped release binary
+  -> 7,313,632 bytes = 6.97 MiB (G2 7,313,656 bytes = 6.97 MiB)
+
+dummy-config CLI idle RSS, isolated temporary directory, after 2 s waiting on stdin
+  -> 4,432 KB = 4.33 MiB (G2 4,448 KB = 4.34 MiB)
+
+direct dependencies
+  -> 8 (limit 15; unchanged)
+```
+
+- Every read test asserts the mock model POST count, the per-Agent `usage::today_for_agent` counters, `runs.json` bytes, the Agent's `session.json` bytes, and the absence of `memory/deliveries.json` are unchanged across the read. The usage test executes a real completed Run first, asserts `usage.total > 0`, then performs two status reads and two evidence reads.
+- `headless_read_returns_stored_answer_with_zero_model_calls` submits through `POST /v1/runs`, waits for `completed`, and asserts the read returns the stored answer with `created_at`/`updated_at` `"unknown"` and without echoing the prompt.
+- `headless_read_evidence_reports_unknown_without_estimating` keeps a model request open long enough for a completed Run, asserts every evidence value is explicitly `"unknown"`/`[]` with string types (never a numeric estimate), and asserts the stored answer and prompt do not appear in the evidence body.
+- `headless_read_omits_result_for_unfinished_work` holds a model request open, reads a `running` Run, and asserts `result` is absent; the model-call count is snapshotted after the hanging request is observed so the assertion is not racy.
+
+### Limits and next
+
+- Evidence is intentionally thin: exit code, artifacts, delivery identity, and model-call counts all stay `"unknown"` until a future card adds persisted mechanical records through a separate approved schema change. G3 proves the read contract, not evidence richness.
+- The read contract reports `created_at`/`updated_at` as `"unknown"`; an external client that needs timestamps requires a future persisted-field card.
+- Tests cover loopback mock endpoints on one host; the owner-run external-client and real-provider checks remain.
+- No commit or push was performed.
+
+Next: owner-run external-client and real-provider checks outside the Goal loop; then a separate commit/push decision.

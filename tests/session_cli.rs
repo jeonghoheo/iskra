@@ -1060,3 +1060,204 @@ fn legacy_session_v1_replays_main_history_and_attributes_new_work() {
     );
     fs::remove_dir_all(&dir).unwrap();
 }
+
+const HEADLESS_TOKEN: &str = "process-owner-token";
+
+fn write_headless_registry(dir: &Path, model_url: &str) {
+    let registry = serde_json::json!({
+        "version": 1,
+        "engines": [{
+            "id": "main-engine",
+            "kind": "openai_compatible",
+            "base_url": model_url,
+            "model": "session-test-model",
+            "api_key_env": "LLM_API_KEY"
+        }],
+        "agents": [{
+            "id": "main",
+            "display_name": "Iskra",
+            "engine_id": "main-engine",
+            "role": "Personal assistant"
+        }],
+        "headless": {
+            "bind": "127.0.0.1:0",
+            "token_env": "ISKRA_HEADLESS_TOKEN"
+        }
+    });
+    fs::write(dir.join("iskra.json"), registry.to_string()).unwrap();
+}
+
+fn wait_for_headless_bind(dir: &Path, from: usize) -> u16 {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Ok(text) = fs::read_to_string(dir.join("logs/agent.log"))
+            && text.len() >= from
+            && let Some(index) = text[from..].find("headless_ready bind=")
+            && let Some(port) = text[from + index..]
+                .split_whitespace()
+                .nth(1)
+                .and_then(|address| address.rsplit(':').next())
+                .and_then(|port| port.parse().ok())
+        {
+            return port;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the headless server never reported a bind"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn headless_http(
+    port: u16,
+    method: &str,
+    path: &str,
+    token: Option<&str>,
+    body: &str,
+) -> (u16, serde_json::Value) {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    let mut request = format!(
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\nContent-Length: {}\r\n",
+        body.len()
+    );
+    if let Some(token) = token {
+        request.push_str(&format!("Authorization: Bearer {token}\r\n"));
+    }
+    request.push_str("\r\n");
+    request.push_str(body);
+    stream.write_all(request.as_bytes()).unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    let status = response
+        .split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse().ok())
+        .unwrap_or(0);
+    let payload = response.split("\r\n\r\n").nth(1).unwrap_or("{}");
+    let value = serde_json::from_str(payload).unwrap_or_else(|_| serde_json::json!({}));
+    (status, value)
+}
+
+fn wait_for_run_state(dir: &Path, run_id: u64, expected: &str) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Ok(bytes) = fs::read(dir.join("memory/runs.json"))
+            && let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes)
+            && let Some(run) = value["runs"]
+                .as_array()
+                .and_then(|runs| runs.iter().find(|run| run["id"] == run_id))
+            && run["state"] == expected
+        {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "run {run_id} never reached {expected}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn headless_process_kill_never_replays_submitted_work() {
+    let dir = temp_dir("headless-kill");
+    let model = MockServer::start(
+        "This answer must never be replayed.",
+        Duration::from_secs(3),
+    );
+    write_headless_registry(&dir, &model.url());
+
+    let mut first = command(&dir, &model.url())
+        .env("ISKRA_HEADLESS_TOKEN", HEADLESS_TOKEN)
+        .spawn()
+        .unwrap();
+    let first_port = wait_for_headless_bind(&dir, 0);
+
+    let (status, run_one) = headless_http(
+        first_port,
+        "POST",
+        "/v1/runs",
+        Some(HEADLESS_TOKEN),
+        r#"{"prompt":"kill this submitted work","idempotency_key":"process-key-1"}"#,
+    );
+    assert_eq!(status, 201, "{run_one}");
+    assert_eq!(run_one["run_id"], 1);
+    wait_for_run_state(&dir, 1, "running");
+    assert!(
+        model.wait_for_post(),
+        "the running Run never reached the model"
+    );
+
+    let (status, run_two) = headless_http(
+        first_port,
+        "POST",
+        "/v1/runs",
+        Some(HEADLESS_TOKEN),
+        r#"{"prompt":"never start this work","idempotency_key":"process-key-2"}"#,
+    );
+    assert_eq!(status, 201, "{run_two}");
+    assert_eq!(run_two["run_id"], 2);
+    wait_for_run_state(&dir, 2, "queued");
+
+    let (status, duplicate) = headless_http(
+        first_port,
+        "POST",
+        "/v1/runs",
+        Some(HEADLESS_TOKEN),
+        r#"{"prompt":"kill this submitted work","idempotency_key":"process-key-1"}"#,
+    );
+    assert_eq!(status, 200, "{duplicate}");
+    assert_eq!(duplicate["run_id"], 1);
+    assert_eq!(duplicate["deduplicated"], true);
+
+    // SIGKILL: no shutdown hook, no settlement, no resend.
+    let _ = first.kill();
+    let _ = first.wait();
+    drop(first);
+
+    let log_offset = fs::metadata(dir.join("logs/agent.log")).unwrap().len() as usize;
+    let mut second = command(&dir, &model.url())
+        .env("ISKRA_HEADLESS_TOKEN", HEADLESS_TOKEN)
+        .spawn()
+        .unwrap();
+    let second_port = wait_for_headless_bind(&dir, log_offset);
+
+    let (status, read_one) =
+        headless_http(second_port, "GET", "/v1/runs/1", Some(HEADLESS_TOKEN), "");
+    assert_eq!(status, 200, "{read_one}");
+    assert_eq!(read_one["state"], "interrupted");
+    let (status, read_two) =
+        headless_http(second_port, "GET", "/v1/runs/2", Some(HEADLESS_TOKEN), "");
+    assert_eq!(status, 200, "{read_two}");
+    assert_eq!(read_two["state"], "queued_paused");
+
+    // Dedupe is restart-safe: the original key still names the original Run.
+    let (status, duplicate) = headless_http(
+        second_port,
+        "POST",
+        "/v1/runs",
+        Some(HEADLESS_TOKEN),
+        r#"{"prompt":"kill this submitted work","idempotency_key":"process-key-1"}"#,
+    );
+    assert_eq!(status, 200, "{duplicate}");
+    assert_eq!(duplicate["run_id"], 1);
+    assert_eq!(duplicate["deduplicated"], true);
+
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(
+        model.post_bodies().len(),
+        1,
+        "restart and duplicate submit must make zero new model calls"
+    );
+    assert_eq!(read_one["state"], "interrupted");
+    assert_eq!(read_two["state"], "queued_paused");
+
+    let _ = second.kill();
+    let _ = second.wait();
+    drop(second);
+    fs::remove_dir_all(&dir).unwrap();
+}

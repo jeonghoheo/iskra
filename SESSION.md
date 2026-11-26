@@ -1623,7 +1623,9 @@ Next action: **owner local review and form/payment setup, then separately approv
 
 ## headless/v1 — minimal external submit/read surface (2026-11-26)
 
-Status: **scope approved by the owner; design session not started; no code and no dependency added.** This card supersedes the P1 next-action line above for Core work: the audit sales track is paused and headless/v1 is the current priority. Decision record: personal-memory `DECISIONS.md` 2026-11-26.
+Status: **scope approved by the owner; G1, G2, and G3 implemented and automatically verified locally (2026-11-26); no commit or push.** This card supersedes the P1 next-action line above for Core work: the audit sales track is paused and headless/v1 is the current priority. Decision record: personal-memory `DECISIONS.md` 2026-11-26.
+
+**Owner dependency approval (2026-11-26):** the owner approved the `axum` dependency with default features off, for the loopback HTTP server behind the three `headless/v1` endpoints. Expected stripped size impact is +1.5–2 MiB (unmeasured; the G1 release build confirms it), and the direct dependency count moves from 7 to 8.
 
 ### Outcome and boundary
 
@@ -1656,9 +1658,36 @@ Multi-tenant or org accounts, billing/metering, SDKs, ACP, delegation, automatic
 - **G2 — Submit through Core, restart-safe.** Accepted submit creates one Run through the existing Core; kill and restart leaves it `interrupted` with zero model/tool calls; duplicate submit does not create a second Run.
 - **G3 — Result and evidence read.** Return persisted result plus mechanical evidence without a model call and without changing usage counters.
 
+### Design brief (2026-11-26, Plan-mode design session complete)
+
+Goal sessions use this section as the working reference. Detail: `SESSION-LOG.md` (2026-11-26 entry).
+
+**State transitions — zero new states or transitions (reuse ARCHITECTURE §7)**
+- Accept: persist `queued` before the 201; a persist failure returns 503 with zero model/tool calls.
+- Duplicate: same `idempotency_key` returns 200 with the existing `run_id`; never a second Run in `runs.json`.
+- Execute/approve/finish: `preparing`→`running`→`completed|failed|cancelled`, `waiting_approval` — existing Supervisor and broker only. The HTTP layer has no dispatch or state-write authority.
+- Restart: `preparing|running|waiting_approval`→`interrupted`; `queued`→`queued_paused`. Zero automatic re-execution or resend. Resume only via the existing CLI/Telegram owner action.
+- Read: `runs.json` and delivery store reads only; zero model/tool calls; usage counters unchanged.
+
+**`headless/v1` contract (JSON, `/v1/`, strict schema — unknown fields rejected, body ≤64 KiB)**
+- `POST /v1/runs` — `Authorization: Bearer <owner token>`; `{agent_id?, prompt, idempotency_key}` → 201 `{run_id, state:"queued", created_at, schema:"headless/v1"}`; duplicate key → 200 with `deduplicated:true`.
+- `GET /v1/runs/{run_id}` → `{run_id, agent_id, state, created_at, updated_at, finished_at?, result?}` (same redacted stored answer as `/result`).
+- `GET /v1/runs/{run_id}/evidence` → `{run_id, exit_code: int|"unknown", artifact_hashes:[{name,sha256}], delivery:{id,state,message_id?|"unknown"}, usage:{model_calls, cost_known:false}}`.
+- Errors (all guarantee no Run created): 401 unauthorized, 400 invalid_request, 404 not_found, 405 method_not_allowed, 413 payload_too_large, 429 admission_full, 503 storage_unavailable. Token is referenced by env name only; default bind 127.0.0.1; no TLS.
+
+**Threat model (6)**: (1) token leak — env reference, constant-time compare, never in responses/logs, canary test; (2) non-loopback bind requires explicit configuration, otherwise refuse; (3) restart never re-executes and HTTP holds no execution authority; (4) no filesystem paths in the API — run ids only, Core-validated stored answers only; (5) request bodies, tokens and results never logged, canary extended to HTTP bodies; (6) required `idempotency_key`, single winning persist under concurrent duplicates.
+
+**Card proof/stop additions**
+- G1: `cargo test headless_` — `wrong_token_401`, `missing_token_401`, `malformed_body_400`, `oversized_body_413`, `unknown_path_404`, `binds_loopback_by_default`, `second_bind_fails_closed`. Stop: if usability requires >3 endpoints or tool-feature APIs, record T1 refutation and stop.
+- G2: `cargo test restart` unchanged plus `submit_then_kill_leaves_interrupted_with_zero_model_calls`, `duplicate_submit_creates_no_second_run`, `storage_failure_returns_503_and_creates_nothing`, `submitted_prompt_never_logged`. Stop: if the owner finds the product unusable without automatic retry, record T3 refutation and stop.
+- G3: `cargo test headless_read_` — `read_returns_stored_answer_with_zero_model_calls`, `evidence_reports_unknown_without_estimating`, `read_does_not_change_usage_counters`. Stop: if evidence requires estimates or model judgment, record T4 refutation and stop.
+- Common proof: full `cargo test` 0 failed, `cargo test --test cli`, fmt/clippy/release build, stripped ≤20 MB, idle RSS ≤30 MB, direct dependencies ≤15.
+
+**Dependency candidates (not approved; separate gate)**: axum (default features off) recommended — estimated stripped +1.5–2 MiB [unmeasured; G1 release build confirms]; alternatives hyper 1, tiny_http; hand-rolled HTTP parsing rejected. tokio/serde remain existing dependencies.
+
 ### Current
 
-`master` `5832520`, working tree clean. Recorded baseline: `cargo test` 270 passed, 0 failed (259 unit + 11 real CLI process tests; not rerun on 2026-11-26). Direct dependencies 7; stripped binary 6.32 MiB; dummy-config CLI idle RSS 4.06 MiB.
+`master` `0d31697`, working tree clean at design review. Recorded baseline: `cargo test` 270 passed, 0 failed (259 unit + 11 real CLI process tests; not rerun on 2026-11-26). Direct dependencies 7; stripped binary 6.32 MiB; dummy-config CLI idle RSS 4.06 MiB.
 
 ### Stop
 
@@ -1672,6 +1701,47 @@ Owner-run external-client and real-provider checks stay outside the Goals and ru
 
 `Agent Replay & Delivery Audit` sales is paused, not deleted. `docs/audit/` and the 8/8 checker stay as they are. Resume when headless G1–G3 completes or on 2027-01-07, whichever comes first, with a new decision entry.
 
+### G1 result (2026-11-26)
+
+Status: **complete; automated verification and a local smoke run passed; not committed or pushed.**
+
+- New `src/headless.rs`; `src/main.rs` registration and opt-in startup; `src/registry.rs` strict optional `headless` block (`bind`, `token_env`, `allow_non_loopback`); `src/run.rs` shared `Core::admit` admission path; `Cargo.toml`/`Cargo.lock` add only `axum` with default features off (`http1`, `tokio`).
+- Three endpoints: `POST /v1/runs`, `GET /v1/runs/{run_id}`, `GET /v1/runs/{run_id}/evidence`. Default bind `127.0.0.1:8787`; a non-loopback bind requires `allow_non_loopback`; the token is read from `token_env` and compared in constant time; a second server on the same data directory or an unavailable bind fails startup closed.
+- `POST` validates strict JSON (unknown fields rejected, body ≤64 KiB) and admits exactly one Run through the existing Core queue path (`queued` persisted before 201). 401/400/404/405/413/429/503 are covered; no Run is created on a failed admission. `GET` returns persisted state only and explicit `unknown` evidence values; G2/G3 own dedupe, restart proof, results, and mechanical evidence.
+- Proof: `cargo test headless_` 12 passed; full `cargo test` 282 passed, 0 failed (271 unit + 11 real CLI processes); `cargo test --test session_cli` 11 passed (`--test cli` names no target); rustfmt clean on changed files; clippy has only the 4 pre-existing warnings; release build has zero Iskra warnings.
+- Budgets: stripped binary **6.94 MiB** (baseline 6.32), idle CLI RSS **4.38 MiB** (baseline 4.06), direct dependencies **8** (limit 15). All hard limits pass.
+- Unverified: owner-run external-client and real-provider checks; G2 dedupe/restart proof; G3 result/evidence values. No commit or push.
+
+### G2 result (2026-11-26)
+
+Status: **complete; automated verification and a real SIGKILL process proof passed; not committed or pushed.**
+
+- New `src/idempotency.rs` and a `Core`-owned `IdempotencyStore` over `memory/idempotency.json`: strict `version: 1`, private atomic writes (`0600`), bounded to 256 keys, loaded at startup. An unreadable or invalid index poisons headless submit only (503 `storage_unavailable`); CLI and Telegram startup are unchanged.
+- `Core::admit_idempotent` reuses the existing queue admission and dispatch path. Under the Core admission lock it checks the key, reserves the next Run id in the dedupe index, then calls the same `RunStore::enqueue`; a Run can never exist without its dedupe entry. A duplicate key returns the persisted Run id with `deduplicated:true`. No second execution path, no `runs.json` or `session/v1` schema change.
+- `POST /v1/runs` -> 201 for the winning admission, 200 `{run_id, state, deduplicated:true}` for a duplicate. A RunStore or dedupe persist failure returns 503 `storage_unavailable`, releases the reservation, and creates no Run; admission full stays 429.
+- Restart safety is the existing G1 recovery: `queued -> queued_paused`, `preparing/running -> interrupted`, zero model or tool calls, and resume remains the CLI/Telegram owner action. The idempotency index survives restart, so a duplicate after restart still returns the original Run id.
+- Proof: `cargo test headless_` 16 passed (12 G1 + `headless_duplicate_submit_creates_no_second_run`, `headless_storage_failure_returns_503_and_creates_nothing`, `headless_submit_then_kill_leaves_interrupted_with_zero_model_calls`, `headless_submitted_prompt_never_logged`); `cargo test restart` 8 passed; full `cargo test` 287 passed, 0 failed (275 unit + 12 real CLI processes); `cargo test --test session_cli` 12 passed including a real SIGKILL submit/restart test; rustfmt clean; clippy has only the 4 pre-existing warnings; release build zero Iskra warnings.
+- Budgets: stripped binary **6.97 MiB** (7,313,656 bytes; G1 6.94), idle CLI RSS **4.34 MiB** (4,448 KB; G1 4.38), direct dependencies **8** (unchanged; limit 15).
+- Unverified: G3 stored-result and mechanical-evidence values; owner-run external-client and real-provider checks. No commit or push.
+
+### G3 baseline (2026-11-26)
+
+G3's baseline is G2's recorded numbers: full `cargo test` 287 passed / 0 failed (275 unit + 12 real CLI process tests), stripped binary 6.97 MiB (7,313,656 bytes), idle CLI RSS 4.34 MiB (4,448 KB), and 8 direct dependencies. G3 needs no new dependency, no new approval, and no schema change — and may take none.
+
+### G3 result (2026-11-26)
+
+Status: **complete; automated verification passed; not committed or pushed.**
+
+- `GET /v1/runs/{run_id}` now includes the completed Run's stored redacted Session answer in `result`, read through the same `Core::completed_answer` projection that `/result` uses. Unfinished, failed, cancelled, interrupted, and unknown Runs omit `result` without reading the Session; a completed Run whose projection is missing also omits it. `created_at` and `updated_at` are `"unknown"` because `runs.json` persists no timestamps, and `finished_at` is never invented.
+- `GET /v1/runs/{run_id}/evidence` keeps mechanical values only: `exit_code` `"unknown"`, `artifact_hashes` `[]`, `delivery` `{id, state, message_id}` all `"unknown"`, and `usage` `{model_calls: "unknown", cost_known: false}`. Nothing is estimated, derived from logs or tool output, or taken from the model's completion claim.
+- Recorded gaps (G3 may not add persisted state): `runs.json` stores no per-Run exit code or timestamps; no artifact broker or artifact hashes exist; the delivery store exposes no by-Run read contract to headless (adding one would be a delivery-store change), so delivery identity stays `unknown`; per-Run model-call counts are not persisted and log-derived counts are excluded as evidence.
+- The read path performs zero model calls, zero tool calls, and no writes. Each read test compares the mock model POST count, the per-Agent `usage::today_for_agent` counters, `runs.json` bytes, the Agent's `session.json` bytes, and the absence of `memory/deliveries.json` across the read.
+- Authentication, bind rules, error codes, the G1/G2 submit path, CLI, and Telegram behavior are unchanged. No new dependency, no new approval, no `runs.json` / `session/v1` / delivery-store schema change, no new persisted field, and no fourth endpoint. Both mock model endpoints were loopback.
+- Test names: `headless_read_returns_stored_answer_with_zero_model_calls`, `headless_read_omits_result_for_unfinished_work`, `headless_read_evidence_reports_unknown_without_estimating`, and `headless_read_does_not_change_usage_counters`. All share the `headless_read_` prefix so the documented filter matches every one (the design brief's three labels are the suffixes).
+- Proof: `cargo test headless_read_` 4 passed; `cargo test restart` 8 passed; full `cargo test` 291 passed, 0 failed (279 unit + 12 real CLI processes); `cargo test --test session_cli` 12 passed; rustfmt clean; clippy has only the 4 pre-existing warnings; release build zero Iskra warnings.
+- Budgets: stripped binary **6.97 MiB** (7,313,632 bytes; G2 7,313,656), idle CLI RSS **4.33 MiB** (4,432 KB; G2 4,448), direct dependencies **8** (unchanged; limit 15).
+- Unverified: owner-run external-client and real-provider checks. No commit or push.
+
 ### Next action
 
-Run one narrow read-only competitive pass over Agent-Field's headless surface (endpoints, auth, submit/read contract, restart handling), then one Plan-mode design session producing the state table, threat model, one contract, and G1–G3 cards. No implementation starts from this card directly.
+The read-only competitive pass (source-level, 2026-11-26; `docs/research/iskra-survival-strategy.md` §11.4), the Plan-mode design session, G1, G2, and G3 are complete. All three `headless/v1` endpoints are automatically verified locally. Next: the owner-run external-client and real-provider checks outside the Goal loop. No commit or push is approved.

@@ -260,3 +260,17 @@ Verified Outcome Rate·Cost per Verified Outcome·gross margin은 충분한 반�
 - 첫 표본은 미검증 Herdr 재현 대신, 실제 Iskra 경로로 확인 가능한 **가상 중단 전송 사고**로 만든다.
 - Herdr 커뮤니티와 실제 구매 marketplace는 배포 채널로만 사용하며, Herdr 전용 Core나 plugin을 예측 구현하지 않는다.
 - 같은 유료 제품화 요청이 반복된 뒤에도 Odysseus·AgentLedger·Herdr과 동일 시나리오를 비교해 설치·재현·증거·복구·총owner 시간 우위가 없으면 확장하지 않는다.
+
+### 11.4 소스 백분 조사 — 2026-11-26
+
+`Agent-Field/agentfield`와 `herdrdev/herdr`의 공개 소스(Apache-2.0)를 읽기 전용으로 확인했다. 설치·실행·런타임 재현은 하지 않았고, 코드 복사는 없다. 아래는 공개 문서와 소스 파일에 근거한 사실이며 실행 동작 비교가 아니다.
+
+| 대상 | 확인 내용 | 근거 |
+|---|---|---|
+| AgentField 컨트롤 플레인 | PostgreSQL 15+ 필수, goose 마이그레이션 39개, 기본 바인드 all interfaces(`AGENTFIELD_HOST` 빈 값 = 전체), loopback은 명시 설정 | `control-plane/README.md` |
+| AgentField 내구성·증거 | append-only 실행 이벤트(단조 시퀀스)·lease·`status_reason`; 실행 VC에 input/output 해시·서명 | `migrations/013_workflow_execution_state.sql`, `004_create_execution_vcs.sql` |
+| AgentField 재생 자세 | `inbound_events`에 idempotency_key가 있으나 replay 시 키를 지워 dedup 재전송 거부를 우회; 재시작은 새 execution + `restarted_as_execution_id` 연결 | `migrations/032_inbound_event_replay_of.sql`, `036_execution_restarted_as.sql` |
+| Herdr 세션 재개 | resume = 각 에이전트 자체 resume 명령을 복원된 pane 셸에 타이핑; 인자 상한·제어문자/아포스트로피 금지·dedupe 검증 | `src/agent_resume.rs` |
+| Herdr 경계 | 외부 부작용(중복 전송·중복 실행) 추적 레이어는 해당 범위에 없음. 코드 품질이 아니라 레이어 커버리지 차이로만 주장한다 | `src/agent_resume.rs` |
+
+경계: "AgentField에 내구성·증거가 없다"는 주장은 소스로 반증된다 — 공개 비교는 "재생을 기본 자세로 두는가, 보이지 않는 재생을 금지하는가"의 차이로만 한다. AgentField 크래시 시 in-flight 회복 정책은 애플리케이션 코드·런타임 재현 미확인. Herdr 다중 writer 사고는 여전히 user report다. 런타임 bake-off(설치·재시작·중복 재현) 전에는 비교 공개 주장을 하지 않는다.

@@ -10,6 +10,7 @@ use tokio::sync::broadcast;
 use crate::delivery::{
     DELIVERY_STORE_FILE, DeliveryChannel, DeliveryError, DeliveryStore, DeliveryTicket,
 };
+use crate::idempotency::{IDEMPOTENCY_STORE_FILE, IdempotencyStore};
 use crate::logging;
 use crate::loop_;
 use crate::memory;
@@ -94,6 +95,15 @@ impl Default for RunData {
 pub struct RunTicket {
     pub id: u64,
     pub revision: u64,
+}
+
+/// The result of one idempotent admission: the Run that owns the client key and
+/// the persisted state observed for it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct SubmitOutcome {
+    pub run_id: u64,
+    pub state: RunState,
+    pub deduplicated: bool,
 }
 
 /// Read-only Run reference used to resolve delivery targets and stored answers.
@@ -325,6 +335,18 @@ impl RunStore {
             logging::append(&format!("run_redacted id={id} count={redactions}"));
         }
         Ok(RunTicket { id, revision: 1 })
+    }
+
+    /// The id the next accepted enqueue will receive. Read-only; the Core
+    /// admission lock keeps it stable between a dedupe reservation and the
+    /// matching enqueue.
+    pub(crate) fn next_id(&self) -> Result<u64, RunError> {
+        let inner = self.lock()?;
+        let state = inner
+            .data
+            .as_ref()
+            .map_err(|error| RunError::Store(error.clone()))?;
+        Ok(state.next_run_id)
     }
 
     /// Claims the oldest eligible Agent head with the lowest global Run id.
@@ -886,6 +908,7 @@ pub enum RuntimeEventKind {
 /// through this type. Channels only project `RuntimeEvent` values.
 pub struct Core {
     store: RunStore,
+    idempotency: IdempotencyStore,
     delivery: DeliveryStore,
     registry: Arc<RuntimeRegistry>,
     supervisor: RunSupervisor,
@@ -946,6 +969,10 @@ impl Core {
         if let Some(error) = store.error() {
             return Err(error);
         }
+        // A missing or invalid dedupe index poisons headless submit only. A
+        // stored client key is never spent on a Run that was not created.
+        let idempotency =
+            IdempotencyStore::open(&registry.main().paths.memory.join(IDEMPOTENCY_STORE_FILE));
         // A missing delivery store is empty and creates nothing. An invalid
         // store poisons delivery only; Run and conversation startup continue.
         let delivery = DeliveryStore::open(&registry.main().paths.memory.join(DELIVERY_STORE_FILE));
@@ -953,6 +980,7 @@ impl Core {
         logging::append(&format!("core_ready agents={}", known.len()));
         Ok(Arc::new(Self {
             store,
+            idempotency,
             delivery,
             registry: Arc::new(registry),
             supervisor: RunSupervisor::default(),
@@ -973,6 +1001,109 @@ impl Core {
     }
 
     pub fn submit(self: &Arc<Self>, agent_id: &str, input: &str) -> Result<RunTicket, RunError> {
+        self.enqueue_and_dispatch(agent_id, input)
+    }
+
+    /// One idempotent admission for the headless submit surface. It reuses the
+    /// same Core queue and dispatch path as `submit`; only the acknowledgement
+    /// differs (a post-admission dispatch failure does not unmake the accepted
+    /// `queued` Run).
+    ///
+    /// Dedupe state is Core-owned, persisted before the Run, and bounded. The
+    /// admission lock makes exactly one concurrent writer win for one key; every
+    /// other caller observes the already persisted Run id.
+    pub(crate) fn admit_idempotent(
+        self: &Arc<Self>,
+        agent_id: &str,
+        input: &str,
+        idempotency_key: &str,
+    ) -> Result<SubmitOutcome, RunError> {
+        if self.registry.slot(agent_id).is_none() {
+            return Err(RunError::UnknownAgent(agent_id.to_string()));
+        }
+        if self.registry.runtime(agent_id).is_none() {
+            return Err(RunError::AgentUnavailable(agent_id.to_string()));
+        }
+
+        let mut admission = self.lock_admission()?;
+        Self::ensure_admission_open(&admission)?;
+
+        match self.idempotency.lookup(idempotency_key) {
+            Ok(Some(run_id)) => {
+                match self.store.run_target(run_id) {
+                    Ok(Some(target)) => {
+                        logging::append(&format!(
+                            "headless_submit id={run_id} deduplicated=true state={:?}",
+                            target.state
+                        ));
+                        return Ok(SubmitOutcome {
+                            run_id,
+                            state: target.state,
+                            deduplicated: true,
+                        });
+                    }
+                    // The Run left the bounded Run store: the key is free again.
+                    Ok(None) => {
+                        if let Err(error) = self.idempotency.remove(idempotency_key) {
+                            logging::append(&format!("idempotency_store_error {error}"));
+                        }
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+            Ok(None) => {}
+            Err(error) => return Err(RunError::Store(error)),
+        }
+
+        // Reserve the next Run id in the durable dedupe index before the Run is
+        // written. A crash between the two writes leaves a key that points to no
+        // Run; the next submit treats it as a miss and reuses the id.
+        let reserved_id = self.store.next_id()?;
+        if let Err(error) = self.idempotency.insert(idempotency_key, reserved_id) {
+            return Err(RunError::Store(error));
+        }
+
+        let ticket = match self.store.enqueue(agent_id, input) {
+            Ok(ticket) => ticket,
+            Err(error) => {
+                // No Run was persisted, so release the reservation instead of
+                // spending the client key on nothing.
+                if let Err(remove_error) = self.idempotency.remove(idempotency_key) {
+                    logging::append(&format!("idempotency_store_error {remove_error}"));
+                }
+                return Err(error);
+            }
+        };
+        if ticket.id != reserved_id {
+            // Unreachable while every enqueue holds the admission lock; keep the
+            // mapping on the Run that actually exists if it ever changes.
+            logging::append(&format!(
+                "idempotency_id_mismatch reserved={reserved_id} actual={}",
+                ticket.id
+            ));
+            if let Err(error) = self.idempotency.insert(idempotency_key, ticket.id) {
+                logging::append(&format!("idempotency_store_error {error}"));
+            }
+        }
+        logging::append(&format!(
+            "headless_submit id={} deduplicated=false state=Queued",
+            ticket.id
+        ));
+        if let Err(error) = self.dispatch_locked(&mut admission) {
+            logging::append(&format!("run_dispatch_error id={} err={error}", ticket.id));
+        }
+        Ok(SubmitOutcome {
+            run_id: ticket.id,
+            state: RunState::Queued,
+            deduplicated: false,
+        })
+    }
+
+    fn enqueue_and_dispatch(
+        self: &Arc<Self>,
+        agent_id: &str,
+        input: &str,
+    ) -> Result<RunTicket, RunError> {
         if self.registry.slot(agent_id).is_none() {
             return Err(RunError::UnknownAgent(agent_id.to_string()));
         }
@@ -1176,6 +1307,16 @@ impl Core {
     #[cfg(test)]
     pub fn active_handles(&self) -> usize {
         self.supervisor.active_count()
+    }
+
+    /// Test-only equivalent of an external process kill: abort every in-flight
+    /// execution without settling a Run, leaving the durable state to be
+    /// recovered by a fresh store load.
+    #[cfg(test)]
+    pub fn abandon_active_runs_for_test(&self) {
+        for handle in self.supervisor.take_all() {
+            handle.abort();
+        }
     }
 
     fn lock_admission(&self) -> Result<std::sync::MutexGuard<'_, Admission>, RunError> {
