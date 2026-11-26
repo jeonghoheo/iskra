@@ -1644,6 +1644,7 @@ Prove the smallest external surface that lets one owner submit one work item and
 - **T2:** no RBAC, SSO, policy editor, or approval UI; owner token and loopback only.
 - **T3:** restart duplicate execution must be zero — this is the differentiator.
 - **T4:** evidence is mechanical (exit code, hashes, Run/Delivery id); `unknown` stays `unknown`.
+- **T5:** local single-binary execution is the default; no cloud-only feature, console, or metering.
 
 ### Out of scope
 
