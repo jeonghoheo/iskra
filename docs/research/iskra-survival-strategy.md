@@ -274,3 +274,28 @@ Verified Outcome Rate·Cost per Verified Outcome·gross margin은 충분한 반�
 | Herdr 경계 | 외부 부작용(중복 전송·중복 실행) 추적 레이어는 해당 범위에 없음. 코드 품질이 아니라 레이어 커버리지 차이로만 주장한다 | `src/agent_resume.rs` |
 
 경계: "AgentField에 내구성·증거가 없다"는 주장은 소스로 반증된다 — 공개 비교는 "재생을 기본 자세로 두는가, 보이지 않는 재생을 금지하는가"의 차이로만 한다. AgentField 크래시 시 in-flight 회복 정책은 애플리케이션 코드·런타임 재현 미확인. Herdr 다중 writer 사고는 여전히 user report다. 런타임 bake-off(설치·재시작·중복 재현) 전에는 비교 공개 주장을 하지 않는다.
+
+### 11.5 Paperclip 등재 — 2026-11-26
+
+공식 GitHub README와 공개 문서만 확인했다. 설치·실행·코드 감사·동일 시나리오 bake-off는 하지 않았고, 보안 배지·기능 목록은 제품 측 주장으로만 취급한다. Star·fork 수는 배포력 신호이며 매출·결제 고객 증거가 아니다.
+
+| 대상 | 공식 공개 자료에서 확인한 내용 | 전략상 의미 |
+|---|---|---|
+| [Paperclip](https://github.com/paperclipai/paperclip) / [문서](https://docs.paperclip.ing) | Node.js 24.11+·pnpm·임베디드 PostgreSQL·React UI·Docker, MIT. 외부 에이전트(Claude Code, Codex, OpenClaw, Cursor, Gemini CLI, OpenCode 등)를 heartbeat로 조직처럼 지휘. 조직도·atomic task checkout·승인 게이트·에이전트/프로젝트별 예산 hard stop·시크릿 매니저·MCP tool gateway(Allowed/Ask first/Off)·cron/webhook routine·multi-org·out-of-process plugin. 조사 시점 약 117.3k stars, 19.5k forks, 8,679 commits | 오케스트레이션 관제평면은 자금·커뮤니티가 붙은 헤비급이 이미 점유했다. Headless·거버넌스·예산·승인을 기능 수로 차별화하지 않는다는 §11.1 결론을 강화한다 |
+| Paperclip 운영 자세 | 익명 텔레메트리 **기본 켜짐**(`PAPERCLIP_TELEMETRY_DISABLED=1`, `DO_NOT_TRACK=1`, `CI=true`, config로 해제). Sentry·OTel은 opt-in. quickstart 기본은 trusted local loopback, `--bind lan/tailnet`은 인증 모드 | Iskra의 "기본 텔레메트리 0"은 유지 가능한 차별점이다. 비교 시 기본값(default)과 해제 경로를 함께 적고, 기능 유무만 비교하지 않는다 |
+| Paperclip 복구·예산 자세 | 로드맵에 self-healing runs·automatic recovery 완료 표시. 예산 집행은 기록된 지출 기준이라 in-flight 작업이 stop을 늦출 수 있다고 자체 명시. export/import는 참조 시크릿을 빼지만 plain env 값·로컬 경로가 남을 수 있다고 경고 | "자동 회복"과 "무재실행"은 같은 문제에 대한 반대 자세다. Iskra는 자동 재시도 대신 명시 재개·`unknown` 유지로 비교하되, 우위는 런타임 재현 전까지 주장하지 않는다 |
+| Paperclip 설치·보안 표기 | `npx paperclipai@latest onboard --yes` 설치 경로, Docker 이미지. README에 "security posture verified by Superagent" 배지 | npx·대형 의존 트리는 공급망 검토 대상이다. 제3자 배지는 독립 검증이 아니므로 안전·불안전 어느 쪽으로도 인용하지 않는다 |
+
+**경계.** 위 내용은 README·공개 문서 기준이며 코드 감사와 런타임 재현이 없다. "Paperclip이 위험하다/안전하다"는 결론을 공개 문서에 쓰지 않는다. Iskra와의 비교는 아래 항목을 같은 시나리오로 측정한 뒤에만 한다.
+
+**비교 항목(전부 미측정).** 양쪽 제품에 동일하게 적용한다.
+
+1. 설치·기동: 설치 시간, 필요 런타임·DB, 단일 바이너리 여부, 오프라인 동작.
+2. 자원: 유휴 RSS, 디스크, 배포물 크기, 1개월 상시 운용 비용.
+3. 외부 부작용 안전: 크래시 중 전송·결제·도구 실행의 중복 여부, 애매한 전송의 `unknown` 처리.
+4. 복구 자세: 자동 재시도 여부, 재시도·재개 기록의 가시성, 사람 개입 지점.
+5. 텔레메트리: 기본값, 해제 경로, 수집 필드, 전송 대상.
+6. 권한: 기본 바인드, 승인 게이트 기본값, 시크릿 주입 범위, 도구 게이트웨이 기본 정책.
+7. 총소유비용: 한 사고를 재현·진단·복구하는 데 든 owner 시간.
+
+측정 전에는 Paperclip을 Iskra의 대체재나 비교 우위 대상으로 인용하지 않고, "오케스트레이터 시장이 이미 크다"는 수요 반증 자료로만 사용한다.

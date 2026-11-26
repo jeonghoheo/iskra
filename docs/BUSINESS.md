@@ -159,6 +159,7 @@ Sources:
 Observed public structures:
 
 - **Vercel Board:** an experimental hosted communication primitive and message store for people and coding Agents. Channels/threads/tasks, claims and renewable leases, dependencies, watchers/schedules, structured data, grants, ordered event logs, Slack/GitHub/Linear sync, and sandbox policies are documented. It is free during the experiment. Public documentation also notes US-only storage, broad default team visibility, profiles without independent permissions, and permissions/sync spill risks.
+- **Paperclip:** a Node.js/React/embedded-PostgreSQL control plane that orchestrates external Agents (Claude Code, Codex, OpenClaw, Cursor, Gemini CLI, OpenCode) as an organization: org chart, atomic task checkout, heartbeats, approval gates, per-agent budgets with hard stops, secrets manager, MCP tool gateway, routines, multi-organization. MIT, self-hosted with a commercial cloud waitlist. Public documentation states anonymous telemetry is enabled by default, budget enforcement follows recorded spend so in-flight work can delay a stop, and self-healing/automatic recovery is a shipped posture.
 - **Anthropic Managed Agents:** a hosted meta-harness separating session, harness and sandbox, with many brains/hands and credentials outside the sandbox.
 - **LangGraph / LangSmith:** a low-level stateful Agent orchestration runtime plus observability/evaluation/deployment products.
 - **Microsoft Agent Framework:** multi-provider Agents, harnesses, explicit workflows and integrations.
@@ -170,6 +171,8 @@ Sources:
 
 - https://vercel.com/blog/introducing-vercel-board
 - https://vercel.com/docs/board
+- https://github.com/paperclipai/paperclip
+- https://docs.paperclip.ing
 - https://www.anthropic.com/engineering/managed-agents
 - https://docs.langchain.com/oss/python/langgraph/overview
 - https://learn.microsoft.com/en-us/agent-framework/overview/

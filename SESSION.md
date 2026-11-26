@@ -1623,7 +1623,7 @@ Next action: **owner local review and form/payment setup, then separately approv
 
 ## headless/v1 — minimal external submit/read surface (2026-11-26)
 
-Status: **scope approved by the owner; G1, G2, and G3 implemented and automatically verified locally (2026-11-26); no commit or push.** This card supersedes the P1 next-action line above for Core work: the audit sales track is paused and headless/v1 is the current priority. Decision record: personal-memory `DECISIONS.md` 2026-11-26.
+Status: **complete and frozen (owner decision 2026-11-26).** G1, G2, and G3 are committed as `d53b77f` and pushed; automated verification and a real-provider external-client smoke passed. This card supersedes the P1 next-action line above for Core work: the audit sales track is paused and headless/v1 was the current priority. Decision record: personal-memory `DECISIONS.md` 2026-11-26.
 
 **Owner dependency approval (2026-11-26):** the owner approved the `axum` dependency with default features off, for the loopback HTTP server behind the three `headless/v1` endpoints. Expected stripped size impact is +1.5–2 MiB (unmeasured; the G1 release build confirms it), and the direct dependency count moves from 7 to 8.
 
@@ -1740,8 +1740,8 @@ Status: **complete; automated verification passed; not committed or pushed.**
 - Test names: `headless_read_returns_stored_answer_with_zero_model_calls`, `headless_read_omits_result_for_unfinished_work`, `headless_read_evidence_reports_unknown_without_estimating`, and `headless_read_does_not_change_usage_counters`. All share the `headless_read_` prefix so the documented filter matches every one (the design brief's three labels are the suffixes).
 - Proof: `cargo test headless_read_` 4 passed; `cargo test restart` 8 passed; full `cargo test` 291 passed, 0 failed (279 unit + 12 real CLI processes); `cargo test --test session_cli` 12 passed; rustfmt clean; clippy has only the 4 pre-existing warnings; release build zero Iskra warnings.
 - Budgets: stripped binary **6.97 MiB** (7,313,632 bytes; G2 7,313,656), idle CLI RSS **4.33 MiB** (4,432 KB; G2 4,448), direct dependencies **8** (unchanged; limit 15).
-- Unverified: owner-run external-client and real-provider checks. No commit or push.
+- Verified on 2026-11-26 by a real-provider, external-client smoke (details in `SESSION-LOG.md`): one actual DeepSeek call (`deepseek-flash`) through `curl`, duplicate dedupe, 401/404 boundaries, restart-safe re-read with zero replay, and log safety all passed. No commit or push.
 
 ### Next action
 
-The read-only competitive pass (source-level, 2026-11-26; `docs/research/iskra-survival-strategy.md` §11.4), the Plan-mode design session, G1, G2, and G3 are complete. All three `headless/v1` endpoints are automatically verified locally. Next: the owner-run external-client and real-provider checks outside the Goal loop. No commit or push is approved.
+`headless/v1` is complete and frozen (owner decision 2026-11-26). G1–G3 are committed as `d53b77f` and pushed; automated verification and the real-provider external-client smoke both passed. Persisted mechanical evidence (exit code, timestamps, artifacts, delivery identity) is deferred until a concrete external client is blocked without it, and would need a separately approved schema-change card. Non-loopback binds and Telegram delivery remain out of scope. Next: choose the next Iskra track — the audit sales track's resume condition (headless G1–G3 complete) is now met; headless demand validation is the alternative. watchpost stays on hold by owner instruction.

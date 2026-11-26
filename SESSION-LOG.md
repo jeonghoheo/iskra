@@ -1922,3 +1922,71 @@ direct dependencies
 - No commit or push was performed.
 
 Next: owner-run external-client and real-provider checks outside the Goal loop; then a separate commit/push decision.
+
+---
+
+## headless/v1 real-provider smoke — owner-approved external client (2026-11-26)
+
+Status: **passed; no code change; repository clean at `d53b77f`.**
+
+### Setup
+
+- Isolated data directory `~/iskra-smoke` outside the repository, so the real `memory/`, `logs/`, and `workspace/` were untouched (repository `git status` empty before and after).
+- Strict registry: one engine (`https://api.deepseek.com/chat/completions`, `deepseek-flash`, `api_key_env=DEEPSEEK_API_KEY`), one `main` agent, `headless.bind=127.0.0.1:8787`, `token_env=ISKRA_TOKEN`, no `allow_non_loopback`.
+- Credential handling: the owner's project `.env` was exposed to the process only through a temporary symlink that Iskra's own `dotenvy` loaded at startup. The key was never read, printed, copied, or stored by the agent or the smoke script; the symlink was removed after the run. The bearer token was a throwaway 48-hex-character value in a `0600` file inside the throwaway directory.
+- Client: `curl` from outside the process (the script), against the release binary.
+
+### Results (actual)
+
+```text
+provider: https://api.deepseek.com/chat/completions deepseek-flash
+POST /v1/runs                      -> 201 {"run_id":1,"state":"queued"}
+GET  /v1/runs/1                    -> 200 state=completed result="ready"
+                                     created_at=updated_at="unknown"
+POST /v1/runs (same key)           -> 200 {"deduplicated":true,"run_id":1,"state":"completed"}
+                                     next_run_id=2 (no second Run)
+no token / wrong token             -> 401 / 401
+unknown run / non-numeric run      -> 404 / 404
+GET  /v1/runs/1/evidence           -> 200 exit_code="unknown" artifact_hashes=[]
+                                     delivery={id,state,message_id}="unknown"
+                                     usage={model_calls:"unknown",cost_known:false}
+runs.json sha256                   -> dfdb7d15a55a860c641ec753b50880f19579d87836897600cef9c4e2c61e62fa
+                                     unchanged across duplicate submit, all reads, and restart
+model_call log lines               -> 1 -> 1 across duplicate submit, all reads, and restart
+restart                            -> 200 state=completed same result, zero replay
+logs                               -> token occurrences 0, submitted prompt occurrences 0
+```
+
+- One real model call total: `model_call agent=main run_id=1 engine=main-engine model=deepseek-flash tools=[none] usage=prompt=1870 completion=2 total=1872`. The stored answer (`session.json` work 1, answer `"ready"`) is exactly what `result` returned, so the read path projected stored state rather than regenerating it.
+- The evidence endpoint stayed mechanical: the log-derived usage line was deliberately not used as evidence, and `model_calls` remained `"unknown"`.
+- This closes the external-client and real-provider gap recorded at the end of G3. Still unverified by design: non-loopback binds, Telegram delivery, and any evidence field that would require persisted state.
+
+### Next
+
+`headless/v1` is complete and frozen (owner decision 2026-11-26). Persisted mechanical evidence is deferred until a concrete external-client blocker appears, and would require a separately approved schema-change card. Next: owner chooses the next Iskra track; watchpost stays on hold.
+
+## Paperclip competitor registry entry (2026-11-26)
+
+Status: **docs only; no code change; no install, no code audit, no bake-off.**
+
+### What changed
+
+- `docs/research/iskra-survival-strategy.md` §11.5: Paperclip registered in the §11 format (public README/docs facts, strategic meaning, explicit boundary, seven unmeasured comparison dimensions).
+- `docs/BUSINESS.md`: Paperclip added to the "Headless and orchestration references" list with two source URLs.
+
+### Facts recorded (README/docs only)
+
+- Node.js 24.11+, pnpm, embedded PostgreSQL, React UI, Docker, MIT; orchestrates Claude Code, Codex, OpenClaw, Cursor, Gemini CLI, OpenCode via heartbeats; org chart, atomic task checkout, approval gates, per-agent budgets, secrets manager, MCP tool gateway, routines, multi-org, out-of-process plugins.
+- Anonymous telemetry is enabled by default (disable via `PAPERCLIP_TELEMETRY_DISABLED=1`, `DO_NOT_TRACK=1`, `CI=true`, or config). Sentry/OTel are opt-in.
+- Budget enforcement uses recorded spend and in-flight work can delay a stop (self-declared). Self-healing/automatic recovery is listed as shipped.
+- Star/fork counts (~117.3k / 19.5k) recorded as distribution signal only.
+
+### Boundaries kept
+
+- No conclusion that Paperclip is safe or unsafe. The "security posture verified by Superagent" badge is a third-party claim and was not independently checked.
+- No claim of Iskra superiority on install, recovery, or external-effect safety before a same-scenario bake-off.
+- Paperclip is used as further evidence that "no orchestrator exists" is a false market assumption, not as a replacement target.
+
+### Next
+
+Keep the seven comparison dimensions unmeasured until an owner-approved bake-off. No commit or push.
