@@ -218,6 +218,8 @@ Verified Outcome Rate·Cost per Verified Outcome·gross margin은 충분한 반�
 
 ## 10. 현재 다음 행동
 
+> **2026-11-26 갱신 (이 절의 §2–4항보다 우선):** 주인 승인으로 `headless/v1` 최소 슬라이스를 유료 신호 이전에 착수한다(단일 테넌트·파일 네이티브·텔레메트리 0·무재실행, API 3개 이하). `Agent Replay & Delivery Audit` 판매 트랙은 삭제가 아니라 보류이며, 재개 조건은 headless Goal 1~3 완료 또는 2027-01-07 중 먼저 오는 쪽이다. §5–§9의 판단 근거와 중단 규칙은 그대로 유효하고, 정본은 `DECISIONS.md` 2026-11-26과 `SESSION.md`의 `headless/v1` 카드다.
+
 1. **완료된 코드 기준선:** Stage 2.5-A는 자동 검증과 owner-run Telegram 게이트를 통과해 `bd62255`로 구현됐고, 후속 기록 커밋은 `c769deb`다. 다음 Core 코드 작업은 자동으로 시작하지 않는다.
 2. **준비된 P1 실행 패키지:** `docs/AUDIT-LAUNCH.md`를 기준 실행서로 사용한다. 가상 표본·검사기·판매 페이지·10문항 intake·게시 초안은 `docs/audit/`에 있다. 2026-11-25 실제 실행 결과는 fixture 검사 **8/8 PASS**, full Rust suite **270/270 PASS**(집중 표본 테스트 3개 포함)다. 4 owner hours 재납품은 owner 리허설 전이므로 아직 주장하지 않는다.
 3. **owner 실행:** intake form과 실제 결제·정산 경로를 만들고, placeholder를 제거하며, 판매·표본 링크를 검수한 뒤 최대 두 채널에만 별도 승인으로 게시한다.

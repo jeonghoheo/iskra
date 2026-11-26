@@ -1618,3 +1618,52 @@ Status: **local execution package prepared and automated proofs passed; no exter
 - **Live:** Owner follows `docs/AUDIT-LAUNCH.md`: complete the timed sample-redelivery rehearsal, create the ten-question form, confirm payment/refund/tax/settlement feasibility, replace intake/offer/sample URLs, remove the DRAFT notice and temporary `noindex,nofollow`, verify deployed links, then approve at most two channels and any commit/push separately.
 
 Next action: **owner local review and form/payment setup, then separately approved two-channel transaction experiment. No next Core code action is approved.**
+
+---
+
+## headless/v1 — minimal external submit/read surface (2026-11-26)
+
+Status: **scope approved by the owner; design session not started; no code and no dependency added.** This card supersedes the P1 next-action line above for Core work: the audit sales track is paused and headless/v1 is the current priority. Decision record: personal-memory `DECISIONS.md` 2026-11-26.
+
+### Outcome and boundary
+
+Prove the smallest external surface that lets one owner submit one work item and read its result and evidence after a process restart, with no duplicate execution. The differentiator is not "headless" itself — multi-tenant control planes already ship that — but single-tenant, file-native, zero default telemetry, and no invisible replay.
+
+### Fixed scope
+
+1. **Endpoints:** three or fewer — submit, status/result, evidence.
+2. **Auth:** one owner token; default bind is loopback; a missing or wrong token returns 401. Fail closed.
+3. **Authority:** `runs.json` stays the sole execution authority; no second execution path, no parallel scheduler, no direct tool invocation from the HTTP layer.
+4. **Restart:** an in-flight item becomes `interrupted` and stays visible; zero model and zero tool calls occur before an explicit owner action.
+5. **Evidence:** mechanical values only — exit code, artifact hashes, Run/Delivery identity, explicit "unknown" where a value cannot be known. Never the model's completion claim.
+6. **Dependencies:** any new crate needs its own approval with name, purpose, and size impact. Budgets remain 15 direct dependencies, 20 MB stripped, 30 MB idle RSS.
+
+### Out of scope
+
+Multi-tenant or org accounts, billing/metering, SDKs, ACP, delegation, automatic routing, web UI, Outcome Packs, generalization of the six contracts, hosted mode, and any change to CLI or Telegram behavior.
+
+### Goal outline (machine-verifiable, one session each)
+
+- **G1 — HTTP surface and token admission.** Loopback bind, owner token, 401 on missing/wrong token, no behavior change to CLI/Telegram, no second execution path.
+- **G2 — Submit through Core, restart-safe.** Accepted submit creates one Run through the existing Core; kill and restart leaves it `interrupted` with zero model/tool calls; duplicate submit does not create a second Run.
+- **G3 — Result and evidence read.** Return persisted result plus mechanical evidence without a model call and without changing usage counters.
+
+### Current
+
+`master` `5832520`, working tree clean. Recorded baseline: `cargo test` 270 passed, 0 failed (259 unit + 11 real CLI process tests; not rerun on 2026-11-26). Direct dependencies 7; stripped binary 6.32 MiB; dummy-config CLI idle RSS 4.06 MiB.
+
+### Stop
+
+Stop and record the blocker if a new dependency, a second execution authority, a `session/v1` or `runs.json` schema change, or a non-loopback default bind becomes necessary; if crash-safe submit cannot be proven; after two failed approaches; or if owner input is required.
+
+### Live
+
+Owner-run external-client and real-provider checks stay outside the Goals and run once after G1–G3.
+
+### Audit track
+
+`Agent Replay & Delivery Audit` sales is paused, not deleted. `docs/audit/` and the 8/8 checker stay as they are. Resume when headless G1–G3 completes or on 2027-01-07, whichever comes first, with a new decision entry.
+
+### Next action
+
+Run one narrow read-only competitive pass over Agent-Field's headless surface (endpoints, auth, submit/read contract, restart handling), then one Plan-mode design session producing the state table, threat model, one contract, and G1–G3 cards. No implementation starts from this card directly.
