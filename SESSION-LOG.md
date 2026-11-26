@@ -2024,3 +2024,24 @@ Status: **documentation and design only; page checks passed; not committed or pu
 ### Next action
 
 Owner reviews the documentation diff and separately approves or rejects commit/push. External launch remains blocked until the intake form, payment path, and four-hour sample-redelivery rehearsal are complete. No Core code action is approved, the dedicated headless homepage section remains deferred, and watchpost stays on hold.
+
+## Roadmap correction — demand-gated tracks (2026-11-26)
+
+Status: **documentation only; no code, dependency, or schema change; committed and pushed after verification.**
+
+### What changed
+
+- README en/ko/ru: the status badge, status block, current-state heading/checklist, and roadmap section were rewritten. `headless/v1` is now listed as complete and frozen instead of unimplemented, and the v3–v5 version ladder (triggers/bot packages/`identity/v1`, Tauri desktop, per-user memory) was removed because no current source of truth schedules those items.
+- The roadmap is now v1/v2 complete plus five demand-gated tracks mapped to `docs/BUSINESS.md` §6 and `docs/ARCHITECTURE.md` §12: Agent Replay & Delivery Audit, Outcome/Evidence + one Outcome Pack, ACP and bounded delegation, Managed always-on, Team/self-serve multi-tenant.
+- Three stale "planned for v2" design-principle sentences (specs, approval, quarantine) were corrected to "as each part lands / not implemented yet / later target" so the text stays truthful after v2 is marked complete.
+
+### Verification
+
+- `rg -n "v3|v4|v5|in progress|planned for v2|в работе|진행 중" README.md README.ko.md README.ru.md` → 0 matches.
+- `git diff --check` → clean.
+- Claim mapping: the `headless/v1` row matches the G1–G3 records in `SESSION.md` and the 2026-11-26 owner freeze; track gates match `docs/BUSINESS.md` §6 Phase B–F and `docs/ARCHITECTURE.md` §12 Stage 3–4.
+- No `cargo test` rerun: no Rust or behavior change.
+
+### Next action
+
+The next Iskra action stays owner-gated: audit launch scope B+ needs the intake form, payment path, and four-hour rehearsal before external publication. No Core code action is approved.
