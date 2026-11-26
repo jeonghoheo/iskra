@@ -1,0 +1,115 @@
+{
+  "schema": "iskra.audit.replay-delivery.v1",
+  "classification": "synthetic-not-a-customer-incident",
+  "incident": {
+    "id": "sample-duplicate-delivery-001",
+    "kind": "interrupted-delivery-and-explicit-recovery",
+    "run_id": 22,
+    "agent_id": "main",
+    "channel": "telegram",
+    "target": "owner",
+    "answer_chunks": 2
+  },
+  "events": [
+    {
+      "seq": 1,
+      "actor": "core",
+      "type": "run_completed",
+      "run_id": 22
+    },
+    {
+      "seq": 2,
+      "actor": "core",
+      "type": "delivery_created",
+      "delivery_id": 6,
+      "run_id": 22,
+      "chunks": 2
+    },
+    {
+      "seq": 3,
+      "actor": "core",
+      "type": "chunk_attempt_started",
+      "delivery_id": 6,
+      "chunk": 0,
+      "state": "pending"
+    },
+    {
+      "seq": 4,
+      "actor": "channel",
+      "type": "chunk_settled",
+      "delivery_id": 6,
+      "chunk": 0,
+      "state": "sent",
+      "message_id": 392
+    },
+    {
+      "seq": 5,
+      "actor": "core",
+      "type": "chunk_attempt_started",
+      "delivery_id": 6,
+      "chunk": 1,
+      "state": "pending"
+    },
+    {
+      "seq": 6,
+      "actor": "owner",
+      "type": "process_killed",
+      "reason": "failure-injection"
+    },
+    {
+      "seq": 7,
+      "actor": "core",
+      "type": "process_started"
+    },
+    {
+      "seq": 8,
+      "actor": "core",
+      "type": "chunk_marked_unknown",
+      "delivery_id": 6,
+      "chunk": 1,
+      "from": "pending",
+      "to": "unknown",
+      "revision": 5
+    },
+    {
+      "seq": 9,
+      "actor": "core",
+      "type": "recovery_completed",
+      "automatic_delivery_attempts": 0,
+      "automatic_model_calls": 0
+    },
+    {
+      "seq": 10,
+      "actor": "owner",
+      "type": "result_requested",
+      "run_id": 22
+    },
+    {
+      "seq": 11,
+      "actor": "core",
+      "type": "delivery_created",
+      "delivery_id": 7,
+      "run_id": 22,
+      "chunks": 2,
+      "explicit": true
+    },
+    {
+      "seq": 12,
+      "actor": "channel",
+      "type": "chunk_settled",
+      "delivery_id": 7,
+      "chunk": 0,
+      "state": "sent",
+      "message_id": 397
+    },
+    {
+      "seq": 13,
+      "actor": "channel",
+      "type": "chunk_settled",
+      "delivery_id": 7,
+      "chunk": 1,
+      "state": "sent",
+      "message_id": 398
+    }
+  ]
+}

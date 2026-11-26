@@ -2,7 +2,7 @@
 
 - **작성일:** 2026-11-25
 - **대상 저장소:** `https://github.com/jeonghoheo/iskra`
-- **상태:** §1–4는 재검증하지 않은 기존 조사 입력이며, §5 이후는 이를 바탕으로 승인한 전략 재구성이다. P0인 Stage 2.5-A를 제외한 후속 구현·외부 게시·결제·배포는 각각 별도 승인이 필요하다.
+- **상태:** §1–4는 재검증하지 않은 기존 조사 입력이며, §5 이후는 이를 바탕으로 승인한 전략 재구성이다. P0 Stage 2.5-A는 완료됐고 P1 실행 패키지는 로컬에 준비됐다. 후속 Core 구현·외부 게시·결제·배포는 각각 별도 승인이 필요하다. §11은 Herdr 및 인접 경쟁자의 공식 공개 자료 재조사다.
 
 ---
 
@@ -59,7 +59,7 @@ Stage 2.5-A(`delivery/v1`) 완료 직후 Iskra가 시장에서 생존하고 첫 
 
 | 구분 | 결정 | 이유 |
 |---|---|---|
-| **유지** | Stage 2.5-A `delivery/v1`을 먼저 끝낸다 | 전달 불확실성은 이미 현재 실행 경로의 실제 문제이며 범위를 넓힐 이유가 없다 |
+| **유지** | Stage 2.5-A `delivery/v1`을 먼저 완료했다 | 전달 불확실성은 이미 현재 실행 경로의 실제 문제였으며 범위를 넓힐 이유가 없었다 |
 | **유지** | Outcome 달성과 Task/Run 완료를 분리한다 | 모델의 완료 선언은 독립적인 acceptance evidence가 아니다 |
 | **유지** | No invisible replay, Core 권한, 단일 바이너리, 모델 비종속 | 장기 제품의 안전성과 교체 가능성을 지키는 불변 조건이다 |
 | **유지** | 무료 Local → 유료 Managed → Team의 장기 구조 | 상시 운영과 협업을 수익화 축으로 유지한다 |
@@ -122,15 +122,15 @@ Stage 2.5-A(`delivery/v1`) 완료 직후 Iskra가 시장에서 생존하고 첫 
 
 ## 7. 실행 로드맵 P0–P4
 
-### P0 — 현재 Stage 종료
+### P0 — Stage 2.5-A 종료 (완료)
 
-**지금 할 일:** Stage 2.5-A Goal 3–4를 순서대로 끝내고 owner-run Telegram 검증을 수행한다. Goal 1–2의 기존 자동 검증 결과는 완료 기록으로 유지한다.
+**완료:** Stage 2.5-A Goal 1–4와 owner-run Telegram 검증을 완료했다. 구현 기준선은 `bd62255`, 후속 기록 기준선은 `c769deb`다.
 
-- 기존 합격 기준과 허용 파일을 유지한다.
-- Outcome·Evidence·ACP·새 명령을 현재 카드에 추가하지 않는다.
-- 전달 `unknown`, 무자동 재전송, 재시작 무자동 재실행, `/result`의 모델 호출 없는 결과 조회를 증명한다.
+- 기존 합격 기준과 허용 파일 안에서 완료했다.
+- Outcome·Evidence·ACP·새 명령을 Stage 2.5-A 카드에 추가하지 않았다.
+- 전달 `unknown`, 무자동 재전송, 재시작 무자동 재실행, `/result`의 모델 호출 없는 결과 조회를 증명했다.
 
-**통과:** 기존 Stage 2.5-A의 자동 검증·자원 예산·owner-run 게이트 통과.
+**통과:** 기존 Stage 2.5-A의 자동 검증·자원 예산·owner-run 게이트를 통과했다.
 
 ### P1 — 감사 상품 준비
 
@@ -218,9 +218,43 @@ Verified Outcome Rate·Cost per Verified Outcome·gross margin은 충분한 반�
 
 ## 10. 현재 다음 행동
 
-1. **코드:** Stage 2.5-A Goal 3 — durable terminal recovery를 기존 승인 범위와 별도 구현 지시에 따라 진행한다. Goal 1–2의 기존 변경을 보존하며, 이 전략 문서가 새 구현 Goal을 자동으로 시작하지는 않는다.
-2. **다음 사업 작업:** P0 완료 후 `Agent Replay & Delivery Audit` 표본 1건과 고정 범위 오퍼 초안을 별도 작업으로 준비한다.
-3. **보류:** Outcome·Evidence·Headless·ACP·Managed 구현은 P3·P4의 결제 및 필요 게이트 전까지 새 코드 작업으로 시작하지 않는다.
-4. **외부 행동:** 게시, 고객 발송, 결제, 계정, 배포, 커밋·푸시는 각각 owner 승인 후 수행한다.
+1. **완료된 코드 기준선:** Stage 2.5-A는 자동 검증과 owner-run Telegram 게이트를 통과해 `bd62255`로 구현됐고, 후속 기록 커밋은 `c769deb`다. 다음 Core 코드 작업은 자동으로 시작하지 않는다.
+2. **준비된 P1 실행 패키지:** `docs/AUDIT-LAUNCH.md`를 기준 실행서로 사용한다. 가상 표본·검사기·판매 페이지·10문항 intake·게시 초안은 `docs/audit/`에 있다. 2026-11-25 실제 실행 결과는 fixture 검사 **8/8 PASS**, full Rust suite **270/270 PASS**(집중 표본 테스트 3개 포함)다. 4 owner hours 재납품은 owner 리허설 전이므로 아직 주장하지 않는다.
+3. **owner 실행:** intake form과 실제 결제·정산 경로를 만들고, placeholder를 제거하며, 판매·표본 링크를 검수한 뒤 최대 두 채널에만 별도 승인으로 게시한다.
+4. **보류:** Outcome·Evidence·Headless·ACP·Managed 구현은 P3·P4의 결제 및 필요 게이트 전까지 새 코드 작업으로 시작하지 않는다. 외부 게시, 고객 발송, 결제, 계정, 배포, 커밋·푸시도 각각 owner 승인이 필요하다.
 
 생존의 기준은 더 많은 아키텍처를 먼저 완성하는 것이 아니다. **현재 신뢰성 경계를 끝내고, 한 가지 사고에 대한 실제 거래를 얻고, 같은 유료 요구가 반복될 때만 제품을 넓히는 것**이다.
+
+---
+
+## 11. Herdr 및 인접 경쟁자 재조사 — 2026-11-25
+
+### 11.1 확인 범위
+
+공식 제품 문서, 공식 GitHub 저장소와 issue를 확인했다. 기능은 공개 문서의 설명이며 직접 설치·성능 측정·동일 시나리오 bake-off는 아직 하지 않았다. Star 수는 결제 고객이나 매출이 아니라 배포력 신호로만 해석한다.
+
+| 대상 | 공식 공개 자료에서 확인한 내용 | 전략상 의미 |
+|---|---|---|
+| [Herdr](https://github.com/herdrdev/herdr) / [제품 페이지](https://herdr.dev) | 실제 터미널, 다수 coding agent, SSH·모바일·agent-to-agent, 플러그인, Apache 2.0. 조사 시점 TUI 저장소 약 52.8k stars | 가벼운 Rust 단일 바이너리 런타임만으로 정면 승부하지 않는다. 경쟁자이면서 첫 배포 접점이다 |
+| [Herdr 복구 문서](https://herdr.dev/tui/docs/session-state/) | detach 후 프로세스 유지, layout 복원, pane history, native agent session restore는 서로 다른 상태이며, 서버 재시작 시 원래 프로세스는 살아나지 않는다고 명시 | `layout ≠ process ≠ conversation ≠ external-effect safety`라는 네 계층을 감사·교육 자료로 사용한다 |
+| [Herdr Marketplace](https://herdr.dev/tui/docs/marketplace/) | 공개 GitHub 저장소의 `herdr-plugin.toml`과 topic으로 자동 등록되며 무심사 목록이다 | 실제 좁은 plugin이 생긴 뒤 배포할 수 있지만, 등록 자체는 보증이나 수요 증명이 아니다 |
+| [Herdr Odysseus](https://github.com/jpolec/herdr-plugin-odysseus), [Herdr Replay](https://github.com/neospeed83/herdr-replay), [patchreplay](https://github.com/maromocooo/patchreplay), [Termaxa](https://github.com/termaxa/termaxa) | 작업 분리·검사·승인·감사·복구·타임라인·before/after 증거·명령 결과 미리보기 기능이 이미 공개돼 있다 | 일반적인 Herdr 권한·증거·복구 플러그인도 빈 공간이 아니다 |
+| [AgentLedger](https://github.com/yaogdu/AgentLedger) | durable execution, Tool Ledger, idempotency, evidence/replay, policy/approval과 duplicate-side-effect crash 예제를 공개 | Iskra의 장기 기능 목록도 이미 겹친다. 기능 수보다 특정 사고와 배포가 우선이다 |
+| [AgentField](https://github.com/Agent-Field/agentfield) / [CodeAF](https://github.com/Agent-Field/CodeAF) | Agent API, queue/retry, identity·정책·감사, coding harness, headless, open models와 단일 바이너리를 공개 | Headless·모델 중립·단일 바이너리·감사를 독자 차별점으로 주장하지 않는다 |
+| [Google Agent Executor](https://github.com/google/ax), [Anthropic Managed Agents](https://www.anthropic.com/engineering/managed-agents), [Temporal](https://temporal.io/solutions/ai) | durable execution, sandbox, session consistency, harness 분리, checkpoint·HITL 등이 벤더·인프라 제품으로 제공된다 | 범용 runtime/control plane 확장보다 고객의 구체적 사고 해결이 우선이다 |
+| [OpenClaw](https://github.com/openclaw/openclaw) | 로컬 개인비서, 20개 이상 채널과 plugin, 약 395k stars, MIT | Telegram 개인비서 시장으로 이동하지 않는다 |
+| [Vibe Kanban 종료 공지](https://www.vibekanban.com/blog/shutdown) | 수천 daily 사용자와 약 28.8k stars에도 회사는 유료 전환 부족과 사업 모델 부재로 종료를 발표했다 | Free adoption·Star·기능 수는 생존 증거가 아니다. 실제 결제가 먼저다 |
+
+### 11.2 Herdr 사고 보고의 사용 경계
+
+[Herdr #5231](https://github.com/herdrdev/herdr/issues/5231)에는 socket discovery 실패 후 여러 서버가 생기면서 한 worktree에 6개의 중복 writer가 생겼다는 사용자 보고와 재현 과정이 있다. 조사 시점 `maintainer-needed` 상태이며 maintainer의 단순 재현은 성공하지 않았다. [#6192](https://github.com/herdrdev/herdr/issues/6192)도 복구 시도의 명령·횟수·종료 상태가 로그에 없다는 최신 사용자 보고다.
+
+따라서 이들은 **확정된 Herdr 결함 광고**가 아니라 독립 재현과 상태·권한 지도가 필요한 공개 사례로만 사용한다. 실제 환경에서 재현하기 전에는 `user report`와 `maintainer reproduction`을 구분하고, Iskra가 Herdr과 호환되거나 이 사고를 해결한다고 주장하지 않는다.
+
+### 11.3 실행에 반영한 결정
+
+- Herdr을 대체하라고 요구하지 않고, Herdr을 포함한 무인·반복 coding agent 사용자의 사고를 진단한다.
+- 첫 유료 상품은 계속 `Agent Replay & Delivery Audit` **한 사고 고정 범위**로 유지한다.
+- 첫 표본은 미검증 Herdr 재현 대신, 실제 Iskra 경로로 확인 가능한 **가상 중단 전송 사고**로 만든다.
+- Herdr 커뮤니티와 실제 구매 marketplace는 배포 채널로만 사용하며, Herdr 전용 Core나 plugin을 예측 구현하지 않는다.
+- 같은 유료 제품화 요청이 반복된 뒤에도 Odysseus·AgentLedger·Herdr과 동일 시나리오를 비교해 설치·재현·증거·복구·총owner 시간 우위가 없으면 확장하지 않는다.

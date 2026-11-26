@@ -17,8 +17,8 @@ and the model, channel, and tools remain replaceable without moving Core authori
 
 > **Status:** v1 is complete and in real-use testing. The first v2 slice — a two-agent
 > workbench with durable runs and explicit routing — is implemented and live-verified.
-> Stage 2.5-A delivery reliability is in progress. Outcome, Evidence, Headless, ACP,
-> delegation and decision-model routing are unimplemented targets behind separate
+> Stage 2.5-A delivery reliability is complete and owner-run verified. Outcome, Evidence,
+> Headless, ACP, delegation and decision-model routing are unimplemented targets behind separate
 > demand, security and implementation gates.
 > This repository contains code only — personal memory, data and secrets never live here.
 
@@ -51,7 +51,7 @@ and the model, channel, and tools remain replaceable without moving Core authori
 - [x] Shell tool (`ls`, `cat`, `git`, `cargo`) with subcommand and argument policy, cleared environment and macOS sandbox (cargo is disabled where no OS sandbox exists) + a verified coding task
 - [x] Shell hardening (v1.1): 21 bypass paths closed and covered by tests
 - [x] Two-agent runtime (Stage 2): a local `iskra.json` registry (at most two agents), an isolated model, tools, memory, Session, workspace and usage record per agent, a durable run queue in `memory/runs.json`, explicit `@agent` routing, `/agents`, `/status [@agent]`, `/stop [@agent]`, `/resume [@agent]`, and `@name` attribution on replies from another agent
-- [ ] In progress: Stage 2.5-A delivery reliability (`delivery/v1`) — Goals 1–2 are implemented and automatically checked; durable recovery, the final milestone and owner-run delivery gate remain. Later Outcome/Evidence, Headless, ACP, delegation and product surfaces each require separate demand and implementation gates
+- [x] Stage 2.5-A delivery reliability (`delivery/v1`) — automated and owner-run gates passed: tracked pending/sent/failed/unknown states, durable recovery without automatic replay, localized `/status` delivery counts, and model-free `/result <run-id>`. Later Outcome/Evidence, Headless, ACP, delegation and product surfaces each require separate demand and implementation gates
 
 ## Known limitations
 
@@ -93,7 +93,7 @@ and the model, channel, and tools remain replaceable without moving Core authori
 | Version | Direction |
 |---|---|
 | v1 | A personal agent for one user (Telegram, one brain, five tools, Markdown memory) |
-| v2 (in progress) | Swappable parts — two-agent runtime, durable runs and explicit routing are done; delivery reliability (`delivery/v1`) is in progress. Later Outcome/Evidence, Headless, ACP, delegation and routing work is demand-gated, not automatic |
+| v2 (in progress) | Swappable parts — two-agent runtime, durable runs, explicit routing and delivery reliability (`delivery/v1`) are complete. The next business experiment is the fixed-scope Agent Replay & Delivery Audit; later Outcome/Evidence, Headless, ACP, delegation and routing work is demand-gated, not automatic |
 | v3 | Delegated work — triggers, bot packages, identity spec (`identity/v1`) |
 | v4 | Desktop app (Tauri) — multi-bot, computer use behind approval gates |
 | v5 | Product — hosted mode, per-user memory + adapter serving, signed releases |

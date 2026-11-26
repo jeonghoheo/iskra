@@ -1,11 +1,11 @@
 # Iskra Agent Workbench Architecture
 
-Status: **approved target design including the future Outcome-first Headless Control Plane; the Stage 2 two-Agent slice is committed as `3d3c98f`, and Stage 2.5-A `delivery/v1` is in progress with Goals 1–2 implemented and automatically checked. Outcome/Headless/BYOUI/Lease, Stage 3 and later are not implemented**.
+Status: **approved target design including the future Outcome-first Headless Control Plane; the Stage 2 two-Agent slice is committed as `3d3c98f`, and Stage 2.5-A `delivery/v1` is complete with automated and owner-run verification. Outcome/Headless/BYOUI/Lease, Stage 3 and later are not implemented**.
 Date: 2026-11-25.
 
 This document defines the architecture for turning Iskra from one persistent personal agent into a model-neutral workbench and, behind later gates, an Outcome-first Headless Control Plane. It preserves the existing Rust core, local data ownership, fail-closed tools, and single-binary distribution.
 
-The compatibility runtime and first two-Agent slice are implemented. The next implementation target remains delivery reliability (`delivery/v1`): a completed Run must not imply that its answer reached Telegram. ACP, Outcome/Headless APIs, BYOUI projections, automatic model routing, agent-to-agent delegation, leases and hosted mode remain behind separate gates.
+The compatibility runtime, first two-Agent slice, and Stage 2.5-A delivery reliability are implemented. A completed Run does not imply that its answer reached Telegram. No later code Stage starts automatically: the next code card follows transaction and repeated-paid-demand gates. ACP, Outcome/Headless APIs, BYOUI projections, automatic model routing, agent-to-agent delegation, leases and hosted mode remain behind separate gates.
 
 ## 1. Goals
 
@@ -511,7 +511,7 @@ queued_paused -> queued            (explicit /resume only)
 
 ### Stage 2.5 — delivery reliability before further expansion
 
-Delivery reliability is a prerequisite for external engines because an ACP turn is another indeterminate side-effect boundary. The stage is sequenced as delivery, then bounded context/resources, then execution-outcome uncertainty. Only Stage 2.5-A is approved for implementation now; later slices require their own cards and measurements.
+Delivery reliability is a prerequisite for external engines because an ACP turn is another indeterminate side-effect boundary. The stage is sequenced as delivery, then bounded context/resources, then execution-outcome uncertainty. Stage 2.5-A is complete; later slices require their own cards and measurements.
 
 After Stage 2.5-A's owner-run gate, no later Stage starts automatically. The next code card follows the transaction and repeated-paid-demand gates in `docs/BUSINESS.md` §0 and §6. A fixed-scope Agent Replay & Delivery Audit uses the existing CLI/Run/Session/Delivery path and does not require a future Outcome or Headless API.
 

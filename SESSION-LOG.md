@@ -1641,3 +1641,39 @@ Status: **live gate passed; no commit or push.** Working tree: `master` `aac5656
 ### Commit (2026-11-25)
 
 - Committed as `bd62255` and pushed to `origin/master` at 2026-11-25 16:12:45 +0300; the working tree is clean. This supersedes the "No commit or push" status above and closes Stage 2.5-A.
+
+---
+
+## P1 — Agent Replay & Delivery Audit launch package (2026-11-25)
+
+Status: **local execution package prepared; automated checks passed; no external publication, payment, customer-data collection, deployment, commit or push. Starting baseline: `master` `c769deb`, clean.**
+
+### What changed
+
+- Added `docs/AUDIT-LAUNCH.md`, an owner-facing immediate runbook covering local verification, a timed four-owner-hour sample redelivery rehearsal, intake creation, payment/settlement feasibility, placeholder replacement, two-channel publication, daily measurement, first-order delivery, owner-time budgeting, and day-7/day-14 stop decisions.
+- Added a fixed-scope English offer at `docs/audit/index.html` and a public synthetic evidence report at `docs/audit/sample.html`. The offer preserves the unvalidated `$49` hypothesis, one-incident scope, ten-question intake, 48-hour target, exclusions, and data-handling boundary. It contains an intentional DRAFT notice and `{{INTAKE_URL}}` placeholders so it cannot be published correctly without owner setup.
+- Added `docs/audit/intake.md` with exactly ten asynchronous questions, no file uploads, qualification/rejection rules, and an explicit rule that form completion or proposal acceptance is not payment.
+- Added `docs/audit/marketing.md` with a 60-second synthetic demo, Herdr/community and purchase-listing drafts, a no-CTA public-issue contribution, later Russian/Korean summaries, UTM templates, and measurement definitions.
+- Added `docs/audit/replay-delivery/`: a synthetic interrupted two-chunk delivery fixture, an eight-check zero-dependency Node.js audit script, and a README containing the state/authority map, verdict template, exact commands, and public-claim boundary.
+- Appended the Herdr and adjacent-competitor scan to `docs/research/iskra-survival-strategy.md` §11. Herdr issue reports remain labelled as user reports rather than confirmed defects; Odysseus, AgentLedger, AgentField/CodeAF, Google AX, OpenClaw, and Vibe Kanban prevent generic-runtime, generic-plugin, or free-adoption assumptions.
+- Corrected stale Stage 2.5-A status text in README 3, `docs/index.html`, `docs/ARCHITECTURE.md`, `docs/BUSINESS.md`, and the survival strategy. These documents now distinguish completed delivery reliability from unimplemented Outcome/Evidence/Headless/ACP and the new local audit package.
+- Review corrections: the survival strategy §7 P0 roadmap now records Stage 2.5-A as completed instead of pending; the audit checker derives its post-restart summary fields from fixture evidence rather than hardcoding them; and both draft public pages carry temporary `noindex,nofollow` plus an explicit launch-gate step to remove it only after final checks.
+
+### Verification
+
+- `node docs/audit/replay-delivery/check.mjs` → `state: PASS`, **8 passed, 0 failed**. The checker validates synthetic/no-payload classification, event order, Run/Delivery ownership, crash state, unknown conversion, zero automatic recovery effects, explicit `/result` identity, and unresolved original state plus unique message ids. It performs no network, model, Telegram, filesystem-write, or customer-data operation.
+- `cargo test restart_maps_pending_to_unknown_without_sending_or_rerunning` → **1 passed, 0 failed**.
+- `cargo test --test session_cli cli_restart_does_not_reprint_or_resend_completed_work` → **1 passed, 0 failed**; the test proves no completed-answer reprint and no second model request after restart.
+- `cargo test --test session_cli cli_result_prints_a_stored_answer_without_a_model_call` → **1 passed, 0 failed**; the test proves model-free result output with unchanged Run/Session bytes.
+- Final `cargo test` → **270 passed, 0 failed** (259 unit tests + 11 real CLI process tests).
+- HTML parsing and local-link checks over `docs/index.html`, `docs/audit/index.html`, and `docs/audit/sample.html` → PASS; both draft pages have `noindex,nofollow`; the intake contains exactly ten questions. New-file trailing-whitespace checks and fixture JSON parsing → PASS. `git diff --check` → PASS.
+- Injected-failure checker run → `state: FAIL` with derived post-restart delivery attempts `1`, model calls `1`, and original-unknown resolution `false`, matching the modified fixture instead of the passing constants.
+- Environment used for the audit checker: Node.js `v22.22.2`; no package installation or new Core dependency.
+- No release build, binary/RSS budget measurement, live Telegram request, real Herdr reproduction, rendered external-browser deployment, four-owner-hour delivery, or paid transaction was performed by this task.
+
+### Limits and next step
+
+- The fixture is explicitly synthetic; the focused Rust tests use local mocks and dummy credentials. Neither proves universal agent safety, a customer fix, Herdr compatibility, or a confirmed Herdr defect.
+- Publication remains blocked on owner review, real form/payment/refund/tax/settlement setup, replacement of all public placeholders, removal of the DRAFT notice, deployed-link checks, and separate approval for external action and any commit/push.
+- Actual customer demand, repeated productization demand, a four-owner-hour rerun, and Managed payment remain unverified.
+- Next: owner executes `docs/AUDIT-LAUNCH.md`; no next Core implementation is approved.

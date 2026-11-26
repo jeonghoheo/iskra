@@ -506,14 +506,14 @@ cargo run</pre></div>
       <div class="sec-head">
         <span class="sec-tag" data-i18n="rmTag">ROADMAP · V1 → V2</span>
         <h2 data-i18n="rmH2">V1 is complete. V2 is in progress.</h2>
-        <p data-i18n="rmP">v1 shipped in six verified blocks. The first v2 slice — a two-agent workbench with durable runs and explicit routing — is implemented and live-verified. Delivery reliability (delivery/v1) is the next approved slice; ACP engines, bounded delegation, and decision-model routing remain later stages.</p>
+        <p data-i18n="rmP">v1 shipped in six verified blocks. The first v2 slice — a two-agent workbench with durable runs and explicit routing — is implemented and live-verified. Delivery reliability (delivery/v1) is implemented and owner-run verified; the next business step is a fixed-scope Agent Replay & Delivery Audit. ACP engines, bounded delegation, and decision-model routing remain later stages.</p>
       </div>
       <div class="progress-wrap">
         <div class="progress-top"><b data-i18n="progLabel">v1 progress</b><span class="mono" data-i18n="progMeta">BLOCK 6 / 6 · COMPLETE</span></div>
         <div class="bar" role="progressbar" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100" aria-label="v1 progress 100%"><i></i></div>
       </div>
       <div class="progress-wrap" style="margin-top:14px">
-        <div class="progress-top"><b data-i18n="prog2Label">v2 progress</b><span class="mono" data-i18n="prog2Meta">STAGE 2 COMPLETE · DELIVERY/V1 NEXT</span></div>
+        <div class="progress-top"><b data-i18n="prog2Label">v2 progress</b><span class="mono" data-i18n="prog2Meta">STAGE 2 COMPLETE · DELIVERY/V1 COMPLETE</span></div>
         <div class="bar" role="progressbar" aria-valuenow="50" aria-valuemin="0" aria-valuemax="100" aria-label="v2 progress 50%"><i style="width:50%"></i></div>
       </div>
       <div class="sec-tag" data-i18n="v1BlocksTag" style="margin-top:18px">V1 · SIX VERIFIED BLOCKS</div>
@@ -684,9 +684,9 @@ cargo run`,
     hint3: `Design decisions and per-block verification records live in the repository's <span class="mono">SESSION-LOG.md</span>.`,
     toastCopied: "Command copied", toastFail: "Copy failed — select and copy it manually", toastUnsupported: "Copying is not supported in this browser",
     rmTag: "ROADMAP · V1 → V2", rmH2: "V1 is complete. V2 is in progress.",
-    rmP: "v1 shipped in six verified blocks. The first v2 slice — a two-agent workbench with durable runs and explicit routing — is implemented and live-verified. Delivery reliability (delivery/v1) is the next approved slice; ACP engines, bounded delegation, and decision-model routing remain later stages.",
+    rmP: "v1 shipped in six verified blocks. The first v2 slice — a two-agent workbench with durable runs and explicit routing — is implemented and live-verified. Delivery reliability (delivery/v1) is implemented and owner-run verified; the next business step is a fixed-scope Agent Replay & Delivery Audit. ACP engines, bounded delegation, and decision-model routing remain later stages.",
     progLabel: "v1 progress", progMeta: "BLOCK 6 / 6 · COMPLETE",
-    prog2Label: "v2 progress", prog2Meta: "STAGE 2 COMPLETE · DELIVERY/V1 NEXT",
+    prog2Label: "v2 progress", prog2Meta: "STAGE 2 COMPLETE · DELIVERY/V1 COMPLETE",
     v1BlocksTag: "V1 · SIX VERIFIED BLOCKS",
     b1t: "Skeleton", b1p: `From installing Rust to <span class="mono">cargo new iskra</span> — a minimal project that compiles and runs.`,
     b2t: "First call", b2p: "The minimal circuit that asks the model one sentence and prints the answer. Your own key, isolated in .env.",
@@ -821,9 +821,9 @@ cargo run`,
     hint3: `Проектные решения и записи проверки по каждому блоку лежат в <span class="mono">SESSION-LOG.md</span> репозитория.`,
     toastCopied: "Команда скопирована", toastFail: "Не удалось скопировать — выделите и скопируйте вручную", toastUnsupported: "В этом браузере копирование не поддерживается",
     rmTag: "ДОРОЖНАЯ КАРТА · V1 → V2", rmH2: "V1 завершена. V2 в работе.",
-    rmP: "v1 выпущена шестью проверенными блоками. Первый слой v2 — среда с двумя агентами, долговечная очередь задач и явная маршрутизация — реализован и проверен в реальном использовании. Следующим утверждён слой надёжной доставки (delivery/v1); движки ACP, ограниченное делегирование и маршрутизация через модель решений остаются следующими этапами.",
+    rmP: "v1 выпущена шестью проверенными блоками. Первый слой v2 — среда с двумя агентами, долговечная очередь задач и явная маршрутизация — реализован и проверен в реальном использовании. Надёжная доставка (delivery/v1) реализована и проверена владельцем; следующий бизнес-шаг — Agent Replay & Delivery Audit фиксированного объёма. Движки ACP, ограниченное делегирование и маршрутизация через модель решений остаются следующими этапами.",
     progLabel: "Прогресс v1", progMeta: "БЛОК 6 / 6 · ГОТОВО",
-    prog2Label: "Прогресс v2", prog2Meta: "ЭТАП 2 ГОТОВ · ДАЛЕЕ ДОСТАВКА",
+    prog2Label: "Прогресс v2", prog2Meta: "ЭТАП 2 ГОТОВ · ДОСТАВКА ГОТОВА",
     v1BlocksTag: "V1 · ШЕСТЬ ПРОВЕРЕННЫХ БЛОКОВ",
     b1t: "Каркас", b1p: `От установки Rust до <span class="mono">cargo new iskra</span> — минимальный проект, который компилируется и запускается.`,
     b2t: "Первый вызов", b2p: "Минимальный контур, который задаёт модели одно предложение и печатает ответ. Ваш собственный ключ, изолированный в .env.",
@@ -958,9 +958,9 @@ cargo run`,
     hint3: `설계 결정과 블록별 검수 기록은 저장소의 <span class="mono">SESSION-LOG.md</span>에 남아 있습니다.`,
     toastCopied: "명령어가 복사됐습니다", toastFail: "복사에 실패했습니다 — 직접 선택해 복사하세요", toastUnsupported: "이 브라우저에서는 복사가 지원되지 않습니다",
     rmTag: "로드맵 · V1 → V2", rmH2: "v1은 완료, v2는 진행 중",
-    rmP: "v1은 검증된 여섯 블록으로 완성됐습니다. v2의 첫 조각인 두 에이전트 워크벤치(지속 작업 큐·명시적 라우팅)는 구현과 라이브 검증을 마쳤습니다. 다음 승인된 조각은 전달 신뢰성(delivery/v1)이며, ACP 엔진·제한된 위임·결정 모델 라우팅은 이후 단계입니다.",
+    rmP: "v1은 검증된 여섯 블록으로 완성됐습니다. v2의 첫 조각인 두 에이전트 워크벤치(지속 작업 큐·명시적 라우팅)는 구현과 라이브 검증을 마쳤습니다. 전달 신뢰성(delivery/v1)은 구현과 owner-run 검증을 마쳤으며, 다음 사업 단계는 고정 범위 Agent Replay & Delivery Audit입니다. ACP 엔진·제한된 위임·결정 모델 라우팅은 이후 단계입니다.",
     progLabel: "v1 진행률", progMeta: "BLOCK 6 / 6 · 완료",
-    prog2Label: "v2 진행률", prog2Meta: "STAGE 2 완료 · 다음 DELIVERY/V1",
+    prog2Label: "v2 진행률", prog2Meta: "STAGE 2 완료 · DELIVERY/V1 완료",
     v1BlocksTag: "V1 · 검증된 여섯 블록",
     b1t: "뼈대", b1p: `Rust 설치부터 <span class="mono">cargo new iskra</span>까지 — 컴파일·실행되는 최소 프로젝트.`,
     b2t: "첫 호출", b2p: "본인이 연결한 모델에 한 문장을 묻고 답을 받는 최소 회로. 키는 .env로 격리.",

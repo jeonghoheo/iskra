@@ -1600,3 +1600,21 @@ The initial customer is a technical owner already running coding agents unattend
 Next code action: **none inside Stage 2.5-A** — its automated milestone and owner-run Telegram checklist are complete. Next business action after P0: prepare one synthetic fixed-scope audit sample and the offer/intake/payment draft as a separate normal-mode task.
 
 2026-11-25 update: the Stage 2.5-A owner-run Telegram checklist passed (successful/partial/unknown delivery, `/status`, `/result`, Korean localization, `@second` delivery, restart recovery); evidence is in "Owner-run Telegram verification" above and `SESSION-LOG.md`. Committed as `bd62255` and pushed to `origin/master` on 2026-11-25; the next code action requires separate approval, not an automatic new Stage.
+
+---
+
+## P1 — Agent Replay & Delivery Audit launch package (2026-11-25)
+
+Status: **local execution package prepared and automated proofs passed; no external publication, payment setup, customer-data collection, deployment, commit or push. P1 is not marked commercially validated or fully delivered within four owner hours.**
+
+### Current card
+
+- **Outcome:** Give the owner an immediately executable 14-day launch path for one fixed-scope paid restart duplicate-execution or duplicate-delivery audit, without adding Core contracts or claiming Herdr compatibility.
+- **Spec:** `docs/research/iskra-survival-strategy.md` §5–11; `docs/BUSINESS.md` §0/§6/§7; the owner runbook is `docs/AUDIT-LAUNCH.md`.
+- **Files:** Added `docs/AUDIT-LAUNCH.md`, `docs/audit/index.html`, `docs/audit/sample.html`, `docs/audit/intake.md`, `docs/audit/marketing.md`, and `docs/audit/replay-delivery/{README.md,fixture.json,check.mjs}`. Updated the public status text in README 3, `docs/index.html`, `docs/ARCHITECTURE.md`, `docs/BUSINESS.md`, and this research/session record.
+- **Proof:** `node docs/audit/replay-delivery/check.mjs` → 8 passed, 0 failed. Three focused Rust checks passed with zero failures: `restart_maps_pending_to_unknown_without_sending_or_rerunning`, `cli_restart_does_not_reprint_or_resend_completed_work`, and `cli_result_prints_a_stored_answer_without_a_model_call`. Final `cargo test` → **270 passed, 0 failed** (259 unit + 11 real CLI process tests). No release build was run in this package task.
+- **Current:** Starting baseline was `master` `c769deb`, clean, with Stage 2.5-A complete. The sample is synthetic and the named Rust tests use local mocks/dummy credentials. No live Telegram request or Herdr reproduction was performed by this package.
+- **Stop:** Do not add Outcome/Evidence/ACP/Headless, a generic log analyzer, a Herdr plugin, customer connectors, or real customer data to the public package. Do not publish placeholders, unconfirmed Herdr defect claims, or universal exactly-once/safety claims. Stop external launch if the owner has no working payment/settlement path.
+- **Live:** Owner follows `docs/AUDIT-LAUNCH.md`: complete the timed sample-redelivery rehearsal, create the ten-question form, confirm payment/refund/tax/settlement feasibility, replace intake/offer/sample URLs, remove the DRAFT notice and temporary `noindex,nofollow`, verify deployed links, then approve at most two channels and any commit/push separately.
+
+Next action: **owner local review and form/payment setup, then separately approved two-channel transaction experiment. No next Core code action is approved.**

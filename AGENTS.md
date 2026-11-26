@@ -1,23 +1,15 @@
-# Iskra — AI 작업 지시
-
-작업 전 다음 순서로 필요한 범위만 읽는다.
-
-1. `/Users/heojeongho/Desktop/My/AI-personal-memory/AGENTS.md`
-2. `/Users/heojeongho/Desktop/My/AI-personal-memory/USER.md`
-3. `/Users/heojeongho/Desktop/My/AI-personal-memory/NOW.md`의 현재 우선순위와 다음 행동
-4. `/Users/heojeongho/Desktop/My/AI-personal-memory/DECISIONS.md`에서 Iskra와 현재 작업에 관련된 최신 결정만 검색
-5. 이 저장소의 `SESSION.md`에서는 현재 작업 카드와 직전 결과만 읽는다. `SESSION-LOG.md`는 마지막 관련 기록, `README.md`와 명세는 현재 작업에 필요한 섹션만 읽는다.
-
-긴 파일 전체를 기본 읽기 범위로 두지 않고, 변경되지 않은 같은 문서·구간을 같은 세션에서 다시 읽지 않는다. 조사·설계·구현·수동 검증의 단계가 끝나면 작업 카드와 결과만 남기고 새 세션으로 인계한다. `/model` 전환만으로 기존 문맥은 줄어들지 않는다.
-
-작업을 Plan/Goal/일반 모드로 나눌 때는 `docs/WORKFLOW.md`를 참조한다. Goal은 자동 검증 가능한 구현에만 사용하고, owner 입력이 필요한 실사용 검증은 일반 모드로 분리한다.
-
-## 언어
-
-- 주인에게 보내는 모든 대화형 응답은 **한국어**로 쓴다. 계획, 진행 상황, 결과 요약, 검증 보고, 질문, 오류 설명이 모두 포함된다.
-- 코드, 식별자, 파일 경로, 로그, 명령 출력, 오류 원문은 번역하지 않고 그대로 인용한다. 그 주변의 설명과 해석만 한국어로 쓴다.
-- 저장소 문서와 기록의 언어는 기존 관례를 따른다. `docs/`, `README*`, `SESSION.md`, `SESSION-LOG.md`의 기존 언어를 임의로 번역하거나 바꾸지 않는다. 카드가 영어 기록을 요구하면 그 기록은 영어로 남기고, 주인에게 보내는 채팅 요약은 한국어로 따로 정리한다.
-- 새 문서나 기록을 만들 때 언어가 정해져 있지 않으면 한국어를 기본으로 하되, 기존 파일에 이어 쓰는 경우에는 그 파일의 언어를 따른다.
-- 언어 규칙을 바꾸려면 주인에게 먼저 확인한다.
-
-개인 기억 파일이나 자료를 이 저장소에 복사하지 않는다. 문서가 충돌하면 임의로 선택하지 말고 사용자에게 확인한다. 커밋·푸시는 사용자 승인 없이는 실행하지 않는다.
+# Iskra — 에이전트 작업 지시
+## 읽기 순서
+1. 공통 기억: `/Users/heojeongho/Desktop/My/AI-personal-memory/AGENTS.md` → `USER.md` → `NOW.md` → Iskra 관련 최신 `DECISIONS.md`. 필요한 범위만 읽고 변경 없는 재독은 피한다.
+2. 저장소: `SESSION.md` 현재 카드 → `SESSION-LOG.md` 마지막 관련 기록 → `README`·`docs` 필요한 섹션. 조사·설계·구현·검증 단계가 끝나면 카드와 결과만 남기고 새 세션으로 인계한다.
+## 기술 스택
+- Rust stable, Tokio, Teloxide 0.17, Reqwest, Serde, Dotenvy. TLS는 rustls 고정(OpenSSL 금지). Telegram Bot API + 로컬 Markdown 기억 + OpenAI 호환 HTTP API.
+- 모델은 `LLM_API_KEY`·`LLM_BASE_URL`·`LLM_MODEL`로만 설정하고 코어·공개 문구에 특정 모델을 고정하지 않는다. Tauri·모바일·MQTT·CLI 어댑터는 v1 범위가 아니다.
+## 불변 규칙
+- fail-closed: 허용 목록에 없는 발신자·경로·명령·도구는 거부. 권한 검사는 코어 관문에서 수행한다.
+- `run_command`는 셸 문자열 해석 없이 인자 배열로 실행하고 경로·명령·시간·출력을 제한한다. 제3자 코드는 코어 안에서 실행하지 않는다.
+- 기본 텔레메트리·조용한 보안 폴백 금지. 외부 런타임·DB 서버·컨테이너 없이 단일 바이너리. 예산: strip 후 20MB, 유휴 메모리 30MB, 직접 의존성 15개 이하(새 의존성은 기록 후 승인).
+- 기억·정책·승인·감사 로그·비용 집계는 코어가 소유한다. 외부 모델·CLI 엔진이 우회하지 못한다.
+## 작업 규칙
+- Plan/Goal/일반 모드 분업은 `docs/WORKFLOW.md`. Goal은 자동 검증 가능한 구현에만, owner 입력 검증은 일반 모드. 코드·로그·프롬프트는 영어, 사용자 문구는 `en/ko/ru`, 주인 응답은 한국어, 기존 `docs`·`SESSION-LOG` 언어는 임의 변경 금지.
+- 개인 기억·자료를 저장소에 복사하지 않는다. 문서 충돌 시 임의 선택 금지. 커밋·푸시는 별도 승인 후.

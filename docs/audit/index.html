@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="description" content="A fixed-scope Agent Replay & Delivery Audit: one incident, one reproduction, one deterministic check, and rerunnable evidence.">
+  <title>Agent Replay & Delivery Audit — Iskra</title>
+  <style>
+    :root{--bg:#fffaf4;--surface:#fff;--ink:#1d1813;--muted:#675b4f;--line:#eadbc8;--accent:#c94716;--soft:#ffe8d9;--ok:#0b705c}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    main{max-width:980px;margin:auto;padding:28px 20px 56px}a{color:var(--accent)}h1,h2,h3{line-height:1.2}h1{font-size:clamp(2.2rem,6vw,4.3rem);letter-spacing:-.04em;margin:18px 0}h2{margin-top:42px}p{max-width:760px}.muted{color:var(--muted)}
+    .owner-note{padding:14px 18px;border:2px solid #a33;background:#fff0f0}.owner-note code{overflow-wrap:anywhere}.badge{display:inline-block;padding:6px 11px;border:1px solid var(--line);border-radius:999px;background:var(--surface);font-size:.9rem;font-weight:650}
+    .price{font-size:1.25rem;font-weight:750}.ctas{display:flex;flex-wrap:wrap;gap:12px;margin:26px 0}.btn{display:inline-block;padding:13px 19px;border-radius:10px;text-decoration:none;font-weight:750;border:1px solid var(--accent)}.primary{background:var(--accent);color:white}.secondary{color:var(--accent);background:var(--surface)}
+    .grid{display:grid;gap:14px}@media(min-width:720px){.grid{grid-template-columns:1fr 1fr}}.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:19px}.card h3{margin-top:0}.card p:last-child{margin-bottom:0}
+    ul{padding-left:22px}li{margin:7px 0}.proof{background:#171310;color:#f5ede3;padding:20px;border-radius:14px;overflow:auto}.proof code{white-space:pre-wrap}.small{font-size:.9rem}.fine{border-top:1px solid var(--line);margin-top:40px;padding-top:20px;color:var(--muted);font-size:.9rem}
+  </style>
+</head>
+<body>
+<main>
+  <p class="owner-note"><strong>DRAFT — DO NOT PUBLISH YET.</strong> Replace <code>{{INTAKE_URL}}</code>, remove this note, and complete the owner checklist in <code>docs/AUDIT-LAUNCH.md</code>.</p>
+  <span class="badge">Fixed-scope incident diagnosis · No call required</span>
+  <h1>Did your agent run twice—or just say it was done?</h1>
+  <p class="price">One incident. One reproduction. One deterministic check. Evidence you can rerun.</p>
+  <p class="muted">The <strong>Agent Replay &amp; Delivery Audit</strong> investigates one reproducible restart duplicate-execution or duplicate-delivery incident. You get a state/authority map, a minimal fixture, a non-LLM pass/fail check, and a short evidence bundle—not a generic dashboard or a sales pitch for a new agent platform.</p>
+  <div class="ctas">
+    <a class="btn primary" href="{{INTAKE_URL}}">Start the 10-question intake</a>
+    <a class="btn secondary" href="sample.html">Inspect the synthetic sample</a>
+  </div>
+  <p><strong>Validation offer: $49 for the first three qualifying incidents.</strong><br><span class="muted small">The name and price are unvalidated hypotheses. Scope must be confirmed before payment. Target delivery is within 48 hours after usable evidence and payment are received.</span></p>
+
+  <h2>What you receive</h2>
+  <div class="grid">
+    <section class="card"><h3>1. State &amp; authority map</h3><p>Which component owns the Run, Session, tool effect, Delivery, retry, and recovery decision—and where their states diverge.</p></section>
+    <section class="card"><h3>2. Minimal reproduction</h3><p>A sanitized fixture for one restart duplicate-execution or duplicate-delivery incident. No broad environment rebuild.</p></section>
+    <section class="card"><h3>3. Deterministic check</h3><p>A rerunnable non-LLM pass/fail assertion for the agreed incident behavior. The model does not grade its own completion claim.</p></section>
+    <section class="card"><h3>4. Evidence bundle</h3><p>Observed facts, unresolved unknowns, a short remediation recommendation, and the exact commands needed to reproduce the result.</p></section>
+  </div>
+
+  <h2>See the sample before you decide</h2>
+  <p>The public sample simulates an interrupted two-chunk delivery. The original Delivery ends with one <code>sent</code> chunk and one unresolved <code>unknown</code>. Restart performs no automatic model replay or original-Delivery retry. Only an explicit <code>/result</code> creates a separate Delivery with new message ids.</p>
+  <div class="proof"><code>node docs/audit/replay-delivery/check.mjs
+# state: PASS · 8 checks · 0 failed
+
+cargo test restart_maps_pending_to_unknown_without_sending_or_rerunning
+cargo test --test session_cli cli_restart_does_not_reprint_or_resend_completed_work
+cargo test --test session_cli cli_result_prints_a_stored_answer_without_a_model_call
+# 3 focused Rust tests · 3 passed · 0 failed</code></div>
+  <p><a href="sample.html">Open the full synthetic audit</a> or <a href="replay-delivery/README.md">read the fixture and verification boundary</a>.</p>
+
+  <h2>How it works</h2>
+  <ol>
+    <li><strong>Intake:</strong> answer ten asynchronous questions. Do not upload secrets or raw customer data.</li>
+    <li><strong>Scope confirmation:</strong> if the incident fits the fixed scope, you receive the exact deliverables, data-retention terms, and payment instructions. Do not pay before confirmation.</li>
+    <li><strong>Evidence:</strong> after usable sanitized evidence and payment, the target is one evidence bundle within 48 hours.</li>
+  </ol>
+
+  <h2>What is needed</h2>
+  <ul>
+    <li>One incident—not a list of general agent concerns.</li>
+    <li>Runtime, agent, model/CLI, OS, and version details.</li>
+    <li>A restart/reconnect/update timeline and the expected versus actual result.</li>
+    <li>Sanitized logs or Run/Session/Delivery identifiers and a minimal reproduction path.</li>
+  </ul>
+
+  <h2>What is not included</h2>
+  <ul>
+    <li>A full security, permission, cost, or provider-migration audit</li>
+    <li>General token optimization or model selection</li>
+    <li>Several workflows, custom connectors, private forks, or ongoing consulting</li>
+    <li>A guarantee of exactly-once behavior or a fix for every agent runtime</li>
+    <li>Managed hosting, a required Iskra installation, or a scheduled call</li>
+  </ul>
+
+  <h2>Data handling</h2>
+  <p>Share only synthetic or redacted material. Never send API keys, tokens, passwords, cookies, private credentials, or unnecessary personal data. The intake does not request file uploads. If accepted, evidence handling and deletion timing are confirmed before any sanitized logs are exchanged. Public case studies require separate explicit permission.</p>
+
+  <h2>Questions</h2>
+  <h3>Do I need to install Iskra or replace Herdr?</h3>
+  <p>No. This is a fixed-scope diagnosis delivered through the existing Iskra audit path. It is not a runtime migration offer. Herdr-specific compatibility is claimed only after the relevant incident is actually reproduced.</p>
+  <h3>Is this a full agent security audit?</h3>
+  <p>No. It covers one restart duplicate-execution or duplicate-delivery incident only.</p>
+  <h3>What if the incident cannot be reproduced?</h3>
+  <p>The report distinguishes observed facts, failed reproduction attempts, and unresolved unknowns. It does not turn an unconfirmed report into a claimed fix.</p>
+
+  <div class="ctas"><a class="btn primary" href="{{INTAKE_URL}}">Describe one incident</a></div>
+  <p class="fine">Iskra · Agent Replay &amp; Delivery Audit · Fixed scope, independent checks, no invisible replay. This page is a demand-validation offer, not a claim of recurring revenue, product-market fit, or universal runtime safety.</p>
+</main>
+</body>
+</html>

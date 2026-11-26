@@ -1,13 +1,13 @@
 # Iskra Business Strategy
 
-Status: **transaction-first survival strategy approved; current implementation remains Stage 2.5-A `delivery/v1`; no paid product, final price, payment account, customer campaign, or external service has been launched**.
+Status: **transaction-first survival strategy approved; Stage 2.5-A `delivery/v1` is complete and owner-run verified; the fixed audit launch package exists locally; no paid product, final price, payment account, customer campaign, or external service has been launched**.
 Date: 2026-11-25.
 
 ## 0. Current product and commercial strategy
 
 Build Iskra toward a MausBot-like **free local Agent workbench plus paid Always-on Cloud and Team**, with the long-term target of a **model-neutral, Outcome-verified Authority Hub**. Headless remains a target architecture meaning **any UI, not no UI**: customer software, other agents, CLI, Telegram, a thin web console, and generated interfaces are replaceable projections of one authorized Outcome/event model. It is not the current implemented product category.
 
-The initial market-entry strategy is **transaction first, one incident, one productization path**. Do not build Outcome, Evidence, Headless, ACP and several packs together before a stranger pays for a narrow result. Finish the current delivery-reliability stage, sell one fixed-scope incident audit through the existing Iskra path, and productize only a need that repeats in paid work.
+The initial market-entry strategy is **transaction first, one incident, one productization path**. Do not build Outcome, Evidence, Headless, ACP and several packs together before a stranger pays for a narrow result. With the delivery-reliability stage complete, test one fixed-scope incident audit through the existing Iskra path, and productize only a need that repeats in paid work.
 
 The long-term public customer contract remains **Outcome → Task → Run → Event/Artifact/Evidence/Delivery**, not merely an Agent chat or a count of executed Tasks. An Outcome has an owner, desired result, baseline/target metric, budget, data/tool scope, approval policy, acceptance checks and required evidence. A completed Run never automatically means an achieved Outcome. Approval records authorize privileged effects; they do not replace independent acceptance evidence.
 
@@ -65,7 +65,7 @@ Z.AI officially supports GLM Coding Plan integration with Claude Code, and Russi
 
 ### Current technical dependency
 
-The approved Stage 2.5-A `delivery/v1` contract remains the current implementation target. The commercial and long-term architecture strategy does not replace it or start a parallel code Goal. After its owner-run gate, prepare and test the narrow paid audit without adding new Core contracts. Only repeated paid demand opens a minimal `outcome/v1` plus deterministic `evidence/v1` card for one scenario. `headless/v1`, provider shootouts, ACP, scoped BYOUI projections, managed operation and delegation/leases each require their own demonstrated need, security review and explicit implementation approval; they are not an automatic sequence.
+Stage 2.5-A `delivery/v1` is complete and owner-run verified. No later code Stage starts automatically. The local package in `docs/AUDIT-LAUNCH.md` prepares the narrow paid audit without adding new Core contracts. Only repeated paid demand opens a minimal `outcome/v1` plus deterministic `evidence/v1` card for one scenario. `headless/v1`, provider shootouts, ACP, scoped BYOUI projections, managed operation and delegation/leases each require their own demonstrated need, security review and explicit implementation approval; they are not an automatic sequence.
 
 ### Authority Hub and anti-absorption strategy
 
@@ -283,7 +283,7 @@ These measures are more aligned with the goal than downloads, stars, number of b
 
 ### Phase A — current reliability and a fixed audit offer (P0–P1)
 
-- Finish the approved Stage 2.5-A `delivery/v1` cards and owner-run Telegram gate without adding Outcome, Evidence or ACP scope.
+- Stage 2.5-A `delivery/v1` and its owner-run Telegram gate are complete; no Outcome, Evidence or ACP scope was added.
 - Create one synthetic duplicate-execution or duplicate-delivery sample through the existing Iskra CLI/Run/Session/Delivery path and a fixed local audit kit.
 - Limit the offer to one incident, one state/authority map, one reproduction fixture, one deterministic check and a short rerunnable evidence bundle.
 - Prepare the fixed-scope page, ten-question asynchronous intake and payment/refund/tax feasibility. Actual publication, payment setup and customer-data collection need separate owner approval.

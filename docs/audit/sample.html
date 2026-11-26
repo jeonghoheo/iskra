@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="description" content="A synthetic Agent Replay & Delivery Audit with eight deterministic fixture checks and the full 270-test Iskra suite.">
+  <title>Synthetic Replay & Delivery Audit — Iskra</title>
+  <style>
+    :root{--bg:#fffaf4;--surface:#fff;--ink:#1d1813;--muted:#675b4f;--line:#eadbc8;--accent:#c94716;--soft:#ffe8d9;--ok:#0b705c}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{max-width:1060px;margin:auto;padding:30px 20px 56px}a{color:var(--accent)}h1,h2{line-height:1.2}h1{font-size:clamp(2rem,5vw,3.5rem);letter-spacing:-.035em;margin:14px 0}h2{margin-top:38px}.notice{padding:15px 18px;background:var(--soft);border-left:4px solid var(--accent);font-weight:650}.grid{display:grid;gap:14px}@media(min-width:700px){.grid{grid-template-columns:repeat(3,1fr)}}.metric,.card{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:18px}.metric strong{display:block;font-size:1.8rem;color:var(--ok)}table{width:100%;border-collapse:collapse;background:var(--surface);font-size:.94rem}th,td{text-align:left;vertical-align:top;border-bottom:1px solid var(--line);padding:11px 9px}th{background:var(--soft)}code{background:var(--soft);padding:2px 5px;border-radius:4px}pre{background:#171310;color:#f5ede3;padding:19px;border-radius:13px;overflow:auto}pre code{background:none;padding:0}.muted{color:var(--muted)}.btn{display:inline-block;padding:11px 16px;border:1px solid var(--accent);border-radius:9px;text-decoration:none;font-weight:700}.fine{border-top:1px solid var(--line);margin-top:38px;padding-top:18px;color:var(--muted);font-size:.92rem}
+  </style>
+</head>
+<body>
+<main>
+  <a href="index.html">← Agent Replay &amp; Delivery Audit</a>
+  <h1>Synthetic incident: interrupted two-chunk delivery</h1>
+  <p class="notice">SYNTHETIC SAMPLE — not a customer incident, not raw Telegram evidence, and not a Herdr compatibility claim. The fixture demonstrates the audit format; named Rust tests provide the actual Iskra behavior proof.</p>
+  <div class="grid">
+    <div class="metric"><strong>8 / 8</strong> deterministic fixture checks passed</div>
+    <div class="metric"><strong>3 / 3</strong> focused Rust regression tests passed</div>
+    <div class="metric"><strong>0</strong> automatic model calls or original-Delivery retries after restart</div>
+  </div>
+  <p class="muted">Verification executed locally on 2026-11-25. No live Telegram request was made by this sample package.</p>
+
+  <h2>1. State &amp; authority map</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Owns</th><th>Must not do</th></tr></thead>
+    <tbody>
+      <tr><td>Core Run / Session</td><td>Run <code>22</code>, completed state, stored redacted answer</td><td>Treat Run completion as proof of Telegram delivery</td></tr>
+      <tr><td>Core Delivery</td><td>Delivery <code>6</code> / <code>7</code>, chunk state, attempts, revision</td><td>Retry an ambiguous original send automatically</td></tr>
+      <tr><td>Telegram channel</td><td>Bot API result and positive message ids</td><td>Decide whether interrupted work should resume</td></tr>
+      <tr><td>Owner</td><td>Explicit <code>/result 22</code> and reconciliation decisions</td><td>Assume a new Delivery proves the original Delivery arrived</td></tr>
+      <tr><td>Model</td><td>Original answer generation</td><td>Trigger replay, recovery, or delivery reconciliation</td></tr>
+    </tbody>
+  </table>
+
+  <h2>2. Reproduction fixture</h2>
+  <table>
+    <thead><tr><th>Step</th><th>Observed state</th><th>Expected verdict</th></tr></thead>
+    <tbody>
+      <tr><td>Run completes</td><td>Run <code>22</code> is completed; two answer chunks exist</td><td>Run completion does not imply delivery</td></tr>
+      <tr><td>Original Delivery</td><td>Delivery <code>6</code> chunk <code>0</code> → message <code>392</code>; chunk <code>1</code> → <code>pending</code></td><td>One side effect is confirmed; the other is unresolved</td></tr>
+      <tr><td>Failure injection</td><td>Process is killed while chunk <code>1</code> is pending</td><td>No success is inferred</td></tr>
+      <tr><td>Restart</td><td>Chunk <code>1</code> becomes <code>unknown</code>, revision <code>5</code></td><td>No model call and no original-Delivery retry</td></tr>
+      <tr><td>Explicit recovery</td><td>Owner invokes <code>/result 22</code>; separate Delivery <code>7</code> is created</td><td>A new owner action, not silent reconciliation</td></tr>
+      <tr><td>Final evidence</td><td>Delivery <code>7</code> chunks arrive as messages <code>397</code> and <code>398</code></td><td>Original Delivery <code>6</code> remains unresolved</td></tr>
+    </tbody>
+  </table>
+  <p><a href="replay-delivery/fixture.json">Download the synthetic fixture</a> · <a href="replay-delivery/check.mjs">Download the zero-dependency checker</a> · <a href="replay-delivery/README.md">Read the audit instructions</a></p>
+
+  <h2>3. Deterministic checks</h2>
+  <p>The checker validates eight properties: synthetic/no-payload classification, monotonic event order, Run/Delivery ownership, crash state, <code>unknown</code> conversion, zero automatic recovery effects, explicit <code>/result</code> identity, and unresolved original state plus unique message ids.</p>
+  <pre><code>node docs/audit/replay-delivery/check.mjs
+
+state: PASS
+passed: 8
+failed: 0
+automatic_delivery_attempts_after_restart: 0
+automatic_model_calls_after_restart: 0
+original_unknown_unresolved: true</code></pre>
+
+  <h2>4. Actual Iskra regression proof</h2>
+  <pre><code>cargo test restart_maps_pending_to_unknown_without_sending_or_rerunning
+# 1 passed; 0 failed
+
+cargo test --test session_cli cli_restart_does_not_reprint_or_resend_completed_work
+# 1 passed; 0 failed; no model call after restart
+
+cargo test --test session_cli cli_result_prints_a_stored_answer_without_a_model_call
+# 1 passed; 0 failed; no model call or Run/Session rewrite</code></pre>
+  <p>The final full suite also passed: <strong>259 unit tests + 11 real CLI process tests = 270 passed, 0 failed</strong>. These tests use local mocks and dummy credentials. They do not constitute a new live Telegram verification.</p>
+
+  <h2>5. Audit verdict and remediation</h2>
+  <div class="card">
+    <p><strong>Observed:</strong> the original Delivery has one confirmed chunk and one unresolved <code>unknown</code> after restart.</p>
+    <p><strong>Prevented:</strong> no automatic model replay and no second attempt against original Delivery <code>6</code>.</p>
+    <p><strong>Explicit recovery:</strong> <code>/result 22</code> creates Delivery <code>7</code> with two unique message ids.</p>
+    <p><strong>Unresolved:</strong> successful explicit recovery does not prove the original <code>unknown</code> arrived.</p>
+    <p><strong>Recommendation:</strong> keep Run and Delivery identities separate; require explicit owner action or channel-proven reconciliation before repeating an external effect.</p>
+    <p><strong>Manual work:</strong> incident selection, scope review, public-claim review, final verdict. <strong>Automated work:</strong> event-sequence validation and deterministic assertions.</p>
+  </div>
+
+  <h2>Claim boundary</h2>
+  <p>This package supports only the narrow claim that the supplied synthetic incident and named Iskra regression tests can be rerun locally. It does not prove universal agent safety, a customer fix, or a confirmed Herdr defect.</p>
+  <p><a class="btn" href="index.html">Return to the fixed-scope offer</a></p>
+  <p class="fine">Audit template: one incident · one state/authority map · one reproduction fixture · one deterministic check · one rerunnable evidence bundle.</p>
+</main>
+</body>
+</html>
