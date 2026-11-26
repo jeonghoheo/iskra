@@ -1,90 +1,272 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex,nofollow">
-  <meta name="description" content="A fixed-scope Agent Replay & Delivery Audit: one incident, one reproduction, one deterministic check, and rerunnable evidence.">
-  <title>Agent Replay & Delivery Audit — Iskra</title>
-  <style>
-    :root{--bg:#fffaf4;--surface:#fff;--ink:#1d1813;--muted:#675b4f;--line:#eadbc8;--accent:#c94716;--soft:#ffe8d9;--ok:#0b705c}
-    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-    main{max-width:980px;margin:auto;padding:28px 20px 56px}a{color:var(--accent)}h1,h2,h3{line-height:1.2}h1{font-size:clamp(2.2rem,6vw,4.3rem);letter-spacing:-.04em;margin:18px 0}h2{margin-top:42px}p{max-width:760px}.muted{color:var(--muted)}
-    .owner-note{padding:14px 18px;border:2px solid #a33;background:#fff0f0}.owner-note code{overflow-wrap:anywhere}.badge{display:inline-block;padding:6px 11px;border:1px solid var(--line);border-radius:999px;background:var(--surface);font-size:.9rem;font-weight:650}
-    .price{font-size:1.25rem;font-weight:750}.ctas{display:flex;flex-wrap:wrap;gap:12px;margin:26px 0}.btn{display:inline-block;padding:13px 19px;border-radius:10px;text-decoration:none;font-weight:750;border:1px solid var(--accent)}.primary{background:var(--accent);color:white}.secondary{color:var(--accent);background:var(--surface)}
-    .grid{display:grid;gap:14px}@media(min-width:720px){.grid{grid-template-columns:1fr 1fr}}.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:19px}.card h3{margin-top:0}.card p:last-child{margin-bottom:0}
-    ul{padding-left:22px}li{margin:7px 0}.proof{background:#171310;color:#f5ede3;padding:20px;border-radius:14px;overflow:auto}.proof code{white-space:pre-wrap}.small{font-size:.9rem}.fine{border-top:1px solid var(--line);margin-top:40px;padding-top:20px;color:var(--muted);font-size:.9rem}
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex,nofollow">
+<meta name="description" content="A fixed-scope Agent Replay & Delivery Audit: one incident, one reproduction, one deterministic check, and rerunnable evidence.">
+<title>Agent Replay &amp; Delivery Audit — Iskra</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Noto+Sans:wght@400;500;700;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#FFFBF6; --bg-2:#FFF3E6; --surface:#FFFFFF; --surface-2:#FFF8EF;
+    --ink:#1C1712; --ink-2:#5C5147; --ink-3:#8A7D6F;
+    --line:#EADBC8; --line-strong:#D9C3A6;
+    --ember:#E6531A; --ember-dark:#C24312; --ember-soft:#FFE8D9;
+    --amber:#FFB020; --amber-soft:#FFF0C9;
+    --teal:#0E7C6B; --teal-soft:#DDF2EC;
+    --code-bg:#171310; --code-ink:#F5EDE3; --code-dim:#A99B8A; --code-green:#7ED3A6; --code-orange:#FF9A5C;
+    --shadow:0 18px 44px rgba(90,48,10,.13);
+    --radius:18px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#131009; --bg-2:#1B150D; --surface:#1E1912; --surface-2:#241C12;
+      --ink:#F6EEE2; --ink-2:#CBBBA4; --ink-3:#9A8A74;
+      --line:#3A2E1F; --line-strong:#55432C;
+      --ember:#FF6B2C; --ember-dark:#FF8A54; --ember-soft:#3A2113;
+      --amber:#FFB020; --amber-soft:#382A10;
+      --teal:#3EC9AE; --teal-soft:#12332C;
+      --shadow:0 18px 44px rgba(0,0,0,.45);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:"Noto Sans",system-ui,sans-serif;line-height:1.65;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  a{color:var(--ember)}
+  .mono{font-family:"JetBrains Mono",monospace}
+  .wrap{max-width:1160px;margin:0 auto;padding:0 20px}
+  @media(min-width:760px){.wrap{padding:0 32px}}
+  code{font-family:"JetBrains Mono",monospace;font-size:.92em;overflow-wrap:anywhere}
+
+  /* top bar */
+  .top{border-bottom:1px solid var(--line);background:var(--surface-2)}
+  .top-in{display:flex;align-items:center;gap:10px;min-height:46px;font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.1em;color:var(--ink-3);white-space:nowrap}
+  .top-in b{font-family:Manrope,"Noto Sans",sans-serif;font-size:15px;letter-spacing:.03em;color:var(--ink);font-weight:800}
+  .top-in .sep{flex:1}
+  @media(max-width:720px){.top-in .top-meta{display:none}}
+
+  /* hero */
+  .hero{padding-top:12px;padding-bottom:8px}
+  .draft{border:1px solid #D14343;background:#FFF0F0;color:#8A1F1F;border-radius:12px;padding:8px 11px;font-size:12px;line-height:1.42;font-weight:600}
+  @media (prefers-color-scheme: dark){.draft{background:#2A1315;color:#FFB3B3;border-color:#7A2A2A}}
+  .badge{display:inline-flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--line-strong);border-radius:999px;padding:4px 11px;font-size:11.5px;font-weight:700;color:var(--ink-2);margin-top:10px}
+  .badge .dot{width:7px;height:7px;border-radius:50%;background:var(--ember);flex:none}
+  h1{font-family:Manrope,"Noto Sans",sans-serif;font-size:clamp(25px,6.9vw,52px);line-height:1.12;font-weight:800;letter-spacing:-.02em;margin:9px 0 0}
+  .claim{font-family:Manrope,"Noto Sans",sans-serif;font-weight:700;font-size:clamp(15.5px,4.1vw,23px);line-height:1.32;margin:9px 0 0;max-width:38em}
+  .claim em{font-style:normal;color:var(--ember)}
+  .ctas{display:flex;flex-direction:column;gap:8px;margin:12px 0 0}
+  @media(min-width:560px){.ctas{flex-direction:row;flex-wrap:wrap;align-items:center}}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;font-weight:700;font-size:15px;padding:0 20px;border-radius:12px;min-height:48px;border:1px solid transparent;font-family:inherit;white-space:nowrap}
+  .btn-primary{background:var(--ember);color:#fff;box-shadow:0 10px 24px rgba(230,83,26,.28)}
+  .btn-primary:hover{background:var(--ember-dark)}
+  .btn-ghost{background:var(--surface);border-color:var(--line-strong);color:var(--ink)}
+  .btn-ghost:hover{border-color:var(--ink-3)}
+  .terms{margin:12px 0 0;padding:10px 12px;background:var(--surface);border:1px solid var(--line);border-radius:14px;display:grid;gap:3px;line-height:1.35}
+  .terms .row{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px}
+  .terms .k{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3)}
+  .terms .price{font-family:Manrope,"Noto Sans",sans-serif;font-weight:800;font-size:24px;line-height:1.1;color:var(--ember)}
+  .terms .when{font-family:Manrope,"Noto Sans",sans-serif;font-weight:800;font-size:16px;color:var(--ink)}
+  .terms .what{margin:0;font-size:12.5px;line-height:1.45;color:var(--ink-2)}
+  .hyp{font-family:"JetBrains Mono",monospace;font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ember-dark);background:var(--ember-soft);border:1px solid var(--line-strong);border-radius:999px;padding:2px 7px;white-space:nowrap}
+  .sub{margin:16px 0 0;color:var(--ink-2);font-size:16px;max-width:46em}
+  .sub b{color:var(--ink)}
+
+  /* sections */
+  section{padding:44px 0 0}
+  @media(min-width:760px){section{padding:64px 0 0}}
+  .sec-tag{font-family:"JetBrains Mono",monospace;font-size:11.5px;font-weight:700;letter-spacing:.14em;color:var(--ember)}
+  h2{font-family:Manrope,"Noto Sans",sans-serif;font-size:clamp(23px,4vw,34px);line-height:1.25;font-weight:800;letter-spacing:-.01em;margin:8px 0 0}
+  .lede{color:var(--ink-2);font-size:16px;margin:10px 0 0;max-width:60em}
+
+  /* deliverables strip */
+  .strip{display:grid;gap:11px;margin-top:20px}
+  @media(min-width:560px){.strip{grid-template-columns:1fr 1fr}}
+  @media(min-width:880px){.strip{grid-template-columns:repeat(4,1fr);gap:14px}}
+  .dcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+  .dcard .num{font-family:"JetBrains Mono",monospace;font-weight:700;font-size:11px;letter-spacing:.14em;color:var(--ember)}
+  .dcard h3{font-family:Manrope,"Noto Sans",sans-serif;font-size:16.5px;font-weight:800;line-height:1.3;margin:5px 0 5px}
+  .dcard p{margin:0;font-size:14px;color:var(--ink-2)}
+
+  /* sample preview */
+  .preview{background:var(--code-bg);color:var(--code-ink);border-radius:20px;padding:18px;box-shadow:var(--shadow);border:1px solid #2E2620;margin-top:16px}
+  .preview .cap{font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--code-orange)}
+  .steps{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:11px}
+  .steps li{display:grid;grid-template-columns:24px 1fr;gap:10px;align-items:start}
+  .steps .sn{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--code-dim);border:1px solid #3A2E1F;border-radius:6px;height:24px;display:grid;place-items:center}
+  .steps b{display:block;font-size:14.5px;line-height:1.4}
+  .steps .ev{display:inline-block;margin-top:3px;font-family:"JetBrains Mono",monospace;font-size:12px;line-height:1.5;color:var(--code-green);overflow-wrap:anywhere}
+  .proof{background:var(--code-bg);color:var(--code-ink);padding:16px;border-radius:16px;margin-top:12px;overflow:auto;border:1px solid #2E2620}
+  .proof code{white-space:pre-wrap;font-size:12.5px;color:var(--code-ink)}
+
+  /* lists */
+  ul{padding-left:20px;margin:12px 0 0}
+  li{margin:6px 0}
+  .how ol{margin:12px 0 0;padding-left:22px}
+  .how li{margin:9px 0}
+
+  /* trust */
+  .trust{display:grid;gap:12px;margin-top:18px}
+  @media(min-width:820px){.trust{grid-template-columns:1fr 1fr;align-items:start}}
+  .tcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+  .tcard h3{font-family:Manrope,"Noto Sans",sans-serif;font-size:15.5px;font-weight:800;margin:0 0 5px}
+  .tcard p{margin:0;font-size:14px;color:var(--ink-2)}
+  .tcard ul{margin:6px 0 0}
+  .tcard.wide{grid-column:1/-1}
+  .tcard.wide p{max-width:70em}
+
+  /* Q&A */
+  .qa{display:grid;gap:14px;margin-top:16px;max-width:70em}
+  .qa h3{font-family:Manrope,"Noto Sans",sans-serif;font-size:16.5px;font-weight:800;margin:0 0 3px}
+  .qa p{margin:0;color:var(--ink-2);font-size:15px}
+
+  .end{margin:40px 0 0;padding:20px 0 0;border-top:1px solid var(--line)}
+  .fine{margin-top:14px;color:var(--ink-3);font-size:12.5px;line-height:1.6}
+</style>
 </head>
 <body>
-<main>
-  <p class="owner-note"><strong>DRAFT — DO NOT PUBLISH YET.</strong> Replace <code>{{INTAKE_URL}}</code>, remove this note, and complete the owner checklist in <code>docs/AUDIT-LAUNCH.md</code>.</p>
-  <span class="badge">Fixed-scope incident diagnosis · No call required</span>
+
+<div class="top"><div class="wrap top-in"><b>ISKRA</b><span>AGENT REPLAY &amp; DELIVERY AUDIT</span><span class="sep"></span><span class="top-meta">NO CALL REQUIRED</span></div></div>
+
+<div class="wrap hero">
+  <!-- Owner launch gates: (1) live intake form, (2) confirmed payment path,
+       (3) completed four-hour sample-redelivery rehearsal. Keep DRAFT and
+       noindex,nofollow until all three pass. -->
+  <p class="draft" role="note"><strong>DRAFT — DO NOT PUBLISH YET.</strong> Complete the intake form, payment path, and 4-hour rehearsal before launch.</p>
+
+  <span class="badge"><span class="dot"></span>Fixed-scope incident diagnosis · No call required</span>
   <h1>Did your agent run twice—or just say it was done?</h1>
-  <p class="price">One incident. One reproduction. One deterministic check. Evidence you can rerun.</p>
-  <p class="muted">The <strong>Agent Replay &amp; Delivery Audit</strong> investigates one reproducible restart duplicate-execution or duplicate-delivery incident. You get a state/authority map, a minimal fixture, a non-LLM pass/fail check, and a short evidence bundle—not a generic dashboard or a sales pitch for a new agent platform.</p>
+  <p class="claim">One incident. One reproduction. One deterministic check. <em>Evidence you can rerun.</em></p>
+
   <div class="ctas">
-    <a class="btn primary" href="{{INTAKE_URL}}">Start the 10-question intake</a>
-    <a class="btn secondary" href="sample.html">Inspect the synthetic sample</a>
-  </div>
-  <p><strong>Validation offer: $49 for the first three qualifying incidents.</strong><br><span class="muted small">The name and price are unvalidated hypotheses. Scope must be confirmed before payment. Target delivery is within 48 hours after usable evidence and payment are received.</span></p>
-
-  <h2>What you receive</h2>
-  <div class="grid">
-    <section class="card"><h3>1. State &amp; authority map</h3><p>Which component owns the Run, Session, tool effect, Delivery, retry, and recovery decision—and where their states diverge.</p></section>
-    <section class="card"><h3>2. Minimal reproduction</h3><p>A sanitized fixture for one restart duplicate-execution or duplicate-delivery incident. No broad environment rebuild.</p></section>
-    <section class="card"><h3>3. Deterministic check</h3><p>A rerunnable non-LLM pass/fail assertion for the agreed incident behavior. The model does not grade its own completion claim.</p></section>
-    <section class="card"><h3>4. Evidence bundle</h3><p>Observed facts, unresolved unknowns, a short remediation recommendation, and the exact commands needed to reproduce the result.</p></section>
+    <a class="btn btn-primary" href="{{INTAKE_URL}}">Start the 10-question intake</a>
+    <a class="btn btn-ghost" href="sample.html">Inspect the synthetic sample</a>
   </div>
 
-  <h2>See the sample before you decide</h2>
-  <p>The public sample simulates an interrupted two-chunk delivery. The original Delivery ends with one <code>sent</code> chunk and one unresolved <code>unknown</code>. Restart performs no automatic model replay or original-Delivery retry. Only an explicit <code>/result</code> creates a separate Delivery with new message ids.</p>
-  <div class="proof"><code>node docs/audit/replay-delivery/check.mjs
+  <div class="terms">
+    <div class="row"><span class="k">Validation offer</span><span class="price">$49</span><span class="hyp">Hypothesis</span></div>
+    <p class="what">for the first three qualifying incidents. The name and price are unvalidated hypotheses. Scope must be confirmed before payment.</p>
+    <p class="what"><span class="k">Target delivery</span> is within <b class="when">48 hours</b> after usable evidence and payment are received.</p>
+  </div>
+
+  <p class="sub">The <b>Agent Replay &amp; Delivery Audit</b> investigates one reproducible restart duplicate-execution or duplicate-delivery incident. You get a state/authority map, a minimal fixture, a non-LLM pass/fail check, and a short evidence bundle—not a generic dashboard or a sales pitch for a new agent platform.</p>
+</div>
+
+<section id="receive">
+  <div class="wrap">
+    <span class="sec-tag">SCOPE</span>
+    <h2>What you receive</h2>
+    <div class="strip">
+      <article class="dcard"><span class="num">01</span><h3>State &amp; authority map</h3><p>Which component owns the Run, Session, tool effect, Delivery, retry, and recovery decision—and where their states diverge.</p></article>
+      <article class="dcard"><span class="num">02</span><h3>Minimal reproduction</h3><p>A sanitized fixture for one restart duplicate-execution or duplicate-delivery incident. No broad environment rebuild.</p></article>
+      <article class="dcard"><span class="num">03</span><h3>Deterministic check</h3><p>A rerunnable non-LLM pass/fail assertion for the agreed incident behavior. The model does not grade its own completion claim.</p></article>
+      <article class="dcard"><span class="num">04</span><h3>Evidence bundle</h3><p>Observed facts, unresolved unknowns, a short remediation recommendation, and the exact commands needed to reproduce the result.</p></article>
+    </div>
+  </div>
+</section>
+
+<section id="sample">
+  <div class="wrap">
+    <span class="sec-tag">SYNTHETIC PREVIEW</span>
+    <h2>See the sample before you decide</h2>
+    <p class="lede">The public sample simulates an interrupted two-chunk delivery. The original Delivery ends with one <code>sent</code> chunk and one unresolved <code>unknown</code>. Restart performs no automatic model replay or original-Delivery retry. Only an explicit <code>/result</code> creates a separate Delivery with new message ids.</p>
+
+    <div class="preview" aria-label="Documented synthetic scenario">
+      <div class="cap">SYNTHETIC SAMPLE · INTERRUPTED TWO-CHUNK DELIVERY</div>
+      <ol class="steps">
+        <li><span class="sn">1</span><div><b>Run 22 completes</b><span class="ev">Two answer chunks exist</span></div></li>
+        <li><span class="sn">2</span><div><b>Delivery 6 is interrupted</b><span class="ev">Chunk 0: sent · Chunk 1: pending</span></div></li>
+        <li><span class="sn">3</span><div><b>Restart</b><span class="ev">Chunk 1: unknown · 0 model calls · 0 original-Delivery retries</span></div></li>
+        <li><span class="sn">4</span><div><b>Explicit <code>/result 22</code></b><span class="ev">Separate Delivery 7 · the original unknown stays unresolved</span></div></li>
+      </ol>
+    </div>
+
+    <div class="proof"><code>node docs/audit/replay-delivery/check.mjs
 # state: PASS · 8 checks · 0 failed
 
 cargo test restart_maps_pending_to_unknown_without_sending_or_rerunning
 cargo test --test session_cli cli_restart_does_not_reprint_or_resend_completed_work
 cargo test --test session_cli cli_result_prints_a_stored_answer_without_a_model_call
 # 3 focused Rust tests · 3 passed · 0 failed</code></div>
-  <p><a href="sample.html">Open the full synthetic audit</a> or <a href="replay-delivery/README.md">read the fixture and verification boundary</a>.</p>
+    <p class="lede"><a href="sample.html">Open the full synthetic audit</a> or <a href="replay-delivery/README.md">read the fixture and verification boundary</a>.</p>
+  </div>
+</section>
 
-  <h2>How it works</h2>
-  <ol>
-    <li><strong>Intake:</strong> answer ten asynchronous questions. Do not upload secrets or raw customer data.</li>
-    <li><strong>Scope confirmation:</strong> if the incident fits the fixed scope, you receive the exact deliverables, data-retention terms, and payment instructions. Do not pay before confirmation.</li>
-    <li><strong>Evidence:</strong> after usable sanitized evidence and payment, the target is one evidence bundle within 48 hours.</li>
-  </ol>
+<section id="how" class="how">
+  <div class="wrap">
+    <span class="sec-tag">PROCESS</span>
+    <h2>How it works</h2>
+    <ol>
+      <li><strong>Intake:</strong> answer ten asynchronous questions. Do not upload secrets or raw customer data.</li>
+      <li><strong>Scope confirmation:</strong> if the incident fits the fixed scope, you receive the exact deliverables, data-retention terms, and payment instructions. Do not pay before confirmation.</li>
+      <li><strong>Evidence:</strong> after usable sanitized evidence and payment, the target is one evidence bundle within 48 hours.</li>
+    </ol>
+  </div>
+</section>
 
-  <h2>What is needed</h2>
-  <ul>
-    <li>One incident—not a list of general agent concerns.</li>
-    <li>Runtime, agent, model/CLI, OS, and version details.</li>
-    <li>A restart/reconnect/update timeline and the expected versus actual result.</li>
-    <li>Sanitized logs or Run/Session/Delivery identifiers and a minimal reproduction path.</li>
-  </ul>
+<section id="needs">
+  <div class="wrap">
+    <span class="sec-tag">INPUT</span>
+    <h2>What is needed</h2>
+    <ul>
+      <li>One incident—not a list of general agent concerns.</li>
+      <li>Runtime, agent, model/CLI, OS, and version details.</li>
+      <li>A restart/reconnect/update timeline and the expected versus actual result.</li>
+      <li>Sanitized logs or Run/Session/Delivery identifiers and a minimal reproduction path.</li>
+    </ul>
+  </div>
+</section>
 
-  <h2>What is not included</h2>
-  <ul>
-    <li>A full security, permission, cost, or provider-migration audit</li>
-    <li>General token optimization or model selection</li>
-    <li>Several workflows, custom connectors, private forks, or ongoing consulting</li>
-    <li>A guarantee of exactly-once behavior or a fix for every agent runtime</li>
-    <li>Managed hosting, a required Iskra installation, or a scheduled call</li>
-  </ul>
+<section id="trust">
+  <div class="wrap">
+    <span class="sec-tag">BOUNDARIES</span>
+    <h2>Trust &amp; boundaries</h2>
+    <div class="trust">
+      <div class="tcard">
+        <h3>Synthetic sample</h3>
+        <p>The timeline above is a documented synthetic scenario, not a customer incident, raw Telegram evidence, or a Herdr compatibility claim.</p>
+      </div>
+      <div class="tcard">
+        <h3>No install. No call.</h3>
+        <p>No Iskra installation, runtime migration, or scheduled call is required.</p>
+      </div>
+      <div class="tcard wide">
+        <h3>Data handling</h3>
+        <p>Share only synthetic or redacted material. Never send API keys, tokens, passwords, cookies, private credentials, or unnecessary personal data. The intake does not request file uploads. If accepted, evidence handling and deletion timing are confirmed before any sanitized logs are exchanged. Public case studies require separate explicit permission.</p>
+      </div>
+      <div class="tcard wide">
+        <h3>What is not included</h3>
+        <ul>
+          <li>A full security, permission, cost, or provider-migration audit</li>
+          <li>General token optimization or model selection</li>
+          <li>Several workflows, custom connectors, private forks, or ongoing consulting</li>
+          <li>A guarantee of exactly-once behavior or a fix for every agent runtime</li>
+          <li>Managed hosting, a required Iskra installation, or a scheduled call</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
 
-  <h2>Data handling</h2>
-  <p>Share only synthetic or redacted material. Never send API keys, tokens, passwords, cookies, private credentials, or unnecessary personal data. The intake does not request file uploads. If accepted, evidence handling and deletion timing are confirmed before any sanitized logs are exchanged. Public case studies require separate explicit permission.</p>
+<section id="questions">
+  <div class="wrap">
+    <span class="sec-tag">FAQ</span>
+    <h2>Questions</h2>
+    <div class="qa">
+      <div><h3>Do I need to install Iskra or replace Herdr?</h3><p>No. This is a fixed-scope diagnosis delivered through the existing Iskra audit path. It is not a runtime migration offer. Herdr-specific compatibility is claimed only after the relevant incident is actually reproduced.</p></div>
+      <div><h3>Is this a full agent security audit?</h3><p>No. It covers one restart duplicate-execution or duplicate-delivery incident only.</p></div>
+      <div><h3>What if the incident cannot be reproduced?</h3><p>The report distinguishes observed facts, failed reproduction attempts, and unresolved unknowns. It does not turn an unconfirmed report into a claimed fix.</p></div>
+    </div>
 
-  <h2>Questions</h2>
-  <h3>Do I need to install Iskra or replace Herdr?</h3>
-  <p>No. This is a fixed-scope diagnosis delivered through the existing Iskra audit path. It is not a runtime migration offer. Herdr-specific compatibility is claimed only after the relevant incident is actually reproduced.</p>
-  <h3>Is this a full agent security audit?</h3>
-  <p>No. It covers one restart duplicate-execution or duplicate-delivery incident only.</p>
-  <h3>What if the incident cannot be reproduced?</h3>
-  <p>The report distinguishes observed facts, failed reproduction attempts, and unresolved unknowns. It does not turn an unconfirmed report into a claimed fix.</p>
+    <div class="end">
+      <div class="ctas" style="margin-top:0"><a class="btn btn-primary" href="{{INTAKE_URL}}">Describe one incident</a></div>
+      <p class="fine">Iskra · Agent Replay &amp; Delivery Audit · Fixed scope, independent checks, no invisible replay. This page is a demand-validation offer, not a claim of recurring revenue, product-market fit, or universal runtime safety.</p>
+    </div>
+  </div>
+</section>
 
-  <div class="ctas"><a class="btn primary" href="{{INTAKE_URL}}">Describe one incident</a></div>
-  <p class="fine">Iskra · Agent Replay &amp; Delivery Audit · Fixed scope, independent checks, no invisible replay. This page is a demand-validation offer, not a claim of recurring revenue, product-market fit, or universal runtime safety.</p>
-</main>
 </body>
 </html>

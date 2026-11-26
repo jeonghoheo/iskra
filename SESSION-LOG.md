@@ -1990,3 +1990,37 @@ Status: **docs only; no code change; no install, no code audit, no bake-off.**
 ### Next
 
 Keep the seven comparison dimensions unmeasured until an owner-approved bake-off. No commit or push.
+
+## Audit offer launch — scope B+ documentation pass (2026-11-26)
+
+Status: **documentation and design only; page checks passed; not committed or pushed; no Core code, dependency, or schema change.**
+
+### What changed
+
+- `docs/index.html`: `rmP` and `prog2Meta` updated in EN/KO/RU and the static fallback; `registry.rs`, `run.rs`, `headless.rs`, `idempotency.rs` inserted after `loop_.rs` in `codeTree` (EN/KO/RU + static fallback) with the existing `<span class="cm">` comment formatting; one `axum` pill added to the BUILT WITH strip. No dedicated headless section.
+- `docs/audit/index.html`: rewritten as one static file with inline CSS matching the homepage tokens (Manrope/Noto Sans + JetBrains Mono, ember palette, 18px radius, shared shadow, 1160px wrap). No scripts, frameworks, analytics, or telemetry. Four deliverables became a numbered strip with unchanged claims. Added the four-step synthetic preview, the `Trust & boundaries` block (Synthetic sample, No install. No call., Data handling, What is not included), and the owner-gate comment. Q&A and fine print preserved.
+- The visible banner is now `DRAFT — DO NOT PUBLISH YET. Complete the intake form, payment path, and 4-hour rehearsal before launch.`; `noindex,nofollow` is kept; only the two intake CTA hrefs contain `{{INTAKE_URL}}`.
+- Records: `SESSION.md` card, this entry, personal-memory `DECISIONS.md` (2026-11-26 scope B+), personal-memory `NOW.md` priority 1.
+
+### Commands and actual results
+
+- `rg -n '\{\{[^}]+\}\}' docs/audit/index.html` → 2 matches, both `{{INTAKE_URL}}` (lines 145, 265).
+- `node docs/audit/replay-delivery/check.mjs` → `"state": "PASS"`, `"passed": 8`, `"failed": 0`.
+- Headless Chrome via CDP, `Emulation.setDeviceMetricsOverride`, `document.fonts.ready` awaited, `prefers-color-scheme` light and dark:
+  - 360×640: `scrollWidth` 360, no horizontal overflow; `DRAFT` 71–140, h1 200–256, claim 265–326, primary CTA 338–386, sample link 394–442, terms block 454–607, `$49` 465–492, `HYPOTHESIS` 475–494, `48 hours` 555–577 — all inside the 640px first viewport.
+  - 360×780: identical layout, all required items visible.
+  - 768×900 and 1280×900: no horizontal overflow; all required hero items visible; section content aligned to the 1160px wrap.
+- `python3 -m http.server 8123 --directory docs`: `/audit/`, `/audit/sample.html`, and `/audit/replay-delivery/README.md` all returned HTTP 200.
+- Original-claim check: 45 sentences from `git show HEAD:docs/audit/index.html` compared against the new page; the only unmatched strings are the replaced DRAFT banner, its removed placeholder instruction, and text split across new markup. Targeted string checks for the five out-of-scope items, Data handling, all three Q&A answers, the h1, the supporting paragraph, and the two Trust items: 14/14 present; synthetic-preview strings 9/9 present.
+- HTML tag-balance parse of `docs/audit/index.html`: no unclosed tags, no mismatches.
+- `git status --short` → only `SESSION.md`, `docs/audit/index.html`, `docs/index.html` modified. `git diff --check` → clean.
+
+### Unverified
+
+- No real-device or Safari/iOS rendering check; only headless Chrome emulation.
+- No `cargo test` rerun in this session because no code changed; the 291 passed / 0 failed figure remains the `b8de139` baseline.
+- Intake URL, payment path, and the four-hour sample-redelivery rehearsal are still incomplete, so launch stays blocked.
+
+### Next action
+
+Owner reviews the documentation diff and separately approves or rejects commit/push. External launch remains blocked until the intake form, payment path, and four-hour sample-redelivery rehearsal are complete. No Core code action is approved, the dedicated headless homepage section remains deferred, and watchpost stays on hold.

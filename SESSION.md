@@ -1745,3 +1745,41 @@ Status: **complete; automated verification passed; not committed or pushed.**
 ### Next action
 
 `headless/v1` is complete and frozen (owner decision 2026-11-26). G1–G3 are committed as `d53b77f` and pushed; automated verification and the real-provider external-client smoke both passed. Persisted mechanical evidence (exit code, timestamps, artifacts, delivery identity) is deferred until a concrete external client is blocked without it, and would need a separately approved schema-change card. Non-loopback binds and Telegram delivery remain out of scope. Next: choose the next Iskra track — the audit sales track's resume condition (headless G1–G3 complete) is now met; headless demand validation is the alternative. watchpost stays on hold by owner instruction.
+
+---
+
+## Audit offer launch — scope B+ (2026-11-26)
+
+Status: **documentation and design work complete; automated page checks passed; not committed or pushed.** The owner approved scope B+ before this session: a homepage accuracy patch, an audit-page design pass, and launch preparation. No Core code, dependency, schema, or behavior change was made. Source directive: the approved `scope B+` handoff (owner plan file, 2026-11-26).
+
+### Outcome and boundary
+
+The homepage now states the verified v1/v2/headless/v1 position instead of the outdated "next business step" wording, and it no longer omits the headless/v1 source files. The fixed-scope Agent Replay & Delivery Audit page now uses the homepage design language while keeping every existing claim, the synthetic sample framing, `noindex,nofollow`, the DRAFT banner, and both gated intake links. A dedicated headless marketing section was deliberately not added.
+
+External launch remains gated on three owner items: a live intake form, a confirmed payment path, and a completed four-hour sample-redelivery rehearsal.
+
+### What changed
+
+- `docs/index.html`: `rmP` and `prog2Meta` updated in EN/KO/RU and the static fallback; `registry.rs`, `run.rs`, `headless.rs`, and `idempotency.rs` added to `codeTree` in EN/KO/RU and the static fallback; one `axum` stack pill added. No new marketing section.
+- `docs/audit/index.html`: rewritten with the homepage token set (Manrope/Noto Sans + JetBrains Mono, ember palette, 18px radius, shared shadow, 1160px wrap) and inline CSS only — no scripts, frameworks, analytics, or telemetry. The four deliverables became a numbered strip with unchanged claims; a compact four-step synthetic preview and a `Trust & boundaries` block were added; the existing Data handling paragraph and all five out-of-scope items moved into that block unchanged; the Q&A and fine print are preserved.
+- The visible DRAFT line is now `DRAFT — DO NOT PUBLISH YET. Complete the intake form, payment path, and 4-hour rehearsal before launch.`, with an owner-gate HTML comment beside it. Only the two intake CTA `href`s still contain `{{INTAKE_URL}}`.
+- Records: this card, `SESSION-LOG.md`, personal-memory `DECISIONS.md`, and personal-memory `NOW.md`.
+
+### Verification performed
+
+- `rg '\{\{[^}]+\}\}' docs/audit/index.html` → exactly 2 matches, both `{{INTAKE_URL}}` CTA hrefs (lines 145 and 265).
+- Every headline/claim sentence from the previous audit page is still present (sentence-level comparison, 45 original sentences; the only differences are the replaced DRAFT banner and its placeholder instruction).
+- 360×640, 360×780, 768×900, and 1280×900 rendered through headless Chrome DevTools emulation with fonts loaded: no horizontal overflow, and at 360×640 the claim line, `$49` price with the `HYPOTHESIS` label, the 48-hour target, the primary intake CTA, and the sample link are all inside the first viewport (terms block bottom 607px of 640px).
+- Light and dark color schemes rendered; link targets `sample.html` and `replay-delivery/README.md` returned HTTP 200 from `python3 -m http.server`.
+- `node docs/audit/replay-delivery/check.mjs` → `state: PASS`, `passed: 8`, `failed: 0`.
+- HTML tag balance check → no unclosed tags, no mismatches.
+
+### Unverified
+
+- No real-device browser check beyond headless Chrome emulation; no Safari/iOS rendering check.
+- No automated test rerun was needed for a docs-only change, and none was run in this session; the recorded 291 passed / 0 failed baseline is from `b8de139`.
+- Intake, payment, and the four-hour rehearsal are still incomplete by design, so the page must stay `noindex,nofollow` and unpublished.
+
+### Next action
+
+Owner reviews the documentation diff and separately approves or rejects commit/push. External launch remains blocked until the intake form, payment path, and four-hour sample-redelivery rehearsal are complete. No Core code action is approved, the dedicated headless homepage section remains deferred, and watchpost stays on hold.
