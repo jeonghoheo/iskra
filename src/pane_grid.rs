@@ -110,7 +110,10 @@ impl Snapshot {
 }
 
 /// Replaceable terminal-grid backend.
-pub trait PaneGrid {
+///
+/// `Send` is required because a pane grid lives inside the Core-owned pane host,
+/// which moves across async tasks.
+pub trait PaneGrid: Send {
     /// Feed raw terminal bytes. Partial UTF-8 sequences may span calls.
     fn process(&mut self, bytes: &[u8]);
     /// Resize the screen; the pane host must ask the application to redraw.
@@ -128,6 +131,36 @@ pub trait PaneGrid {
 /// Construct the production backend. A later card may swap this factory.
 pub fn new_grid(rows: u16, cols: u16, scrollback: usize) -> Box<dyn PaneGrid> {
     Box::new(Vt100Grid::new(rows, cols, scrollback))
+}
+
+/// `vt100`'s per-cell allocation, used by the pane-host memory model.
+pub const BYTES_PER_CELL: usize = 32;
+/// Hard scrollback budget per pane.
+pub const SCROLLBACK_BUDGET: usize = 1024 * 1024;
+/// Hard modeled pane budget: visible cells plus scrollback.
+pub const PANE_MODEL_BUDGET: usize = 2 * 1024 * 1024;
+
+/// Bytes the visible screen is modeled to occupy.
+pub fn model_screen_bytes(rows: u16, cols: u16) -> usize {
+    (rows as usize)
+        .saturating_mul(cols as usize)
+        .saturating_mul(BYTES_PER_CELL)
+}
+
+/// True when the screen alone fits the modeled pane cap.
+pub fn model_fits(rows: u16, cols: u16) -> bool {
+    model_screen_bytes(rows, cols) <= PANE_MODEL_BUDGET
+}
+
+/// Scrollback rows that fit the 2 MiB pane model with a 1 MiB cap:
+/// `min(1 MiB, 2 MiB - rows*cols*32) / (cols*32)`, floored, at least zero.
+pub fn scrollback_rows(rows: u16, cols: u16) -> usize {
+    let row_bytes = (cols as usize).saturating_mul(BYTES_PER_CELL);
+    if row_bytes == 0 {
+        return 0;
+    }
+    let available = PANE_MODEL_BUDGET.saturating_sub(model_screen_bytes(rows, cols));
+    available.min(SCROLLBACK_BUDGET) / row_bytes
 }
 
 #[derive(Default)]
@@ -486,6 +519,21 @@ mod tests {
         let snap = grid.snapshot();
         assert_eq!((snap.rows, snap.cols), (10, 40));
         assert!(snap.lines.iter().all(|line| line.chars().count() <= 40));
+    }
+
+    #[test]
+    fn scrollback_budget_matches_the_pane_model() {
+        assert_eq!(scrollback_rows(24, 80), 409);
+        assert_eq!(scrollback_rows(200, 200), 127);
+        let scrollback_24x80 = scrollback_rows(24, 80) * 80 * BYTES_PER_CELL;
+        assert!(scrollback_24x80 <= SCROLLBACK_BUDGET);
+        assert!(scrollback_24x80 > SCROLLBACK_BUDGET - 80 * BYTES_PER_CELL);
+        assert!(model_screen_bytes(24, 80) + scrollback_24x80 <= PANE_MODEL_BUDGET);
+        let used_200x200 =
+            model_screen_bytes(200, 200) + scrollback_rows(200, 200) * 200 * BYTES_PER_CELL;
+        assert!(used_200x200 <= PANE_MODEL_BUDGET);
+        assert!(model_fits(200, 200));
+        assert!(!model_fits(400, 200));
     }
 
     #[test]

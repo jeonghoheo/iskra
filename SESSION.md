@@ -1874,4 +1874,123 @@ Status: **completed; automated verification passed; committed as `7705af2` and p
 
 ### Next after A
 
-A separate owner-approved card covers PTY lifecycle and the `empty → spawning → live → interrupted → finished` pane state. It must reuse `Core`/`RunStore` authority and must not add a second execution path.
+The card below is the next implementation step. It covers PTY lifecycle and the `empty → spawning → live → interrupted → finished` pane state, reuses Core ownership, and adds no second execution path. A pane surface (layout, input rendering, commands) remains a later card.
+
+---
+
+## Pane lifecycle and state (B) — PTY host (2026-11-27)
+
+Status: **completed 2026-11-27; automated verification passed; not committed.** The owner approved the sequence in card A. The binary now owns a bounded pane host and still spawns no PTY unless `PaneHost::start` is called; no command or surface calls it yet. Results below.
+
+### Task card
+
+- **Outcome**: Core owns one bounded pane host with a fixed-shell PTY, byte I/O, resize, grid snapshot/OSC tap, explicit stop, and a persisted pane-slot state machine. Persisted `spawning`/`live` slots become `interrupted` on startup with zero process spawn, zero model calls, and zero tool calls. CLI, Telegram, Runs, Session, Delivery, and registry behavior stay unchanged; no pane surface, command, or flag is added.
+- **Spec**: `docs/research/herdr-analysis-2026-11-27.md` §2 (pane states, failure modes) and §10 (teardown hazard, scrollback/fd evidence); `docs/ARCHITECTURE.md` invariants 3, 4, 7, 9 and §5/§12. `src/pane_grid.rs` is the landed seam.
+- **Files**: allowed: new `src/pty.rs`, new `src/pane_host.rs`, `src/pane_grid.rs` only for a `Send` bound or scrollback-budget helper, `src/run.rs` only for Core ownership/recovery/accessor, `src/main.rs` only for module registration, related inline tests, `SESSION.md`, `SESSION-LOG.md`, and `docs/ARCHITECTURE.md` only for the implementation-status sentence. Forbidden: `channel.rs`, `locale.rs`, CLI/Telegram behavior, new commands/flags, pane layout/rendering surface, model/tool calls from a pane, a second queue/scheduler/execution authority, `runs.json`/`session/v1`/delivery/registry schema changes, personal-memory files, and any new dependency (`libc` and `vt100` are already direct; 9 must stay 9).
+- **Current**: `master` @ `6ce9783` (code); this card's preparation changes only `SESSION.md`/`SESSION-LOG.md`. `cargo test` **300 passed / 0 failed** (288 unit + 12 real CLI) on 2026-11-27; stripped **7,686,608 B = 7.33 MiB**; dummy-config CLI idle RSS **4,416 KB = 4.31 MiB**; **9 direct dependencies**. These are the card's baseline, not measurements to repeat before starting.
+- **Stop**: stop and record the actual blocker if a new dependency, existing-store schema change, second execution authority, or owner input becomes necessary; if PTY teardown cannot be bounded without an unbounded wait or `mem::forget`; if the 2 MiB pane model cannot hold at the tested dimensions; or after two failed approaches.
+- **Live**: no Telegram or provider check. Automated PTY tests only; real vim/top/Korean visual checks and the pane surface remain outside.
+
+### State and transitions (write before coding)
+
+`empty` is the in-memory slot before its first persisted record; it is not written to disk.
+
+| From | To | Trigger | Persist |
+|---|---|---|---|
+| `empty` / `interrupted` / `finished` | `spawning` | explicit `start` accepted | `spawning` before PTY creation |
+| `spawning` | `live` | master fd + child established | `live` before returning |
+| `spawning` | pre-start state (`interrupted`/`finished`, or no record for a new slot) | PTY creation failed | restore the slot after closing fds; never leave a live record |
+| `live` | `finished` | child exit observed or explicit stop reaped | terminal state + exit code when known |
+| `live` | `interrupted` | explicit stop could not reap within 2 s | `interrupted`, log timeout |
+| `spawning` / `live` | `interrupted` | store open / restart recovery | one atomic recovery write |
+| `interrupted` / `finished` | `spawning` | explicit `start` only | `spawning` before PTY creation |
+
+Forbidden: `empty → live`, `spawning → finished` for a started process, `interrupted → live`, `finished → live`, any transition after the store is poisoned, and any automatic start after open. A process exit is never replayed; a restarted shell is a new explicit owner action.
+
+### Storage and PTY contract
+
+1. **Pane store**: `memory/panes.json`, strict `version: 1`, `next_pane_id`, and at most 8 records sorted by id. A record has `id`, `state` (`spawning|live|interrupted|finished`), `rows`, `cols`, and `exit_code` (`null` unless `finished` and known). Unknown fields/versions, invalid UTF-8/JSON, duplicate ids, ids `>= next_pane_id`, out-of-order records, `empty` on disk, dimensions outside `1..=200`, or more than 8 records fail closed: preserve the original bytes, poison pane operations, and never rewrite or reset.
+2. **Atomicity and privacy**: writes reuse `memory::atomic_write` (temp file + rename, `0600` on Unix). A missing file is an empty host and creates nothing. Recovery `spawning|live → interrupted` is one atomic write. No screen text, input, output, environment, or credential is stored; logs contain ids, states, exit codes, and error categories only.
+3. **Write failure**: if the initial `spawning` write fails, return a storage error and spawn nothing. If a later state write fails, poison further starts, terminate/close the affected live pane, keep the last correct persisted state, and never report a clean transition. A pane store failure does not stop CLI/Telegram Run startup; pane operations report unavailable.
+4. **PTY**: `main` Agent only (per-Agent panes are later). Fixed program `/bin/bash --norc --noprofile` (absolute path, argv array, no shell string), cwd = `main` Agent's canonical `workspace/`, environment allowlist only (`TERM=xterm-256color`, `LANG`/`LC_ALL=en_US.UTF-8`, fixed `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, inherited `HOME` only when present). `openpty`, `setsid`, `TIOCSCTTY`; master fd non-blocking and `FD_CLOEXEC`; resize via `TIOCSWINSZ`; input writes bounded; output reads non-blocking. Unknown program or missing `/bin/bash` fails before `live`.
+5. **Teardown**: drain, close the master, kill, and reap with a 2 s deadline. No unbounded `wait` and no `mem::forget`; on timeout close the fd, log `pane_stop_timeout`, and persist `interrupted`. Dropping the host never blocks and leaves persisted `live` for the next open to map to `interrupted`.
+6. **Budget**: at most 8 panes. `scrollback_rows(rows, cols)` uses 32 bytes/cell, a 1 MiB scrollback cap, and a 2 MiB modeled pane cap: `min(1 MiB, 2 MiB − rows*cols*32) / (cols*32)`, floor, at least 0. Resize is refused when the new dimensions would exceed the modeled cap. One master fd per pane.
+7. **Core ownership**: `Core` owns the pane host and loads it under the existing dispatcher lock before accepting work; `PaneHost::open` performs recovery. The pane host creates no Run, queue entry, model call, tool call, or delivery. A future pane surface that submits Iskra work must call the existing `Core` submit path; this card adds no such call. Expose one accessor for the later surface and use module-level `#![allow(dead_code)]` in `pane_host`/`pty` with a comment naming the surface card; no hidden debug flag.
+8. **Failure isolation**: a pane crash/exit affects only its slot. The host logs `pane_spawn`, `pane_exit`, `pane_interrupted`, `pane_store_error`, and `pane_stop_timeout`; it never logs bytes read from or written to the PTY.
+
+### Proof (acceptance criteria)
+
+Focused tests, then one full milestone pass:
+
+1. `cargo test pane_host` exits 0 with 0 failed and covers:
+   - the start path writes `spawning` before the PTY layer (proved by an initial-write failure spawning nothing) and `live` before returning; `printf 'PANE_READY\n'` appears in the grid snapshot;
+   - resize to 30×100 is reported by `stty size` and the snapshot size matches; a resize beyond the modeled 2 MiB cap is refused with dimensions unchanged;
+   - `exit 7` is observed, persisted as `finished` with exit code 7, and the slot can be started again only explicitly;
+   - explicit stop reaps and persists `finished`; a synthetic teardown timeout (state-level fault injection, no real hang) records `interrupted` and logs the timeout;
+   - environment canary set in the test process is absent inside the pane, and `pwd` equals the canonical workspace;
+   - Korean text keeps 2-cell alignment through the host snapshot; split output chunks are held across pumps;
+   - the 9th concurrent start is refused; terminal slots are reused only by explicit start;
+   - 24×80 and 200×200 model screen + scrollback within 2 MiB and the grid capacity matches `scrollback_rows`.
+2. Within the same `cargo test pane_host` run, store tests (names beginning `pane_store_`) cover: restart `spawning|live → interrupted` with zero spawn; a missing store is an empty host and creates no file; corrupt JSON/version/unknown field/duplicate id/out-of-range/cap preserve bytes and poison; `0600`; initial write failure spawns nothing; later write failure poisons further starts.
+3. `cargo test pty` exits 0 with 0 failed and covers: master fd has `FD_CLOEXEC`; invalid program fails without a child; bounded write timeout; EOF/exit is detected once.
+4. `cargo test run::` exits 0 with 0 failed; existing Run/Queue tests are unchanged, and a missing or invalid pane store does not block Core construction or a Run test.
+5. `cargo test` exits 0 with 0 failed; baseline 300 plus the new tests.
+6. `cargo fmt --all -- --check` exits 0; `rustfmt --edition 2024 --check src/pty.rs src/pane_host.rs src/pane_grid.rs src/run.rs src/main.rs` exits 0.
+7. `cargo clippy --all-targets` adds no warning beyond the recorded 4 pre-existing ones (`channel.rs:368`, `locale.rs:19`, `memory.rs:108`, `memory.rs:133`).
+8. `cargo build --release` has zero Iskra warnings; stripped binary ≤20 MB with the delta from 7,686,608 B recorded; dummy-config CLI idle RSS ≤30 MB; direct dependencies 9 ≤15.
+9. `git diff --check` exits 0; no file outside the allowed list changed; no PTY is spawned by `--cli` startup (missing pane store creates no `panes.json`).
+
+### Goal-mode contract
+
+```text
+Implement pane lifecycle and state (B) from SESSION.md and
+docs/research/herdr-analysis-2026-11-27.md §2/§10.
+Done when:
+- Core owns a bounded pane host: fixed-shell PTY, byte I/O, resize, snapshot/OSC
+  tap, explicit stop, and a strict version-1 memory/panes.json slot store.
+- spawning|live recover to interrupted at open with zero process/model/tool calls;
+  every allowed transition is tested and every forbidden transition is refused.
+- Pane store writes are atomic, private, strict, bounded, and fail closed; a write
+  failure spawns nothing or poisons further starts without a false clean state.
+- PTY uses an absolute argv, workspace cwd, environment allowlist, non-blocking
+  master with FD_CLOEXEC, TIOCSWINSZ resize, and a 2 s bounded teardown with no
+  unbounded wait or mem::forget.
+- No CLI/Telegram/command/flag/surface change, no new dependency, no second
+  execution authority, and no existing schema change.
+- cargo test exits 0 with 0 failed (baseline 300 plus new tests); changed files
+  pass rustfmt; clippy adds no warning; release build has zero Iskra warnings;
+  budgets hold: stripped <=20 MB (record delta), idle RSS <=30 MB, deps 9 <=15.
+Scope: PTY lifecycle, pane state/store, Core ownership, and automated tests only.
+Exclude pane layout/rendering/commands, model/tool input from panes, new
+dependencies, existing-store schema changes, and personal memory.
+Loop: run focused pane_host/pane_store/pty/run tests while iterating; run the
+full suite, fmt, clippy, release build, and budgets once at the end.
+Stop: on a required dependency/schema/second authority/owner input, an unbounded
+teardown, a 2 MiB model overrun, or two failed approaches, record the blocker.
+Live: do not perform Telegram, provider, or real pane visual checks.
+Do not commit or push.
+```
+
+### Record on completion
+
+- Append `SESSION.md` Result and an English `SESSION-LOG.md` entry with changed files, actual commands/counts, budgets, and unverified items.
+- State explicitly that no pane surface exists yet and that no Telegram/provider live check was performed.
+- No commit or push without separate owner approval.
+
+### Result (2026-11-27)
+
+Status: **completed; automated verification passed; not committed or pushed.**
+
+- Changed: new `src/pty.rs` and `src/pane_host.rs`; `src/pane_grid.rs` (`PaneGrid: Send`, `scrollback_rows`, model constants); `src/run.rs` (Core owns `PaneHost`, opens it under the dispatcher lock before accepting work, exposes the accessor); `src/main.rs` (module registration only); `SESSION.md`/`SESSION-LOG.md`.
+- `memory/panes.json` is a strict `version: 1` slot store (`next_pane_id`, at most 8 sorted records, dimensions `1..=200`, exit code only on `finished`). Missing file → empty host, no file created. Invalid UTF-8/JSON, unknown version/field, duplicate/out-of-order/`>= next_pane_id` ids, out-of-range dimensions, non-finished exit codes, and more than 8 records preserve the original bytes and poison pane operations. Writes reuse `memory::atomic_write` (`0600`).
+- `spawning|live → interrupted` recovery happens in one atomic write at `PaneHost::open` with zero spawns. `start` persists `spawning` before `openpty`; a failed initial write spawns nothing. PTY creation failure restores the pre-start slot (or removes a new record). `live` is persisted before the start returns; a failed `live` write terminates the child. Later write failures poison further starts, and resize failure terminates the affected pane.
+- PTY: `/bin/bash --norc --noprofile` with an absolute argv, canonical `main` workspace cwd, allowlist-only environment (`TERM`, `LANG`, `LC_ALL`, fixed `PATH`, inherited `HOME` only), `openpty` + `setsid` + `TIOCSCTTY`, non-blocking master with `FD_CLOEXEC`, `TIOCSWINSZ` resize, bounded writes, non-blocking reads, and a 2 s drain/close/kill/reap teardown. No unbounded wait, no `mem::forget`.
+- Budget model: `scrollback_rows` = `min(1 MiB, 2 MiB − rows*cols*32) / (cols*32)`; 24×80 → 409 rows, 200×200 → 127 rows; resize refuses a screen above 2 MiB. At most 8 live panes.
+- Focused: `cargo test pane_host::` **20 passed, 0 failed**; `cargo test pty::tests` **6 passed, 0 failed**; `cargo test pane_grid::` **10 passed, 0 failed**; `cargo test run::` **28 passed, 0 failed**.
+- Full: `cargo test` **316 unit + 12 real CLI = 328 passed, 0 failed** (baseline 300). `cargo fmt --all -- --check` exit 0; changed files pass `rustfmt --edition 2024 --check`.
+- `cargo clippy --all-targets` keeps the 4 recorded pre-existing warnings (`channel.rs:368`, `locale.rs:19`, `memory.rs:108`, `memory.rs:133`); none in new code.
+- `cargo build --release`: zero Iskra warnings; only the existing transitive `proc-macro-error2` note.
+- Budgets: stripped **7,719,952 B = 7.36 MiB** (delta **+33,344 B = 32.6 KiB** over 7,686,608 B); dummy-config `--cli` idle RSS **4,448 KB = 4.34 MiB**; direct dependencies **9**. All hard limits pass.
+- `git diff --check` exit 0. The isolated `--cli` startup created `memory/` and `workspace/` but **no `panes.json`** and no `runs.json`, so startup spawns no PTY.
+- `resize(400, 200)` is refused by the 2 MiB model cap before the dimension limit, with the recorded size unchanged. The write-timeout test uses the deterministic zero-deadline seam because macOS accepted a 64 MiB non-blocking PTY write without back-pressure; the 150 ms large-write path is asserted only as bounded.
+- Unverified: no pane layout/rendering surface, no pane command or flag, no model/tool input from a pane, no real vim/top/Korean visual check, and no Telegram/provider check. Per-Agent panes and PTY teardown under orphaned processes remain later work. No commit or push was performed.

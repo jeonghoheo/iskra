@@ -2157,3 +2157,32 @@ Status: **complete; automated verification passed; committed as `7705af2` and pu
 - PTY lifecycle, pane state transitions, real pane rendering, scrollback under an actual application, and the production used-code size delta.
 - No owner-run Telegram/provider check was performed; none belongs to this card.
 - Committed as `7705af2` and pushed to `origin/master` on 2026-11-27.
+
+## Pane lifecycle card prepared (2026-11-27)
+
+Status: **card prepared; no code, dependency, schema, test, or runtime change.**
+
+- Added `Pane lifecycle and state (B) — PTY host` to `SESSION.md`: outcome, state/transition table, `memory/panes.json` schema and bounds, PTY/environment/teardown contract, Core ownership, focused and milestone proof, stop conditions, and the Goal-mode contract.
+- The card keeps the pane surface (layout, rendering, commands, model/tool input) out of scope. It requires 9 direct dependencies (no new crate), at most 8 panes, a 2 s bounded teardown, and a 2 MiB modeled per-pane budget.
+- Baseline recorded in the card: `master` @ `6ce9783`, 300 passed / 0 failed (288 unit + 12 real CLI), stripped 7,686,608 B, dummy-config CLI idle RSS 4,416 KB, 9 direct dependencies.
+- No test or build was run for this preparation; the recorded baseline is from the Pane seam result. No Telegram/provider or pane visual check was performed.
+- Next: a new Goal session executes the card. No owner input is required to finish it. No commit or push.
+
+## Pane lifecycle and state (B) — PTY host (2026-11-27)
+
+Status: **complete; automated verification passed; not committed or pushed.**
+
+- Changed: new `src/pty.rs` (PTY ownership) and `src/pane_host.rs` (slot store + host); `src/pane_grid.rs` (`PaneGrid: Send`, `scrollback_rows`, 32 B/cell and 1/2 MiB constants); `src/run.rs` (Core owns `PaneHost`, opens it under the dispatcher lock, exposes the accessor); `src/main.rs` (module registration only); `SESSION.md`/`SESSION-LOG.md`.
+- `memory/panes.json` is a strict version-1 projection: `next_pane_id`, at most 8 records sorted by id, `spawning|live|interrupted|finished`, dimensions `1..=200`, `exit_code` only on `finished`. A missing file is an empty host and creates nothing. Invalid UTF-8/JSON, unknown version or field, duplicate/out-of-order ids, ids `>= next_pane_id`, out-of-range dimensions, a non-finished exit code, and more than 8 records preserve the original bytes and poison pane operations. Writes reuse `memory::atomic_write` with mode `0600`.
+- Recovery maps `spawning|live` to `interrupted` in one atomic write at `PaneHost::open`, with zero spawns. `start` persists `spawning` before `openpty`; a failed initial write spawns nothing. A spawn failure restores the previous slot or removes a new record. `live` is persisted before `start` returns; a failed `live` write stops the child. Later write failures poison further starts; a failed resize write stops the affected pane. `spawning|live` never return as a clean transition.
+- PTY contract: `/bin/bash --norc --noprofile`, absolute argv, canonical `main` workspace cwd, allowlist environment (`TERM=xterm-256color`, `LANG`/`LC_ALL=en_US.UTF-8`, fixed `PATH`, inherited `HOME` only), `openpty` + `setsid` + `TIOCSCTTY`, non-blocking master with `FD_CLOEXEC`, `TIOCSWINSZ`, bounded writes, non-blocking reads, and a 2 s drain/close/kill/reap teardown with no unbounded wait or `mem::forget`.
+- Pane model: `scrollback_rows(24,80)=409`, `scrollback_rows(200,200)=127`; screen+scrollback stays within 2 MiB; at most 8 live panes. Logs are metadata only (`pane_spawn`, `pane_exit`, `pane_interrupted`, `pane_store_error`, `pane_stop_timeout`); no PTY bytes are logged.
+- Focused results: `cargo test pane_host::` **20 passed, 0 failed**; `cargo test pty::tests` **6 passed, 0 failed**; `cargo test pane_grid::` **10 passed, 0 failed**; `cargo test run::` **28 passed, 0 failed**.
+- Full: `cargo test` **316 unit + 12 real CLI = 328 passed, 0 failed** (baseline 300 = 288 unit + 12 CLI; +28 unit: 20 pane_host, 6 pty, 1 pane_grid, 1 run).
+- `cargo fmt --all -- --check` exit 0; `rustfmt --edition 2024 --check src/pty.rs src/pane_host.rs src/pane_grid.rs src/run.rs src/main.rs` clean.
+- `cargo clippy --all-targets`: the same 4 pre-existing warnings (`channel.rs:368`, `locale.rs:19`, `memory.rs:108`, `memory.rs:133`); none in the new code.
+- `cargo build --release`: zero Iskra warnings; only the existing transitive `proc-macro-error2 v2.0.1` future-incompatibility note.
+- Budgets: stripped **7,719,952 B = 7.36 MiB** (delta **+33,344 B = 32.6 KiB** over 7,686,608 B); dummy-config `--cli` idle RSS **4,448 KB = 4.34 MiB**; direct dependencies **9** (limit 15). All hard limits pass.
+- `git diff --check` exit 0. An isolated dummy-config `--cli` start created `memory/` and `workspace/` but no `panes.json` and no `runs.json`; startup spawns no PTY.
+- Test note: macOS accepted a 64 MiB non-blocking PTY write without back-pressure, so the bounded-write proof uses a deterministic zero-deadline seam; the 150 ms large-write path is asserted only as time-bounded. `resize(400, 200)` is refused by the 2 MiB model cap with the recorded size unchanged.
+- Unverified: no pane surface (layout, rendering, commands), no model/tool input from panes, no real vim/top/Korean visual check, no Telegram/provider check, no per-Agent panes, and PTY teardown under pre-existing orphaned processes. No commit or push was performed.

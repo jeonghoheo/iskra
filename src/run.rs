@@ -14,6 +14,7 @@ use crate::idempotency::{IDEMPOTENCY_STORE_FILE, IdempotencyStore};
 use crate::logging;
 use crate::loop_;
 use crate::memory;
+use crate::pane_host::{PANE_STORE_FILE, PaneHost};
 use crate::prompt;
 use crate::run_lock::DispatcherLock;
 use crate::runtime::RuntimeRegistry;
@@ -911,6 +912,10 @@ pub struct Core {
     idempotency: IdempotencyStore,
     delivery: DeliveryStore,
     registry: Arc<RuntimeRegistry>,
+    /// Consumed by the pane-surface card through [`Core::panes`]; ownership is
+    /// established here so restart recovery happens under the dispatcher lock.
+    #[allow(dead_code)]
+    panes: PaneHost,
     supervisor: RunSupervisor,
     events: broadcast::Sender<RuntimeEvent>,
     admission: Mutex<Admission>,
@@ -976,6 +981,12 @@ impl Core {
         // A missing delivery store is empty and creates nothing. An invalid
         // store poisons delivery only; Run and conversation startup continue.
         let delivery = DeliveryStore::open(&registry.main().paths.memory.join(DELIVERY_STORE_FILE));
+        // Panes belong to the main Agent only in this slice. Opening performs
+        // restart recovery; a missing or invalid pane store never blocks Core.
+        let panes = PaneHost::open(
+            &registry.main().paths.memory.join(PANE_STORE_FILE),
+            &registry.main().paths.workspace,
+        );
         let (events, _) = broadcast::channel(EVENT_BUFFER);
         logging::append(&format!("core_ready agents={}", known.len()));
         Ok(Arc::new(Self {
@@ -983,6 +994,7 @@ impl Core {
             idempotency,
             delivery,
             registry: Arc::new(registry),
+            panes,
             supervisor: RunSupervisor::default(),
             events,
             admission: Mutex::new(Admission::default()),
@@ -1227,6 +1239,13 @@ impl Core {
     /// Core-owned delivery authority. Channels use it, but do not own it.
     pub fn delivery(&self) -> &DeliveryStore {
         &self.delivery
+    }
+
+    /// Core-owned pane host for the main Agent. A later pane surface calls this
+    /// accessor; no command or model path uses it in this slice.
+    #[allow(dead_code)]
+    pub fn panes(&self) -> &PaneHost {
+        &self.panes
     }
 
     /// Creates the delivery identity for a terminal Run. The Agent reference is
@@ -2858,6 +2877,27 @@ mod tests {
             RunQueueStatus::default()
         );
 
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn pane_store_failure_does_not_block_core_construction() {
+        let dir = temp_dir("pane-store-broken");
+        fs::create_dir_all(dir.join("memory")).unwrap();
+        fs::write(dir.join("memory/panes.json"), b"not json").unwrap();
+        let core = Core::new(main_registry(&dir, "http://127.0.0.1:9/chat/completions")).unwrap();
+
+        assert!(
+            core.panes().error().is_some(),
+            "the invalid pane store must be reported"
+        );
+        let error = core
+            .panes()
+            .start()
+            .expect_err("pane operations must be unavailable");
+        assert!(matches!(error, crate::pane_host::PaneError::Store(_)));
+
+        drop(core);
         fs::remove_dir_all(&dir).unwrap();
     }
 }
