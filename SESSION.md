@@ -1858,6 +1858,20 @@ warnings needs hidden dead code, record the blocker and stop.
 Live: do not perform Telegram or real-provider checks.
 ```
 
+### Result (2026-11-27)
+
+Status: **completed; automated verification passed; not committed or pushed.**
+
+- Changed: `Cargo.toml` (`vt100 = "0.18.1"`), `Cargo.lock` (adds `arrayvec`, `unicode-width`, `vt100`, `vte`; `itoa` and `memchr` were already present), new `src/pane_grid.rs`, and `src/main.rs` (`mod pane_grid;` only).
+- `src/pane_grid.rs` provides the `PaneGrid` trait, a `new_grid` factory, and the `Vt100Grid` adapter: byte feed with split UTF-8 held across calls, resize, snapshot (rows, cols, cursor, five mode booleans, typed `MouseMode`, typed `CursorShape`, scrollback length/capacity, trimmed lines), cell/wide inspection, OSC/CSI callback tap, and paged scrollback in global order. One module-level `#![allow(dead_code)]` documents that the pane-host card wires the module; no hidden debug flag or production call was added.
+- No PTY or process is spawned, and no CLI, Telegram, Core, Session, Run, Delivery, registry, command, flag, or schema behavior changed.
+- Focused: `cargo test pane_grid` → **9 passed, 0 failed**. Coverage: OSC 7501/9999 captured without grid text, title/icon/clipboard/bell taps, unknown CSI, mode-bit set/reset round trip, split UTF-8, wide character at the last column, invalid byte, snapshot rows/cursor/capacity, resize, 200-row paged scrollback in contiguous oldest-first order.
+- Full: `cargo test` → **288 unit + 12 real CLI = 300 passed, 0 failed** (recorded baseline 291).
+- `cargo fmt --all -- --check` and `rustfmt --edition 2024 --check src/pane_grid.rs src/main.rs` exit 0. `cargo clippy --all-targets` keeps the same 4 pre-existing warnings (`channel.rs:368`, `locale.rs:19`, `memory.rs:108`, `memory.rs:133`); no new warnings.
+- `cargo build --release`: zero Iskra warnings; the existing transitive `proc-macro-error2 v2.0.1` note remains.
+- Budgets: stripped binary **7,686,608 B = 7.33 MiB** (delta **+372,976 B = 364.2 KiB** over the 7,313,632 B baseline; this is the linked-dependency delta even though no production call references the module, not the spike's 88 KiB used-code figure); dummy-config CLI idle RSS **4,416 KB = 4.31 MiB**; direct dependencies **9** (limit 15). All hard limits pass.
+- Unverified: PTY lifecycle and the pane state machine (next card), real pane rendering, and the production used-code size delta when the host calls the adapter. No commit or push.
+
 ### Next after A
 
 A separate owner-approved card covers PTY lifecycle and the `empty → spawning → live → interrupted → finished` pane state. It must reuse `Core`/`RunStore` authority and must not add a second execution path.

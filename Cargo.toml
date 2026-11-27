@@ -12,3 +12,4 @@ dotenvy = "0.15"
 libc = "0.2"
 teloxide = { version = "0.17", default-features = false, features = ["rustls"] }
 axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
+vt100 = "0.18.1"

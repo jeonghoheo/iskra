@@ -2116,3 +2116,44 @@ Status: **spike complete; 6/6 scored gates PASS; verdict PROCEED; harness only.*
 ### Next action
 
 The gate says proceed. The owner picks one: (A) approve `vt100` behind a `PaneGrid` seam in `src/` as a new card, direct dependencies 8 → 9; (B) run the same harness against `alacritty_terminal` first; (C) keep the seam design only. No commit, push, or production change was made.
+
+## Pane seam landing (A) — PaneGrid + vt100 (2026-11-27)
+
+Status: **complete; automated verification passed; not committed or pushed.**
+
+### What changed
+
+- `Cargo.toml`: `vt100 = "0.18.1"` is now a direct dependency (8 → 9). `Cargo.lock` adds `vt100` 0.18.1, `vte` 0.15.0, `unicode-width` 0.2.3, and `arrayvec` 0.7.8; `itoa` and `memchr` were already in the lock.
+- New `src/pane_grid.rs`: production `PaneGrid` seam and `Vt100Grid` adapter. It holds split UTF-8 across `process()` calls, resizes, and exposes a snapshot (rows, cols, cursor, `hide_cursor`, `alternate_screen`, `bracketed_paste`, `application_cursor`, `application_keypad`, typed `MouseMode`, typed `CursorShape`, scrollback length/capacity, trimmed visible lines), cell/wide inspection, an OSC/CSI callback tap, and paged scrollback in global order.
+- `src/main.rs`: `mod pane_grid;` registration only.
+- The module is intentionally unreferenced until the pane-host card. A single module-level `#![allow(dead_code)]` with a comment covers it; no debug flag, command, or production call was added.
+- No PTY, process spawn, pane runtime, queue integration, channel/locale change, or `runs.json`/`session/v1` change. CLI and Telegram paths are untouched.
+
+### Commands and actual results
+
+- `cargo test pane_grid` → **9 passed, 0 failed** (279 filtered out).
+- `cargo test` → **288 unit passed, 0 failed**; `tests/session_cli.rs` → **12 passed, 0 failed**. Total **300 passed, 0 failed** (recorded baseline 291).
+- `cargo fmt --all -- --check` → exit 0. `rustfmt --edition 2024 --check src/pane_grid.rs src/main.rs` → exit 0.
+- `cargo clippy --all-targets` → the same 4 pre-existing warnings: `channel.rs:368` (collapsible if), `locale.rs:19` (manual char comparison), `memory.rs:108` (explicit counter), `memory.rs:133` (consecutive replace). No warning in `pane_grid.rs`.
+- `cargo build --release` → success with zero Iskra warnings; only the existing transitive `proc-macro-error2 v2.0.1` future-incompatibility note.
+
+### New seam coverage
+
+- `unknown_osc_is_captured_without_grid_text`: OSC 7501 and 9999 reach `unhandled_osc`, window-title and clipboard callbacks fire, unknown CSI is tapped, and visible text is only `ABCDEF`.
+- `icon_name_and_bells_are_reported`; `mode_bits_round_trip` (alternate screen, bracketed paste, application cursor/keypad, hidden cursor, press-release mouse, steady underline → all reset).
+- `split_utf8_across_process_calls_is_held`; `wide_character_at_last_column_wraps`; `invalid_byte_does_not_corrupt_the_grid`.
+- `snapshot_reports_rows_cursor_and_scrollback_capacity`; `resize_updates_the_reported_size`.
+- `scrollback_pages_in_global_order`: 224 fed lines, 200-row capacity, 224 returned lines, contiguous `L001…L223` oldest-first.
+
+### Budgets
+
+- Stripped: `strip -x -o target/tmp/iskra-stripped target/release/iskra && stat -f%z` → **7,686,608 B = 7.33 MiB** (limit 20 MiB). Delta over the 7,313,632 B G3 baseline: **+372,976 B = 364.2 KiB**.
+- The card expected a near-zero unused-module delta; the measured link delta is 364 KiB. This is the cost of linking `vt100` even without a production call, not the spike's 88 KiB used-code delta. The authoritative used-code production delta still needs the pane-host card.
+- Dummy-config CLI idle RSS in an isolated temporary directory, after 3 s waiting on stdin: **4,416 KB = 4.31 MiB** (limit 30 MiB). Dummy `LLM_*` values, no real `.env`, model call, or Telegram request.
+- `cargo metadata --no-deps --format-version 1` → **9 direct dependencies** (limit 15): axum, dotenvy, libc, reqwest, serde, serde_json, teloxide, tokio, vt100.
+
+### Unverified
+
+- PTY lifecycle, pane state transitions, real pane rendering, scrollback under an actual application, and the production used-code size delta.
+- No owner-run Telegram/provider check was performed; none belongs to this card.
+- No commit or push.

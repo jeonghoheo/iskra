@@ -9,6 +9,7 @@ mod locale;
 mod logging;
 mod loop_;
 mod memory;
+mod pane_grid;
 mod prompt;
 mod registry;
 mod route;
