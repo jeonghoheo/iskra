@@ -1,0 +1,19 @@
+[package]
+name = "vt-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Isolated gate harness. This crate is NOT part of the iskra package and is
+# not a workspace member: the production dependency budget is untouched until
+# the VT gate passes and the owner approves landing the dependency.
+[dependencies]
+libc = "0.2.191"
+vt100 = { version = "0.18.1", optional = true }
+
+[features]
+default = ["vt100"]
+
+[[bin]]
+name = "vt-spike"
+path = "src/main.rs"

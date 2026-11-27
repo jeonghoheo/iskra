@@ -2066,3 +2066,53 @@ Status: **research and design only; no code, dependency, schema, or test change.
 ### Next action
 
 VT spike in gate form (`PaneGrid` seam plus vt100 adapter, G0–G8). Owner must approve the `vt100` dependency before implementation; the audit scope B+ launch stays owner-gated.
+
+## VT spike — G0–G8 (2026-11-27)
+
+Status: **spike complete; 6/6 scored gates PASS; verdict PROCEED; harness only.** No file in the `iskra` package changed: `git status` lists only the new untracked `spikes/` tree, and `git diff Cargo.toml Cargo.lock` is empty.
+
+### What was built
+
+- `spikes/vt` is an isolated crate (not a workspace member). It contains `src/pty.rs` (PTY spawn via `openpty` + `setsid` + `TIOCSCTTY`, resize, raw input, non-blocking read, bounded teardown), `src/grid.rs` (`PaneGrid` trait, vt100 adapter with a `Callbacks` tap, feature-off `NullGrid` baseline), `src/gates.rs` (G0–G8, panic-isolated, evidence strings), `src/main.rs`, `measure.sh`, and `evidence.json`.
+- Candidate: `vt100` 0.18.1 (`vte` 0.15.0, `unicode-width` 0.2.3, `arrayvec` 0.7.8, `memchr` 2.8.3, `itoa` 1.0.19). macOS 27.0.1 (26A434), rustc 1.100.0, edition 2024.
+- The production dependency list is unchanged at 8. Landing `vt100` in `iskra` remains a separate owner approval.
+
+### Commands and actual results
+
+- `cd spikes/vt && ./target/release/vt-spike` → G0–G8 all `PASS`; `SCORE scored_pass=6/6`; exit 0.
+- Same command three consecutive times → `6/6`, 0 failures each run; after the runs, `ps -ax | grep 'bash --norc'` → 0 orphaned panes.
+- `./measure.sh` → stripped with vt100 `610688` B, baseline `519776` B, delta `90912` B (`88` KiB); RSS base `1872–1888` KB, 1 pane `2128` KB, 4 panes `2416–2448` KB; fds `7 / 8 / 11`. The script merges these into `evidence.json` and re-runs the suite.
+- A 4-pane resource probe (`--probe 4 1`) completed in 1.09 s under a 30 s alarm in 3/3 runs.
+
+### Gate evidence (condensed)
+
+| Gate | Result | Evidence |
+|---|---|---|
+| G0 | PASS | OSC 7501 (`working;run=7`) and 9999 captured via `unhandled_osc`; title and clipboard callbacks fired; grid text `ABCDEF` |
+| G1 | PASS | 24×80 bash prompt plus command output and a new prompt; shell alive |
+| G2 | PASS | vim alternate screen, typed text visible, `:wq` saved `hello from vt spike`, normal screen restored |
+| G3 | PASS | `PID  COMMAND  %CPU …` header and 2 distinct frames |
+| G4 | PASS | 5 Hangul base cells + 5 wide continuations, cursor column 10; `a한b` cursor column 4 |
+| G5 | PASS | grid 12×40, no over-width rows, PTY 24×80 → 30×100, zero split wide cells after redraw |
+| G6 | PASS | capacity 200, 200 rows retained, 224 contiguous lines ending at `line-300` |
+| G7 | PASS | CR submit, Up-arrow history, UTF-8 input, Ctrl-C interrupt |
+| G8 | PASS | split UTF-8, wide char at last column wraps, invalid byte ignored, mode bits set/reset |
+
+### Findings
+
+- vt100 exposes unknown OSC through `Callbacks::unhandled_osc`; no side-channel pre-parser is needed for OSC 7501-style status.
+- Scrollback is a viewport offset: the host pages one screenful at a time. 200 rows read in 10 pages (224 lines incl. the screen).
+- No reflow on width change; vt100 truncates and the app redraws. The gate passed because no split wide cell remained after redraw, but scrollback reflow is not available.
+- Scrollback budget: 32-byte cell → 2,560 B/row at 80 columns (409 rows/MiB), 6,400 B/row at 200 columns (163 rows/MiB). "1 MB scrollback" must be defined in bytes if 200 columns are allowed.
+- The first 2+ pane teardown runs hung in an unbounded `Child::wait` while orphaned panes from a killed run existed. After removing the orphans, every teardown variant (drain on/off, `FD_CLOEXEC` on/off, blocking/bounded reap) passed 3/3. The harness keeps drain, `FD_CLOEXEC` on the master, and a bounded reap. Root cause from a clean state is unproven; it is recorded as a mandatory asynchronous-teardown requirement, not a solved fact.
+
+### Unverified
+
+- `alacritty_terminal` was not built; the single-candidate run does not compare backends.
+- Reflow, 8-pane scale, two-client reconnect, non-macOS platforms, Herdr authority reproduction.
+- Any Iskra integration; the production stripped-size delta is unmeasured.
+- Owner visual inspection of vim/top/Korean rendering (the checks here are automated PTY assertions).
+
+### Next action
+
+The gate says proceed. The owner picks one: (A) approve `vt100` behind a `PaneGrid` seam in `src/` as a new card, direct dependencies 8 → 9; (B) run the same harness against `alacritty_terminal` first; (C) keep the seam design only. No commit, push, or production change was made.

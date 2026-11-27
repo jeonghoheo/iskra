@@ -1798,3 +1798,66 @@ Status: **owner-approved direction; research and design only — no code, depend
 - **Stop:** Do not start the VT spike before this card's next action; do not add `vt100` or an L2 engine without separate owner approval; do not copy Herdr source.
 - **Live:** Owner-run terminal checks (vim, top, Korean width) stay outside goals.
 - **Next action:** VT spike in gate form — G0 unknown-OSC observability, G1 `PaneGrid` seam plus vt100 adapter, G2–G7 bash/vim/top/Korean/resize/scrollback, G8 half-character and mode-bit tests. Five of six pass → proceed; the same approach failing twice or a STRUCTURAL finding → stop and present the next options.
+
+### Result (2026-11-27)
+
+Status: **spike run; 6/6 scored gates PASS; verdict PROCEED; harness only — no production code, dependency, schema or test change.**
+
+- **Harness:** new isolated crate `spikes/vt` (not a workspace member, so the `iskra` package and its 8 direct dependencies are unchanged). Candidate backend is `vt100` 0.18.1 (`vte` 0.15.0, `unicode-width` 0.2.3, `arrayvec` 0.7.8, `memchr` 2.8.3, `itoa` 1.0.19). Run on macOS 27.0.1 (26A434), rustc 1.100.0.
+- **Repeated runs:** three consecutive full runs `6/6 PASS, 0 FAIL, 0 STRUCTURAL`; probe runs left zero orphaned pane processes.
+- **Gates:** G0 unknown-OSC PASS (`unhandled_osc` captured OSC 7501 and 9999; neither reached the grid text). G1 bash prompt, G2 vim open/save/exit, G3 top refresh, G4 Korean 2-cell alignment, G5 resize (PTY reports 24×80 → 30×100 and the app redraws), G6 200-row scrollback, G7 input matrix (CR, Up-history, UTF-8, Ctrl-C), G8 bounds (`split UTF-8`, wide-char boundary wrap, invalid byte, mode-bit round trip) all PASS.
+- **Measurements:** stripped spike binary with vt100 **610,688 B** vs baseline **519,776 B** → adapter delta **90,912 B = 88 KiB** (earlier estimate was +300–600 KB). RSS base **1,872–1,888 KB**, 1 pane **2,128 KB**, 4 panes **2,416–2,448 KB** (200-row scrollback at 80 cols; ~140 KB/pane; ±32 KB run-to-run). FDs **7 / 8 / 11** → +1 master fd per pane. Scrollback cost at 32 B/cell: **2,560 B/row at 80 cols** (409 rows/MiB) and **6,400 B/row at 200 cols** (163 rows/MiB), so the "1 MB scrollback" cap must be defined in bytes, not lines.
+- **Not proven:** `alacritty_terminal` was not built (single-candidate run), reflow is absent (vt100 truncates on width change; apps redraw), the hang seen in the first 2+ pane teardown runs was not reproduced from a clean state and is recorded as an unverified teardown hazard, no production `PaneGrid` integration exists, and owner visual checks remain outside the spike.
+- **Next options:** A) approve landing `vt100` behind a `PaneGrid` seam in `src/` (direct deps 8→9, production size delta to be measured in that card); B) run the same harness against `alacritty_terminal` first; C) keep the seam design only and leave terminal ownership unbuilt. Landing the dependency still needs separate owner approval. No commit or push.
+
+---
+
+## Pane seam landing (A) — `PaneGrid` + vt100 in `src/` (2026-11-27)
+
+Status: **owner-approved; not started.** The owner approved option A after the VT spike passed. This card lands the backend behind the seam only: no pane process is started and no CLI/Telegram behavior changes.
+
+### Task card
+
+- **Outcome**: `vt100` 0.18.1 is a direct dependency and `src/pane_grid.rs` is the production `PaneGrid` seam: byte feed, resize, snapshot (text, cursor, mode bits, scrollback capacity), cell/wide inspection, OSC/CSI tap and paged scrollback. The existing CLI/Telegram/Core paths behave identically and no PTY is spawned.
+- **Spec**: `docs/research/herdr-analysis-2026-11-27.md` §4 and §10; reference implementation `spikes/vt/src/grid.rs` (Iskra's own spike code, not Herdr source).
+- **Files**: allowed `Cargo.toml`, `Cargo.lock`, new `src/pane_grid.rs`, `src/main.rs` (module registration only), related inline tests, `SESSION.md`, `SESSION-LOG.md`, and `docs/ARCHITECTURE.md` only if the dependency/budget sentence needs the measured number. Forbidden: PTY/process spawning, pane runtime or queue integration, changes to `channel.rs`, `locale.rs`, `run.rs`, `session.rs`, `delivery.rs`, `registry.rs`, `headless.rs`, new commands or flags, a second new dependency, Herdr code, and any change to `runs.json` or `session/v1`.
+- **Proof**: `cargo test` exits 0 with 0 failed (baseline 291 passed at `60aeb33`; not rerun for this card) including new tests — unknown OSC 7501/9999 captured without grid text, title/clipboard callbacks, mode-bit set/reset round trip, split UTF-8 across `process()` calls, wide character at the last column wraps, 200-row paged scrollback read in order, snapshot rows/cursor. `cargo build --release` has zero Iskra warnings; changed files pass `rustfmt --check`; `cargo clippy --all-targets` adds no warning beyond the 4 recorded pre-existing ones. Budgets: stripped ≤20 MB with the delta from 7,313,632 B recorded, dummy-config CLI idle RSS ≤30 MB, direct dependencies 9 ≤15.
+- **Current**: `master` after the VT-spike commit; spike result `6/6 PASS, PROCEED`, adapter +90,912 B (88 KiB) stripped, +1 fd and ~140 KB RSS per pane in the harness.
+- **Stop**: stop and record if the seam needs a process/PTY, a schema change, or a second dependency, or if zero warnings is only reachable by hiding dead code. Do not add a hidden debug flag to make the module reachable.
+- **Live**: no Telegram or provider checks; pane rendering stays automated.
+
+### Notes for the executor
+
+- The module is intentionally not called by the binary in this card. Put one module-level dead-code allowance with a comment that the pane-host card wires it, rather than scattering allowances, so the next card can remove it.
+- An unused module can be eliminated from the release binary, so the release delta may be near zero and is a lower bound. Record it next to the spike's used-code measurement (88 KiB); the authoritative production number comes when a pane host calls the adapter.
+- Keep `src/` independent of `spikes/`; the production seam must not reference the spike crate.
+- `vt100` pulls `vte`, `unicode-width`, `arrayvec`, `memchr`, and `itoa` transitively; no other direct dependency is added.
+
+### Goal-mode contract
+
+```text
+Implement pane seam landing (A) from docs/research/herdr-analysis-2026-11-27.md §4/§10
+and the SESSION.md card.
+Done when:
+- vt100 0.18.1 is a direct dependency and src/pane_grid.rs provides the PaneGrid
+  seam, snapshot with mode bits, cell/wide inspection, OSC/CSI tap and paged
+  scrollback; src/main.rs only registers the module.
+- CLI, Telegram, Core, Session, Run, Delivery and registry behavior are unchanged;
+  no PTY is spawned, no command/flag is added, and no schema changes.
+- cargo test exits 0 with 0 failed, including the new seam tests; the release build
+  has zero Iskra warnings; changed files pass rustfmt; clippy adds no new warnings.
+- Budgets hold: stripped <=20 MB (record the delta), idle RSS <=30 MB, direct
+  dependencies 9 <=15.
+Scope: dependency + production seam + tests only. Exclude PTY/process ownership,
+pane runtime, queue integration, channel/locale changes, new commands, a second
+dependency, and any runs.json/session/v1 change.
+Loop: run focused seam tests while iterating; full suite, fmt, clippy, release
+build and budgets once at the end.
+Stop: on a required process/PTY, schema change, second dependency, or if zero
+warnings needs hidden dead code, record the blocker and stop.
+Live: do not perform Telegram or real-provider checks.
+```
+
+### Next after A
+
+A separate owner-approved card covers PTY lifecycle and the `empty → spawning → live → interrupted → finished` pane state. It must reuse `Core`/`RunStore` authority and must not add a second execution path.

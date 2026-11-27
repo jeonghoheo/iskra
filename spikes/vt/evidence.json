@@ -1,0 +1,137 @@
+{
+  "gates": [
+    {
+      "id": "G0",
+      "name": "unknown-OSC observability",
+      "scored": false,
+      "status": "PASS",
+      "evidence": [
+        "visible_row0=\"ABCDEF\"",
+        "events=[\"unknown:7501;working;run=7\", \"unknown:9999;xyz\", \"title:iskra-title\", \"clip:c;aGVsbG8=\", \"csi:[99;99z\"]",
+        "osc_7501_observed=true",
+        "osc_9999_observed=true",
+        "window_title_observed=true",
+        "no hook needed: vt100::Callbacks::unhandled_osc delivers unknown OSC payloads"
+      ]
+    },
+    {
+      "id": "G1",
+      "name": "bash prompt through seam",
+      "scored": true,
+      "status": "PASS",
+      "evidence": [
+        "size=24x80",
+        "prompt_last_line=\"ISKRA>\"",
+        "prompt_seen=true",
+        "command_output_seen=true",
+        "prompt_returned_after_output=true",
+        "shell_alive=true",
+        "cursor=(4, 0)"
+      ]
+    },
+    {
+      "id": "G2",
+      "name": "vim opens and exits",
+      "scored": true,
+      "status": "PASS",
+      "evidence": [
+        "entered_alt_screen=true",
+        "drew_text_on_alt_screen=true",
+        "typed_text_visible_before_exit=true",
+        "left_alt_screen=true",
+        "file_after_exit=\"hello from vt spike\\n\""
+      ]
+    },
+    {
+      "id": "G3",
+      "name": "top refreshes",
+      "scored": true,
+      "status": "PASS",
+      "evidence": [
+        "header_seen=true",
+        "distinct_frames=2",
+        "sample_line=\"PID    COMMAND          %CPU TIME     #TH #WQ #PORTS MEM   PURG CMPRS PGRP  PPID\""
+      ]
+    },
+    {
+      "id": "G4",
+      "name": "Korean 2-cell alignment",
+      "scored": true,
+      "status": "PASS",
+      "evidence": [
+        "cells=[\"col0=\\\"안\\\"/wide=true cont_wide=true\", \"col2=\\\"녕\\\"/wide=true cont_wide=true\", \"col4=\\\"하\\\"/wide=true cont_wide=true\", \"col6=\\\"세\\\"/wide=true cont_wide=true\", \"col8=\\\"요\\\"/wide=true cont_wide=true\"]",
+        "cursor=(0, 10) expected=(0, 10)",
+        "text_match=true",
+        "mixed_cursor=(0, 4) expected=(0, 4)"
+      ]
+    },
+    {
+      "id": "G5",
+      "name": "resize without corruption",
+      "scored": true,
+      "status": "PASS",
+      "evidence": [
+        "grid_resized=12x40",
+        "rows_over_new_width=0",
+        "wide_split_cells_after_shrink_stale_grid=0",
+        "pty_reported_old_size=true",
+        "pty_reported_new_size=true",
+        "wide_split_cells_after_live_redraw=0"
+      ]
+    },
+    {
+      "id": "G6",
+      "name": "200-line scrollback read",
+      "scored": true,
+      "status": "PASS",
+      "evidence": [
+        "capacity=200",
+        "scrollback_len=200",
+        "view_lines=224 expected=224",
+        "first=\"line-078\" last=\"line-300\"",
+        "contiguous=true has_line100=true has_line200=true"
+      ]
+    },
+    {
+      "id": "G7",
+      "name": "input encoding matrix",
+      "scored": false,
+      "status": "PASS",
+      "evidence": [
+        "cr_submit=true",
+        "arrow_history_recall=true",
+        "utf8_input_roundtrip=true",
+        "ctrl_c_interrupt=true",
+        "interrupt_submitted=true prompt_back=true"
+      ]
+    },
+    {
+      "id": "G8",
+      "name": "bounds and mode-bit tests",
+      "scored": false,
+      "status": "PASS",
+      "evidence": [
+        "split_utf8_ok=true text=\"가\\n\"",
+        "wide_at_boundary_wraps=true splits=[]",
+        "invalid_byte_no_panic=true text=\"ok\\n\"",
+        "modes_set alt=true paste=true app_cursor=true app_keypad=true hide_cursor=true mouse=PressRelease style=SteadyUnderline",
+        "modes_reset alt=false paste=false app_cursor=false app_keypad=false hide_cursor=false mouse=None",
+        "cell_bytes=32 scrollback_row_80col=2560B scrollback_row_200col=6400B rows_per_MiB_80col=409 rows_per_MiB_200col=163"
+      ]
+    }
+  ],
+  "measurements": {
+    "stripped_with_vt100_bytes": "610688",
+    "stripped_baseline_bytes": "519776",
+    "vt100_adapter_delta_bytes": "90912",
+    "rss_base_kb": "1872",
+    "rss_one_pane_kb": "2128",
+    "rss_four_panes_kb": "2416",
+    "fds_base": "7",
+    "fds_one_pane": "8",
+    "fds_four_panes": "11"
+  },
+  "scored_pass": 6,
+  "scored_total": 6,
+  "verdict": "PROCEED — 5/6 gate satisfied"
+}
