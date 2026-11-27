@@ -2045,3 +2045,24 @@ Status: **documentation only; no code, dependency, or schema change; committed a
 ### Next action
 
 The next Iskra action stays owner-gated: audit launch scope B+ needs the intake form, payment path, and four-hour rehearsal before external publication. No Core code action is approved.
+
+## Terminal ownership analysis — Herdr (2026-11-27)
+
+Status: **research and design only; no code, dependency, schema, or test change.**
+
+### What changed
+
+- Added `docs/research/herdr-analysis-2026-11-27.md`: observation versions, terminal-ownership contract, L0–L3 surface ladder, VT comparison, gate-form spike, budget, failure catalog, and falsification conditions.
+- Updated `docs/ARCHITECTURE.md` invariant 4 (untrusted code never gains authority; pure functions or separately supervised processes) and invariant 9 (base 30 MB RSS plus 2 MB per pane, 1 MB scrollback, up to 8 panes), per the owner's 2026-11-27 approval. Added a status sentence that terminal ownership is an approved direction but not implemented.
+- Recorded two owner decisions in personal-memory `DECISIONS.md` and added the handoff card to `SESSION.md`.
+
+### Verification
+
+- Research claims are tagged with source paths or `[확인]`/`[문서 주장]`/`[미확인]` equivalents in the research doc; no Herdr source was copied.
+- Herdr repositories were cloned to a temporary directory only; the Iskra working tree contains no Herdr code.
+- No `cargo test` rerun: no Rust or behavior change. Baseline remains 291 passed / 0 failed at `60aeb33`.
+- `git diff --check` and a stray-token scan on the new doc were run after editing.
+
+### Next action
+
+VT spike in gate form (`PaneGrid` seam plus vt100 adapter, G0–G8). Owner must approve the `vt100` dependency before implementation; the audit scope B+ launch stays owner-gated.

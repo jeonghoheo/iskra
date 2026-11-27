@@ -1783,3 +1783,18 @@ External launch remains gated on three owner items: a live intake form, a confir
 ### Next action
 
 Owner reviews the documentation diff and separately approves or rejects commit/push. External launch remains blocked until the intake form, payment path, and four-hour sample-redelivery rehearsal are complete. No Core code action is approved, the dedicated headless homepage section remains deferred, and watchpost stays on hold.
+
+---
+
+## Terminal ownership direction and Herdr analysis (2026-11-27)
+
+Status: **owner-approved direction; research and design only — no code, dependency, schema or test change.** Records: personal-memory `DECISIONS.md` 2026-11-27 (two entries).
+
+- **Outcome:** Decide whether Iskra can own terminal panes directly inside the existing single-binary budget, and fix the surface-customization and headless contracts before implementation.
+- **Spec:** `docs/research/herdr-analysis-2026-11-27.md`; `docs/ARCHITECTURE.md` §3 (invariants 4, 9), §5, §12.
+- **Files:** Documents only. No Rust file, dependency, or schema changed.
+- **Proof:** No test rerun; the recorded baseline is 291 passed / 0 failed at `60aeb33`. Research claims are tagged in the research doc; Herdr repositories were read from a temporary clone only.
+- **Current:** `master` @ `60aeb33`, clean tree before the docs patch. Herdr observed 2026-11-27: TUI 0.9.5, herdr-core 0.1.22, Apache-2.0.
+- **Stop:** Do not start the VT spike before this card's next action; do not add `vt100` or an L2 engine without separate owner approval; do not copy Herdr source.
+- **Live:** Owner-run terminal checks (vim, top, Korean width) stay outside goals.
+- **Next action:** VT spike in gate form — G0 unknown-OSC observability, G1 `PaneGrid` seam plus vt100 adapter, G2–G7 bash/vim/top/Korean/resize/scrollback, G8 half-character and mode-bit tests. Five of six pass → proceed; the same approach failing twice or a STRUCTURAL finding → stop and present the next options.

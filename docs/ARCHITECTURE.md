@@ -5,7 +5,7 @@ Date: 2026-11-25.
 
 This document defines the architecture for turning Iskra from one persistent personal agent into a model-neutral workbench and, behind later gates, an Outcome-first Headless Control Plane. It preserves the existing Rust core, local data ownership, fail-closed tools, and single-binary distribution.
 
-The compatibility runtime, first two-Agent slice, and Stage 2.5-A delivery reliability are implemented. A completed Run does not imply that its answer reached Telegram. No later code Stage starts automatically: the next code card follows transaction and repeated-paid-demand gates. ACP, Outcome/Headless APIs, BYOUI projections, automatic model routing, agent-to-agent delegation, leases and hosted mode remain behind separate gates.
+The compatibility runtime, first two-Agent slice, and Stage 2.5-A delivery reliability are implemented. A completed Run does not imply that its answer reached Telegram. No later code Stage starts automatically: the next code card follows transaction and repeated-paid-demand gates. ACP, Outcome/Headless APIs, BYOUI projections, automatic model routing, agent-to-agent delegation, leases and hosted mode remain behind separate gates. Terminal ownership and the L0–L3 surface ladder are an owner-approved direction (2026-11-27) but not implemented; `headless/v1` remains implemented and frozen, and a terminal surface must share its `runs.json` authority rather than create a second execution path. The contract study is `docs/research/herdr-analysis-2026-11-27.md`.
 
 ## 1. Goals
 
@@ -29,12 +29,12 @@ The compatibility runtime, first two-Agent slice, and Stage 2.5-A delivery relia
 1. **Fail closed for authority.** Unknown senders, paths, programs, tools, engine capabilities, approvals, and state transitions are refused.
 2. **Core owns authority and records.** Memory, sessions, policy, approval decisions, audit metadata, run state, and usage accounting never belong solely to an external model or CLI.
 3. **No invisible replay.** A crash or restart never automatically retries interrupted work or external delivery.
-4. **No third-party code in the core process.** External engines and extensions are data or separately supervised processes.
+4. **Untrusted code never gains authority.** External engines and extensions run either as pure functions with no I/O, clock, randomness or host handles, or as separately supervised processes. Neither path writes stores, approves effects or transitions run state; every effect is an intent checked by core policy.
 5. **One local binary for the core.** Optional external engines do not become requirements for the built-in HTTP engine.
 6. **Secrets stay out of manifests and logs.** Registries contain environment-variable names or secret references, never secret values.
 7. **Readable, bounded local data.** JSON, Markdown, and NDJSON use schema versions, atomic writes, private permissions, size limits, and retention limits.
 8. **Routing fallback is not security fallback.** Routing may fall back to `main`; a failed permission or policy check never falls back to allow.
-9. **Budgets are measured.** The existing core budgets remain: stripped binary at most 20 MB, idle core RSS at most 30 MB, and at most 15 direct dependencies. External engine resource use is reported separately rather than hidden inside or excluded silently from product measurements.
+9. **Budgets are measured.** The core budgets are: stripped binary at most 20 MB; base core RSS at most 30 MB with no panes, plus at most 2 MB per pane (1 MB scrollback cap, at most 8 panes); and at most 15 direct dependencies. External engine resource use is reported separately rather than hidden inside or excluded silently from product measurements.
 10. **Delivery is not execution success.** A completed Run means the core received a valid final result. Whether that result reached a channel is a separate Core-owned delivery record, and an ambiguous external send is never blindly retried.
 11. **Outcome achievement is not Task completion.** A future Outcome becomes `achieved` only after its declared acceptance checks and required evidence pass. Task/Run completion, generated text and a client receipt are each insufficient alone.
 12. **Projections are authorized views, not new authorities.** Every UI receives a scoped, versioned projection of canonical state. Generated or external UIs never write stores directly; commands and approvals pass through Core policy. Sync exports use the minimum necessary fields and explicit platform-scope warnings.
