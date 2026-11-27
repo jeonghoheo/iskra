@@ -1860,7 +1860,7 @@ Live: do not perform Telegram or real-provider checks.
 
 ### Result (2026-11-27)
 
-Status: **completed; automated verification passed; not committed or pushed.**
+Status: **completed; automated verification passed; committed as `7705af2` and pushed.**
 
 - Changed: `Cargo.toml` (`vt100 = "0.18.1"`), `Cargo.lock` (adds `arrayvec`, `unicode-width`, `vt100`, `vte`; `itoa` and `memchr` were already present), new `src/pane_grid.rs`, and `src/main.rs` (`mod pane_grid;` only).
 - `src/pane_grid.rs` provides the `PaneGrid` trait, a `new_grid` factory, and the `Vt100Grid` adapter: byte feed with split UTF-8 held across calls, resize, snapshot (rows, cols, cursor, five mode booleans, typed `MouseMode`, typed `CursorShape`, scrollback length/capacity, trimmed lines), cell/wide inspection, OSC/CSI callback tap, and paged scrollback in global order. One module-level `#![allow(dead_code)]` documents that the pane-host card wires the module; no hidden debug flag or production call was added.

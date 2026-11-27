@@ -2119,7 +2119,7 @@ The gate says proceed. The owner picks one: (A) approve `vt100` behind a `PaneGr
 
 ## Pane seam landing (A) — PaneGrid + vt100 (2026-11-27)
 
-Status: **complete; automated verification passed; not committed or pushed.**
+Status: **complete; automated verification passed; committed as `7705af2` and pushed.**
 
 ### What changed
 
@@ -2156,4 +2156,4 @@ Status: **complete; automated verification passed; not committed or pushed.**
 
 - PTY lifecycle, pane state transitions, real pane rendering, scrollback under an actual application, and the production used-code size delta.
 - No owner-run Telegram/provider check was performed; none belongs to this card.
-- No commit or push.
+- Committed as `7705af2` and pushed to `origin/master` on 2026-11-27.
