@@ -2114,3 +2114,85 @@ Status: **passed; documentation only, no code change.**
 - Observed exit: after `exit`, the screen stayed readable; the slot reported `finished` with `exit=0` after the next pump, one command later than the exit. `/pane stop 1` then printed `finished` and `/pane text 1` reported unavailable; a send to the stopped pane reported not live; an unknown id printed one error line.
 - `memory/panes.json` was `0600`; the log contained zero `model_call` lines; `panes.json` held `next_pane_id: 2` and one finished record.
 - Findings for the later TUI card: (1) `/panes` can show `live` for one command after the child exits, because reaping happens on a later pump; a continuous TUI pump would not show the lag. (2) Alternate-screen programs restore the pre-run screen on exit, so shell-level checks must wait for the prompt. (3) `/pane send` has no escape syntax, so a surface needs raw keyboard input for reliable control-key delivery.
+
+---
+
+## Pane surface B — local TUI attach (2026-11-27)
+
+Status: **design approved by the owner on 2026-11-27 in Plan mode; no code yet. The card below is ready for a new Goal session.** The plan-mode session changed no code, dependency, test, schema, or store; this entry is documentation only.
+
+### Design decisions (approved)
+
+| Item | Choice |
+|---|---|
+| Attach unit | One pane full screen with a switch key (`n`/`p`, digits `1`-`8`); no split grid or tabs (layout is L0 and out of scope) |
+| Entry point | `--tui` flag, mutually exclusive with `--cli`; the no-argument Telegram default is unchanged |
+| Input | Raw bytes forwarded verbatim to the active `live` pane; `Ctrl-B` prefix for surface commands; `Ctrl-B Ctrl-B` sends a literal `Ctrl-B`; no ESC notation, no mouse |
+| Lifetime | `Ctrl-B d` is exit, not detach: every live pane is torn down within the existing 2 s bound, slots become `finished`, the terminal is restored, one English line is printed. v1 has one process per data directory (dispatcher lock), so a surviving detach would need a second authority. |
+| Restart | Slots are restored as `interrupted`/`finished` records; conversations are not restored and no pane starts automatically. Say so on the home screen. |
+| Chat | Pane-only. Model/chat input is a later card; the kiosk placement paragraph below fixes where it will live. |
+| Status bar | One English line (pane id/state/size, scroll offset, key hints, one transient message). `locale.rs` is outside this card, so TUI text is English in v1. |
+| Budget | No new dependency (libc termios, tokio signal, hardcoded ANSI, existing vt100); stripped ≤ 20 MB with the delta recorded; 30 MB base + 2 MB per pane, 8 panes; direct dependencies stay 9. |
+
+### Task card
+
+- **Outcome**: `iskra --tui` attaches a single-pane full-screen surface over the Core-owned pane host: raw keyboard bytes forwarded verbatim to the active pane, a Ctrl-B prefix for surface commands (start/stop/switch panes, scrollback paging, exit), SIGWINCH-driven PTY+grid resize, a one-line English status bar, and bounded teardown on exit. Panes make no Run, model, or tool call; Telegram, `--cli`, Session, Delivery, registry behavior, and all store schemas are unchanged. Chat/model input does not exist in this surface.
+- **Spec**: `docs/research/herdr-analysis-2026-11-27.md` §2 (pane contract), §6 (budget), §7 (failure catalog), §9/§10 findings (no reflow → force redraw; scrollback is a paged viewport; raw input required for control keys); `docs/ARCHITECTURE.md` invariants 2, 3, 9, 12 and §5; the pane lifecycle (B) result and the Option A manual verification addendum (live lag, alternate-screen restore, raw-keyboard need).
+- **Files**: allowed: new `src/pane_tui.rs` (raw mode, prefix parse, render loop, status bar), `src/pane_grid.rs` only for render/diff accessors the TUI consumes through the PaneGrid seam, `src/main.rs` (`--tui` flag, dispatch, module registration), new `tests/pane_tui.rs` (real binary in a real outer PTY), `SESSION.md`/`SESSION-LOG.md`, and `docs/ARCHITECTURE.md` only for an implementation-status sentence. `src/pane_host.rs`/`src/run.rs` only if a read-only accessor is genuinely missing. Forbidden: `src/channel.rs`, `src/locale.rs`, `src/pty.rs`, `Cargo.toml`, new dependencies, mouse support, layout/theme/tab models, chat or model/tool input from the TUI, remote attach, `runs.json`/`session/v1`/`panes.json` schema changes, personal memory.
+- **Keys and states** (write before coding):
+  - Startup always shows the home screen (recovery leaves nothing live; no auto-start): slot list plus hints, or `No panes. Ctrl-B c to start.`
+  - Prefix table: `Ctrl-B` then `c` start (outer rows−1 × cols, host reuses terminal slots), `x` stop current (no confirm, one status message), `n`/`p`/digits `1`-`8` switch to a slot with an in-memory grid, `[` scroll mode, `d` exit (teardown of all live panes, restore terminal, one English line); anything else one status message and swallow.
+  - States: `home → viewing(live) → viewing(finished) → scroll(offset) → exit`. While `viewing(live)`, all bytes forward verbatim except the prefix. While `viewing(finished)` or `home`, keys are not forwarded. While `scroll`, Up/Down/PgUp/PgDn page the host scrollback; `q`, Esc, or reaching the newest offset returns live; no key is forwarded.
+  - Attach requires an outer terminal ≥ 6 rows × 20 cols; below that print one English line and exit 1 before raw mode.
+  - Status bar (bottom, 1 line, English): pane id/state/dimensions, scroll offset when paging, key hints, one transient message slot.
+- **Resize**: SIGWINCH (tokio signal) → read outer `TIOCGWINSZ` → resize the active pane's PTY and grid together to (rows−1, cols) → full redraw. A refusal (2 MiB model cap or >200 cols) keeps the old dimensions and shows one status message. No reflow is claimed or attempted.
+- **Pump**: the render loop pumps every readable live master fd (background panes keep fresh scrollback) and renders only the active pane; full-screen ANSI redraw with xterm-compatible sequences hardcoded (assume an xterm-compatible outer terminal), diffing through the PaneGrid seam.
+- **Safety**: a `TerminalGuard` saves/restores termios on Drop, restores on panic via a hook that then chains, and leaves the alternate screen; SIGINT/SIGTERM/SIGHUP exit the loop normally so the guard runs; SIGKILL cannot restore (say so, like any TUI). The existing dispatcher lock denies a second process; the existing 8-pane cap and poisoned-store refusal apply (the TUI shows one status line and stays exitable). No pane bytes, input, or secrets are logged.
+- **Proof (automated)**:
+  1. `cargo test pane_tui` (unit): prefix byte→action matrix (every command, double-Ctrl-B passthrough, digits 1-8/9, unknown prefix, scroll-mode keys, partial/split sequences held), status-bar composition, every state transition, undersized-terminal refusal, resize-refusal rendering.
+  2. `tests/pane_tui.rs` (real binary, isolated temp data dir, dummy LLM config, driven through a real outer PTY): `Ctrl-B c` then `printf 'TUI_OK\n'` output reaches the outer PTY; SIGWINCH to 50×140 makes `stty size` inside the pane report `49 140`; scroll paging surfaces an old line from 100 printed rows; Korean keeps 2-cell alignment in rendered bytes; the 9th start is refused with the process alive; `Ctrl-B x` finishes the pane; `Ctrl-B d` exits 0 with the restore sequence emitted; SIGTERM also restores and exits; `panes.json` is 0600; zero `model_call` lines; no `runs.json`.
+  3. Full `cargo test` 0 failed; `cargo fmt --all -- --check`; changed-file rustfmt; clippy adds no warning beyond the 4 recorded; release build with zero Iskra warnings; budgets: stripped ≤ 20 MB (record delta from 7,827,192 B), `--tui` idle RSS ≤ 30 MB at the home screen, 8-pane peak within 30 MB + 2 MB/pane, direct dependencies 9 ≤ 15.
+- **Proof (owner manual, outside the Goal)**: real keyboard vim open/edit/exit; top; arrow-key history; bracketed paste from the OS clipboard; Korean IME input; window-drag resize; scroll keys; visible flicker judgment; status-bar legibility; after `Ctrl-B d` and after `kill -TERM` the terminal is usable (prompt intact, cooked mode). Record results in SESSION-LOG; clean up temp artifacts.
+- **Current**: `master` @ `ba8b07b` (documentation-only commit after `345cbb7`); `cargo test` 339 passed / 0 failed (324 unit + 3 pane CLI + 12 real CLI, 2026-11-27, do not rerun to start); stripped 7.46 MiB; `--cli` idle RSS 4.39 MiB; 9 direct dependencies. `Core::panes()` exposes everything this surface needs; the Option A manual verification addendum closed A's real-use gate.
+- **Stop**: stop and record the blocker if a new dependency (terminfo, crossterm, ratatui), a resident-daemon or second-process model, remote attach, locale integration, mouse support, layout/tab models, chat input, or any schema change becomes necessary; if raw-mode restore cannot be made panic- and signal-safe within the dependency budget; if the 2 MiB model or fd budget fails at the tested dimensions; or after two failed approaches.
+- **Live**: no Telegram or provider check; the owner keyboard/visual checks above stay outside the Goal and gate any "live-verified" claim.
+
+### Goal-mode contract
+
+```text
+Implement Pane surface B (local TUI attach) from this card,
+docs/research/herdr-analysis-2026-11-27.md §2/§6/§7/§9/§10, and
+docs/ARCHITECTURE.md invariants 2/3/9/12.
+Done when:
+- iskra --tui attaches a single-pane full screen over Core::panes() with raw
+  byte forwarding, the Ctrl-B prefix command set, paged scrollback,
+  SIGWINCH PTY+grid resize, a one-line status bar, and bounded teardown on
+  exit; --cli and Telegram behavior and all store schemas are unchanged.
+- Every state transition and prefix action is unit-tested, including
+  double-Ctrl-B passthrough and scroll-mode key isolation.
+- Real-binary tests in a real outer PTY prove marker output, resize via
+  stty size, scroll paging, Korean 2-cell render, 9th-start refusal,
+  exit/SIGTERM terminal restoration, 0600, zero model calls, and no runs.json.
+- cargo test exits 0 with 0 failed (baseline 339 plus new tests); fmt/rustfmt
+  clean; clippy adds no warning; release build has zero Iskra warnings;
+  budgets hold: stripped <= 20 MB with the delta recorded, idle RSS <= 30 MB,
+  direct dependencies 9 <= 15.
+Scope: the TUI surface module, its flag, render/paging, and tests only.
+Exclude mouse, layout/theme/tabs, chat or model/tool input, locale files,
+remote attach, schema changes, new dependencies, and daemonization.
+Loop: run focused pane_tui tests while iterating; run the full suite, fmt,
+clippy, release build, and budgets once at the end.
+Stop: on a required dependency/schema/daemon/locale/owner input, an unsafe
+raw-mode restore, a budget overrun, or two failed approaches, record the
+blocker and stop.
+Live: do not claim real-keyboard visual verification from automated results.
+Do not commit or push.
+```
+
+### Kiosk chat placement (record only, no code)
+
+In the future kiosk form, this TUI is the screen: panes fill the display above the one-line status bar, and chat is a surface command, not a separate window — a prefix key opens a one-line composer on the status bar whose submission goes through the existing Core submit path to the main Agent, with the reply shown as a pane-like projection. This card contains no chat code; the paragraph only fixes where chat will live so the status-bar design is not redone later.
+
+### Next action
+
+Start a new Goal session directly from this card. No further design is needed unless the implementation hits a Stop condition. No commit or push without separate owner approval.
