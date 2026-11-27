@@ -2186,3 +2186,16 @@ Status: **complete; automated verification passed; not committed or pushed.**
 - `git diff --check` exit 0. An isolated dummy-config `--cli` start created `memory/` and `workspace/` but no `panes.json` and no `runs.json`; startup spawns no PTY.
 - Test note: macOS accepted a 64 MiB non-blocking PTY write without back-pressure, so the bounded-write proof uses a deterministic zero-deadline seam; the 150 ms large-write path is asserted only as time-bounded. `resize(400, 200)` is refused by the 2 MiB model cap with the recorded size unchanged.
 - Unverified: no pane surface (layout, rendering, commands), no model/tool input from panes, no real vim/top/Korean visual check, no Telegram/provider check, no per-Agent panes, and PTY teardown under pre-existing orphaned processes. No commit or push was performed.
+- Committed as `3a924ba` and pushed to `origin/master` on 2026-11-27.
+
+## Pane surface (C) card prepared (2026-11-27)
+
+Status: **preparation only; no code, dependency, schema, or test change.**
+
+- Added a decision gate and Option A draft card to `SESSION.md` for the surface left out of B. The decision is the v1 surface shape: A = CLI-only control commands (`/panes`, `/pane start|stop|resize|send|text`), B = local TUI attach, C = the full L0–L3 ladder. A is recommended because it is the smallest real surface, adds no dependency, and keeps Telegram away from a local shell authority boundary.
+- The draft card fixes the command set, allowed files, failure lines, real-process proof (start, send/text, `stty size` resize, stop, final-screen read, 9th-start refusal, zero model requests, `0600`), stop conditions, and the Goal contract. Owner must confirm A/B/C, Telegram exclusion, and `/pane send` before a Goal is created.
+- Updated `docs/ARCHITECTURE.md`'s status sentence: PTY and pane-slot ownership are implemented; no pane surface, command, layout, or TUI exists yet, and the L0–L3 ladder remains a direction.
+- Recorded current state: `master` @ `3a924ba`, 328 passed / 0 failed (316 unit + 12 real CLI), stripped 7.36 MiB, dummy-config CLI idle RSS 4.34 MiB, 9 direct dependencies.
+- No test or build was run for this documentation preparation. No Telegram, provider, TUI, or visual verification was performed. No commit or push.
+- Owner approved **Option A** on 2026-11-27, with the recommended defaults: Telegram pane commands stay out of v1, and `/pane send` remains local CLI-only (raw bytes plus `\r`, no shell interpretation).
+- Next: a new Goal session implements the approved Option A draft card. No B/C design work is opened. No commit or push without separate approval.

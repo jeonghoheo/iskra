@@ -1994,3 +1994,92 @@ Status: **completed; automated verification passed; not committed or pushed.**
 - `git diff --check` exit 0. The isolated `--cli` startup created `memory/` and `workspace/` but **no `panes.json`** and no `runs.json`, so startup spawns no PTY.
 - `resize(400, 200)` is refused by the 2 MiB model cap before the dimension limit, with the recorded size unchanged. The write-timeout test uses the deterministic zero-deadline seam because macOS accepted a 64 MiB non-blocking PTY write without back-pressure; the 150 ms large-write path is asserted only as bounded.
 - Unverified: no pane layout/rendering surface, no pane command or flag, no model/tool input from a pane, no real vim/top/Korean visual check, and no Telegram/provider check. Per-Agent panes and PTY teardown under orphaned processes remain later work. No commit or push was performed.
+
+---
+
+## Pane surface (C) — decision gate and CLI control-surface draft (2026-11-27)
+
+Status: **Option A approved by the owner on 2026-11-27; no code yet. The draft card below is ready for a new Goal session.** B was committed and pushed as `3a924ba`; the working tree changes from this preparation are documentation only.
+
+### Current state
+
+- `master` @ `3a924ba`, B complete: `Core` owns `PaneHost` (`src/pane_host.rs`) over a strict `memory/panes.json`, behind a fixed `/bin/bash` PTY (`src/pty.rs`). `spawning|live` recover to `interrupted` at open with zero spawns.
+- `cargo test` **328 passed, 0 failed** (316 unit + 12 real CLI); stripped **7.36 MiB**; dummy-config CLI idle RSS **4.34 MiB**; **9 direct dependencies**.
+- `Core::panes()` exposes `start`, `start_sized`, `stop`, `resize`, `write`, `pump`, `snapshot`, `scrollback`, `osc_events`, and `slots`. No command, UI, or model path calls it.
+
+### Decision (one)
+
+What is the v1 pane surface?
+
+| Option | Shape | Cost and risk | Verdict |
+|---|---|---|---|
+| **A** | CLI-only control surface: `/panes`, `/pane start`, `/pane stop`, `/pane resize`, `/pane send`, `/pane text` | Smallest useful slice; no new dependency; no Telegram authority expansion; real-process testable | **Recommended** |
+| B | Local TUI attach: alternate screen, raw mode, key handling, resize, scrollback paging | Built on `vt100` + libc without a new dependency, but a large slice that needs owner visual verification; own card | After A is used |
+| C | Full L0–L3 ladder: layout/theme/keys, expressions, pure scripts, argv plugins | Multiple cards, likely new dependencies and owner decisions | Not this stage |
+
+Why A:
+
+- It is a real surface over the same Core authority and proves command wiring without inventing a layout model.
+- Telegram pane control would give a remote chat a local shell. A bot-token compromise would then grant a shell, which is a new authority boundary. Keep Telegram out of v1; a separate owner-approved card is required.
+- No new dependency, so budgets hold. A later TUI can replace only presentation; Core and pane authority stay unchanged.
+
+### Draft compact card — Option A
+
+- **Outcome**: The `--cli` entry point exposes the Core-owned pane host through explicit slash commands. Pane commands make no model or tool call, start no Run, and leave Telegram, `runs.json`, Session, Delivery and registry behavior unchanged.
+- **Spec**: `docs/research/herdr-analysis-2026-11-27.md` §2 (pane contract) and §3 (this is a pre-L0 control surface, not the surface ladder); `docs/ARCHITECTURE.md` invariants 2, 3, 9, 12 and §5; card B result.
+- **Files**: allowed `src/main.rs` (dispatch and help), new `src/pane_cli.rs` (parse, render, execute; no PTY code), `tests/pane_cli.rs` (real process), `SESSION.md`, `SESSION-LOG.md`. `src/run.rs` only if a read-only accessor is genuinely missing. Forbidden: `src/channel.rs`, `src/locale.rs`, `Cargo.toml`, new dependencies, Telegram commands or menu entries, model/tool calls from panes, `runs.json`/`session/v1`/`panes.json` schema changes, layout/TUI/raw mode, personal memory.
+- **Commands and states**:
+  - `/panes` — read-only slot list (id, state, rows×cols, exit code); empty host prints a one-line notice.
+  - `/pane start [rows cols]` — default 24×80; validates `1..=200` (the 200×200 maximum fits the 2 MiB model); prints the id and state.
+  - `/pane stop <id>` — explicit stop; prints `finished` or `interrupted` (timeout).
+  - `/pane resize <id> <rows> <cols>` — validates and prints the new size; refusal leaves the size unchanged.
+  - `/pane send <id> <text>` — only a `live` pane; writes the text bytes plus `\r` to the PTY. Iskra does not interpret it as a shell string.
+  - `/pane text <id> [scrollback rows]` — pumps once and prints the visible screen, optionally up to the host scrollback capacity. It works while the pane is still held in memory (live or observed-exited); an explicitly stopped pane reports unavailable.
+  - Unknown/malformed input, unknown id, poisoned store, capacity, or a non-live send prints one English line and performs no spawn, model call, or tool call.
+  - No automatic pane start at `--cli` startup and no background polling; output is pumped only by a pane command.
+- **Proof**:
+  1. `cargo test pane_cli` covers parsing, defaults, bounds, and error text without a PTY.
+  2. `tests/pane_cli.rs` runs the real binary with an isolated temporary data directory and dummy LLM configuration: `/pane start` → live id; `/pane send 1 printf 'SURFACE_OK\n'` then `/pane text 1` shows the marker; `/panes` shows live 24×80; `/pane resize 1 30 100` then `stty size` shows `30 100`; `/pane stop 1` → finished, and `/pane text 1` afterwards reports unavailable; the 9th start is refused; malformed and unknown commands fail without a spawn; zero model requests and no `runs.json`; `panes.json` is `0600`.
+  3. Full `cargo test`, `cargo fmt --all -- --check`, changed-file rustfmt, clippy with no new warning, release build with zero Iskra warnings, stripped ≤20 MB, idle RSS ≤30 MB, direct dependencies 9 ≤15.
+- **Current**: `master` @ `3a924ba`; 328 passed, 0 failed; stripped 7.36 MiB; idle RSS 4.34 MiB; 9 dependencies; B's host APIs and tests are the starting point.
+- **Stop**: stop and record if the slice is unusable without a TUI/raw mode or Telegram control, if a new dependency or existing-store schema change becomes necessary, if pane commands need a second execution authority, or after two failed approaches.
+- **Live**: TUI visuals, real vim/top/Korean rendering, Telegram behavior, and provider checks remain outside the Goal; the real-process CLI test is the automated proof.
+
+Goal-mode contract:
+
+```text
+Implement Pane surface (C) Option A from docs/research/herdr-analysis-2026-11-27.md
+§2/§3, docs/ARCHITECTURE.md invariants 2/3/9/12, and this card.
+Done when:
+- --cli exposes /panes and /pane start|stop|resize|send|text over Core::panes().
+- Pane commands make no Run, model call, or tool call; Telegram, Session, Delivery,
+  and registry behavior are unchanged, and no pane starts at --cli startup.
+- Invalid input, unknown ids, non-live sends, capacity, and poisoned stores fail
+  with one English line and no spawn, model call, or tool call.
+- Real-process tests prove start, send/text, resize via stty, stop, post-stop
+  unavailable text, the 9th-start refusal, malformed input, zero model requests,
+  and 0600.
+- cargo test exits 0 with 0 failed; fmt/rustfmt clean; clippy adds no warning;
+  release has zero Iskra warnings; budgets hold (stripped <=20 MB, RSS <=30 MB,
+  direct dependencies 9 <=15).
+Scope: CLI pane control only. Exclude TUI/layout/raw mode, Telegram commands,
+new dependencies, model/tool input from panes, and runs.json/session/panes schema
+changes.
+Loop: run focused pane_cli tests while iterating; full suite, fmt, clippy, release
+build, and budgets once at the end.
+Stop: on a required TUI/Telegram/new dependency/schema/second authority, owner
+input, or two failed approaches, record the actual blocker and stop.
+Live: do not claim TUI, Telegram, provider, or real vim/top/Korean verification.
+Do not commit or push.
+```
+
+### Owner decision (2026-11-27)
+
+- **Surface: Option A approved.** B and C remain unapproved later options.
+- Telegram pane commands stay out of v1 (recommended default, accepted with A).
+- `/pane send` stays in Option A as local CLI-only input (recommended default, accepted with A); Iskra writes raw bytes plus `\r` and never interprets a shell string.
+- If either accepted default is wrong, revise this card before creating the Goal.
+
+### Next action
+
+Option A is approved. A new Goal session starts directly from the draft card above; no further design is needed. This preparation session does not implement it. No commit or push without separate owner approval.
