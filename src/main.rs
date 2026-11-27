@@ -9,6 +9,7 @@ mod locale;
 mod logging;
 mod loop_;
 mod memory;
+mod pane_cli;
 mod pane_grid;
 mod pane_host;
 mod prompt;
@@ -157,6 +158,17 @@ async fn run_cli(core: &Arc<Core>) -> Result<(), Box<dyn std::error::Error + Sen
                 "/result" => print_result(core, &args),
                 "/stop" => stop_agent(core, &args),
                 "/resume" => resume_agent(core, &args).await,
+                "/panes" => {
+                    if args.is_empty() {
+                        println!("{}", pane_cli::execute(core, pane_cli::PaneCommand::List));
+                    } else {
+                        println!("{}", pane_cli::PANES_USAGE);
+                    }
+                }
+                "/pane" => match pane_cli::parse(&args) {
+                    Ok(command) => println!("{}", pane_cli::execute(core, command)),
+                    Err(text) => println!("{text}"),
+                },
                 "/help" => println!("{CLI_HELP}"),
                 _ => println!("{}", locale::text(Locale::En, Key::UnknownCommand)),
             }
@@ -326,7 +338,7 @@ async fn print_run_result(
     }
 }
 
-const CLI_HELP: &str = "Commands: /agents · /status [@agent] · /result <work number> · /stop [@agent] · /resume [@agent] · /help\nStart a request with @name to reach another agent.";
+const CLI_HELP: &str = "Commands: /agents · /status [@agent] · /result <work number> · /stop [@agent] · /resume [@agent] · /help\nPanes: /panes · /pane start [rows cols] · /pane stop <id> · /pane resize <id> <rows> <cols> · /pane send <id> <text> · /pane text <id> [scrollback rows]\nStart a request with @name to reach another agent.";
 
 fn cli_command(text: &str) -> Option<(String, String)> {
     let (first, rest) = match text.split_once(char::is_whitespace) {

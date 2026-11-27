@@ -2083,3 +2083,19 @@ Do not commit or push.
 ### Next action
 
 Option A is approved. A new Goal session starts directly from the draft card above; no further design is needed. This preparation session does not implement it. No commit or push without separate owner approval.
+
+### Result (2026-11-27)
+
+Status: **completed; automated verification passed; not committed or pushed.**
+
+- Changed: new `src/pane_cli.rs` (parse, render, execute); `src/main.rs` (`mod pane_cli;`, `/panes` and `/pane` dispatch, help); new `tests/pane_cli.rs` (three real-process tests); `SESSION.md`/`SESSION-LOG.md`. No change to `src/channel.rs`, `src/locale.rs`, `src/run.rs`, `Cargo.toml`, or any store schema.
+- `--cli` now exposes `/panes` and `/pane start [rows cols] | stop <id> | resize <id> <rows> <cols> | send <id> <text> | text <id> [scrollback rows]` over `Core::panes()`. `/panes` is read-only and prints `No panes.` on an empty host. Start defaults to 24×80 and rejects dimensions outside `1..=200`. Stop prints `finished` or `interrupted` on teardown timeout. Resize prints the persisted new size and leaves it unchanged on refusal. Send requires a `live` slot and writes the text bytes plus `\r`; Iskra never interprets the text as a shell string. Text pumps once, prints the visible screen, and optionally pages up to the host scrollback capacity.
+- No Run, model call, or tool call is made by a pane command; Telegram has no pane command or menu entry. No pane starts at `--cli` startup, and no background polling was added.
+- Focused: `cargo test pane_cli` → **8 unit + 3 real-process = 11 passed, 0 failed**. Unit coverage: parse defaults/bounds/ids/send-remainder/scrollback/usage lines, empty list notice, slot rendering, state names. Real-process coverage: start → `Pane 1 live 24x80`; `/panes`; `printf 'SURFACE_OK\n'` then text shows the marker; resize to 30×100 then `stty size` shows `30 100`; stop → `finished`; post-stop text and send report unavailable/non-live; the 9th start is refused; malformed, unknown, and unknown-id input fails with one English line; a poisoned store reports one error line and preserves its bytes; zero model requests, no `runs.json`, and `panes.json` is `0600`.
+- Full: `cargo test` → **324 unit + 3 pane CLI + 12 real CLI = 339 passed, 0 failed** (baseline 328 = 316 unit + 12 real CLI; +8 unit and +3 real-process tests).
+- `cargo fmt --all -- --check` exit 0; `rustfmt --edition 2024 --check src/pane_cli.rs src/main.rs tests/pane_cli.rs` clean.
+- `cargo clippy --all-targets`: the same 4 pre-existing warnings (`channel.rs:368`, `locale.rs:19`, `memory.rs:108`, `memory.rs:133`); none in the new code.
+- `cargo build --release`: zero Iskra warnings; only the existing transitive `proc-macro-error2 v2.0.1` future-incompatibility note.
+- Budgets: stripped **7,827,192 B = 7.46 MiB** (delta **+107,240 B = 104.7 KiB** over 7,719,952 B; the pane host, PTY, and grid are now reachable from a production call, so this is the used-code delta the B card deferred); dummy-config `--cli` idle RSS **4,496 KB = 4.39 MiB**; direct dependencies **9** (limit 15). All hard limits pass.
+- `git diff --check` exit 0. Only `src/main.rs` is modified; `src/pane_cli.rs` and `tests/pane_cli.rs` are new. An isolated dummy-config `--cli` start created no `panes.json`, so startup still spawns no PTY.
+- Unverified: the optional scrollback page path (`/pane text <id> [rows]`) is parser-covered but not exercised against a real pane in the process test; post-observed-exit text is covered by the host tests, not separately through the CLI; no real vim/top/Korean visual check, no TUI, no Telegram pane control, and no provider or Telegram live check. No commit or push was performed.
