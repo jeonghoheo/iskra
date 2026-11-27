@@ -2216,3 +2216,21 @@ Status: **complete; automated verification passed; not committed or pushed.**
 - Budgets: stripped **7,827,192 B = 7.46 MiB** (delta **+107,240 B = 104.7 KiB** over 7,719,952 B; the pane host, PTY, and grid became reachable from production code, which B deferred); dummy-config `--cli` idle RSS **4,496 KB = 4.39 MiB**; direct dependencies **9** (limit 15). All hard limits pass.
 - `git diff --check` exit 0. Only `src/main.rs` is modified; `src/pane_cli.rs` and `tests/pane_cli.rs` are new; no file outside the card's allowed list changed.
 - Unverified: the `/pane text <id> [rows]` scrollback path is parser-covered but not exercised against a live pane in the process test; text after an observed exit is host-tested but not CLI-tested; no real vim/top/Korean visual check, no TUI/layout, no Telegram pane command, and no provider/Telegram live check. No commit or push was performed.
+- Committed as `345cbb7` and pushed to `origin/master` on 2026-11-27 after this entry was written.
+
+## Pane surface (C) Option A — manual verification (2026-11-27)
+
+Status: **passed; documentation only; no code, dependency, schema, or test change.**
+
+- Correction: the previous entry said "not committed or pushed". The work was committed as `345cbb7` and pushed to `origin/master` on 2026-11-27; `SESSION.md` and the memory `NOW.md` are corrected to match.
+- Run: `target/release/iskra --cli` in an isolated temporary directory with dummy LLM configuration (`LLM_API_KEY=dummy`, `LLM_BASE_URL=http://127.0.0.1:1`, `LLM_MODEL=dummy`), commands fed over stdin with sleeps for PTY rendering. No real credential, provider, Telegram, or personal memory was touched.
+- Start and list: `/pane start 30 100` → `Pane 1 live 30x100`; `/pane text 1` showed a real bash prompt.
+- Korean: `printf '한글한글|ABC\n'` echoed intact. Two-cell alignment proven with `printf '한글한글\033[10GX\n'`, which rendered `한글한글 X` — the cursor reached column 10 after four Hangul characters.
+- vim: version 9.1.1752 opened and drew its start screen. A literal ESC byte plus `:q!` through `/pane send` returned to the shell prompt.
+- top: rendered a live process list; `q` returned to the shell.
+- Resize: after `/pane resize 1 40 120`, `stty size` reported `40 120` inside the pane. `/pane resize 1 400 200` printed one refusal line and the size stayed `40 120`.
+- Scrollback: `/pane text 1 30` returned 69 lines — 30 scrollback rows plus the 40 visible rows, the documented `n + rows` contract — including the older `seq 1 100` output.
+- Observed exit and stop: after `exit`, the screen remained readable; the slot reported `1 finished 24x80 exit=0` one pump later, not on the first read. `/pane stop 1` printed `finished`, `/pane text 1` reported unavailable, a send reported not live, and an unknown id printed one error line.
+- Store and model: `memory/panes.json` was mode `0600`; the log had zero `model_call` lines; `panes.json` contained `next_pane_id: 2` and one finished record.
+- Findings for the TUI card: (1) an exited child appears `live` until a later pump reaps it, so a CLI user can see stale state for one command; a continuous TUI pump would not. (2) Alternate-screen programs restore the pre-run screen on exit, so shell-level checks must wait for the prompt before asserting. (3) `/pane send` has no escape syntax, so a real surface needs raw keyboard input for control keys; the interactive Ctrl-V ESC path was not exercised.
+- Not verified: interactive keyboard Ctrl-V ESC, split UTF-8 across real partial reads, 8 simultaneous panes on screen, non-macOS behavior, TUI/layout, and Telegram pane control.

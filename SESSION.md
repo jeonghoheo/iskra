@@ -2086,7 +2086,7 @@ Option A is approved. A new Goal session starts directly from the draft card abo
 
 ### Result (2026-11-27)
 
-Status: **completed; automated verification passed; not committed or pushed.**
+Status: **completed; automated and manual verification passed; committed as `345cbb7` and pushed to `origin/master` on 2026-11-27.**
 
 - Changed: new `src/pane_cli.rs` (parse, render, execute); `src/main.rs` (`mod pane_cli;`, `/panes` and `/pane` dispatch, help); new `tests/pane_cli.rs` (three real-process tests); `SESSION.md`/`SESSION-LOG.md`. No change to `src/channel.rs`, `src/locale.rs`, `src/run.rs`, `Cargo.toml`, or any store schema.
 - `--cli` now exposes `/panes` and `/pane start [rows cols] | stop <id> | resize <id> <rows> <cols> | send <id> <text> | text <id> [scrollback rows]` over `Core::panes()`. `/panes` is read-only and prints `No panes.` on an empty host. Start defaults to 24×80 and rejects dimensions outside `1..=200`. Stop prints `finished` or `interrupted` on teardown timeout. Resize prints the persisted new size and leaves it unchanged on refusal. Send requires a `live` slot and writes the text bytes plus `\r`; Iskra never interprets the text as a shell string. Text pumps once, prints the visible screen, and optionally pages up to the host scrollback capacity.
@@ -2098,4 +2098,19 @@ Status: **completed; automated verification passed; not committed or pushed.**
 - `cargo build --release`: zero Iskra warnings; only the existing transitive `proc-macro-error2 v2.0.1` future-incompatibility note.
 - Budgets: stripped **7,827,192 B = 7.46 MiB** (delta **+107,240 B = 104.7 KiB** over 7,719,952 B; the pane host, PTY, and grid are now reachable from a production call, so this is the used-code delta the B card deferred); dummy-config `--cli` idle RSS **4,496 KB = 4.39 MiB**; direct dependencies **9** (limit 15). All hard limits pass.
 - `git diff --check` exit 0. Only `src/main.rs` is modified; `src/pane_cli.rs` and `tests/pane_cli.rs` are new. An isolated dummy-config `--cli` start created no `panes.json`, so startup still spawns no PTY.
-- Unverified: the optional scrollback page path (`/pane text <id> [rows]`) is parser-covered but not exercised against a real pane in the process test; post-observed-exit text is covered by the host tests, not separately through the CLI; no real vim/top/Korean visual check, no TUI, no Telegram pane control, and no provider or Telegram live check. No commit or push was performed.
+- Unverified at the time of the automated result: the optional scrollback page path (`/pane text <id> [rows]`) was parser-covered but not exercised against a real pane in the process test; post-observed-exit text was host-tested only; no real vim/top/Korean visual check. Those three items were closed by the manual verification below. No TUI, no Telegram pane control, and no provider or Telegram live check exist. Committed and pushed as `345cbb7`.
+
+### Manual verification addendum (2026-11-27)
+
+Status: **passed; documentation only, no code change.**
+
+- Run: release binary, isolated temporary data directory, dummy LLM configuration (`LLM_BASE_URL=http://127.0.0.1:1`), commands driven over the `--cli` stdin pipe with real PTY bytes.
+- `/pane start 30 100` → `Pane 1 live 30x100`; `/pane text 1` showed a real bash prompt.
+- Korean echo intact (`한글한글|ABC`). Two-cell alignment confirmed: `printf '한글한글\033[10GX\n'` rendered `한글한글 X`, so the cursor moved to column 10 after four Hangul characters.
+- vim 9.1.1752 opened and rendered its start screen; a literal `ESC` byte plus `:q!` written through `/pane send` returned to the shell prompt. There is no escape notation in the command, so interactive use needs a real control byte in the line buffer (Ctrl-V ESC); the keyboard path itself was not exercised.
+- `top` rendered a live process list and `q` returned to the shell.
+- Resize reached the kernel: after `/pane resize 1 40 120`, `stty size` reported `40 120`; `/pane resize 1 400 200` was refused with one line and the size stayed `40 120`.
+- Scrollback page worked: `/pane text 1 30` returned 69 lines (`n` scrollback rows plus the 40 visible rows, the documented contract) and included the older `seq 1 100` rows.
+- Observed exit: after `exit`, the screen stayed readable; the slot reported `finished` with `exit=0` after the next pump, one command later than the exit. `/pane stop 1` then printed `finished` and `/pane text 1` reported unavailable; a send to the stopped pane reported not live; an unknown id printed one error line.
+- `memory/panes.json` was `0600`; the log contained zero `model_call` lines; `panes.json` held `next_pane_id: 2` and one finished record.
+- Findings for the later TUI card: (1) `/panes` can show `live` for one command after the child exits, because reaping happens on a later pump; a continuous TUI pump would not show the lag. (2) Alternate-screen programs restore the pre-run screen on exit, so shell-level checks must wait for the prompt. (3) `/pane send` has no escape syntax, so a surface needs raw keyboard input for reliable control-key delivery.
